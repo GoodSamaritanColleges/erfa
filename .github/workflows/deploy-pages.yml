@@ -31,7 +31,7 @@ jobs:
         env:
           VITE_API_URL: ${{ vars.VITE_API_URL }}
           VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
-          VITE_BASE_PATH: ${{ vars.VITE_BASE_PATH }}
+          VITE_BASE_PATH: /erfa/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

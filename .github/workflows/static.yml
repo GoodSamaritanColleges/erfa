@@ -38,8 +38,8 @@ jobs:
 
       - name: Build frontend
         env:
-          VITE_GOOGLE_CLIENT_ID: 1025472893294-ea835m4ossatpr39mbjhs7m2hbkn6saf.apps.googleusercontent.com
-          VITE_API_URL: https://script.google.com/macros/s/AKfycbx3j4w815rNYyq2KkNteAZE_vBeARtGlcQmSYxrOP8G2MH7RtRn5t2HrBF0f8taeOTk/exec
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
           VITE_BASE_PATH: /erfa/
         run: pnpm --filter @erfa/frontend build
 
