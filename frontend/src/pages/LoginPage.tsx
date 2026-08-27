@@ -33,12 +33,21 @@ export function LoginPage() {
   return <main className="login-page">
     <section className="login-card">
       <img src={`${import.meta.env.BASE_URL}gsc-logo.png`} alt="Good Samaritan Colleges" className="login-logo" />
-      <div className="login-title"><span>INTERNAL CONTROLS INITIATIVE</span><h1>Electronic Request for Approval</h1><p>Create, route, review, and track institutional RFAs in one secure workspace.</p></div>
+      <div className="login-title">
+        <span>INTERNAL CONTROLS INITIATIVE</span>
+        <h1>Electronic Request for Approval</h1>
+        <p>Create, route, review, and track institutional RFAs in one secure workspace.</p>
+      </div>
       {!isConfigured() && <ErrorNotice message="This deployment is not configured. Set VITE_API_URL and VITE_GOOGLE_CLIENT_ID, then rebuild the frontend." />}
       <ErrorNotice message={error || scriptError} />
       {loading ? <Spinner label="Verifying your Google account" /> : <div ref={button} className="google-button" />}
       <p className="login-help">Use the Google Workspace account registered by your eRFA administrator. There is no public self-registration.</p>
     </section>
-    <aside className="login-aside" style={{ backgroundImage: `linear-gradient(rgba(15,43,77,.76),rgba(15,43,77,.9)),url('${import.meta.env.BASE_URL}flow-chart.png')` }}><div><b>Clear approvals. Complete accountability.</b><p>Preserves the institutional RFA form with electronic routing, Drive attachments, Workspace email, and append-only history.</p></div></aside>
+    <aside className="login-aside" style={{ backgroundImage: `linear-gradient(rgba(15,43,77,.72),rgba(15,43,77,.88)),url('${import.meta.env.BASE_URL}gscbg.jpg')` }}>
+      <div className="login-aside-content">
+        <b>Clear approvals. Complete accountability.</b>
+        <p>Preserves the institutional RFA form with electronic routing, Drive attachments, Workspace email, and append-only history.</p>
+      </div>
+    </aside>
   </main>;
 }
