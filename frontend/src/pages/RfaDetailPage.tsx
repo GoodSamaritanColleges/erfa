@@ -88,6 +88,17 @@ export function RfaDetailPage() {
       </header>
       <ErrorNotice message={error} />
       <SuccessNotice message={success} />
+      {permissions.canDecide && <div className="action-banner">
+        <div className="action-banner-left">
+          <b>ACTION REQUIRED — This request is awaiting your review</b>
+          <span>Review the details and attachments, then approve, return, or disapprove.</span>
+        </div>
+        <div className="action-banner-actions">
+          <button className="button danger-outline" onClick={() => setDialog('disapprove')}><XCircle size={15} /> Disapprove</button>
+          <button className="button secondary" onClick={() => setDialog('return')}><RotateCcw size={15} /> Return</button>
+          <button className="button primary" onClick={() => setDialog('approve')}><Check size={15} /> Approve</button>
+        </div>
+      </div>}
     </div>
 
     <article className="rfa-document">
@@ -107,14 +118,14 @@ export function RfaDetailPage() {
         <Fact label="Project / Activity / Request Title" value={rfa.REQUEST_TITLE} wide />
       </section>
 
-      <DocumentSection title="Purpose"><p>{rfa.PURPOSE || '---'}</p></DocumentSection>
+      <DocumentSection title="Purpose"><p>{rfa.PURPOSE || '—'}</p></DocumentSection>
 
       <section className="request-grid two">
         <Fact label="Budget Allocation" value={money(rfa.BUDGET_ALLOCATION)} />
         <Fact label="Target Date" value={date(rfa.TARGET_DATE)} />
       </section>
 
-      <DocumentSection title="Justification"><p>{rfa.JUSTIFICATION || '---'}</p></DocumentSection>
+      <DocumentSection title="Justification"><p>{rfa.JUSTIFICATION || '—'}</p></DocumentSection>
 
       <DocumentSection title="Picture / Letter Attachment">
         <div className="attachments">
@@ -122,7 +133,7 @@ export function RfaDetailPage() {
             <FileText />
             <span>
               <b>{attachment.FILE_NAME}</b>
-              <small>{(Number(attachment.SIZE_BYTES) / 1024 / 1024).toFixed(2)} MB - uploaded {dateTime(attachment.UPLOADED_AT)}</small>
+              <small>{(Number(attachment.SIZE_BYTES) / 1024 / 1024).toFixed(2)} MB · uploaded {dateTime(attachment.UPLOADED_AT)}</small>
             </span>
             <Download />
           </button>) : <p>No attachment submitted.</p>}
@@ -164,27 +175,27 @@ export function RfaDetailPage() {
           <span>{dateTime(entry.TIMESTAMP)}</span>
           <div>
             <b>{entry.ACTION.replaceAll('_',' ')}</b>
-            <p>{entry.ACTOR_NAME}{entry.REMARKS ? ` - ${entry.REMARKS}` : ''}</p>
+            <p>{entry.ACTOR_NAME}{entry.REMARKS ? ` — ${entry.REMARKS}` : ''}</p>
           </div>
         </li>)}</ol> : <p>No audit entries.</p>}
       </section>
 
       <footer className="print-footer">
         <span>Effectivity 070626</span>
-        <span>Generated electronically from eRFA - {new Date().toLocaleString('en-PH')}</span>
+        <span>Generated electronically from eRFA · {new Date().toLocaleString('en-PH')}</span>
       </footer>
     </article>
 
-    <section className="decision-bar screen-only">
+    <section className={`decision-bar screen-only ${permissions.canDecide ? 'sticky' : ''}`}>
       {permissions.canDecide && <>
         <div>
-          <span className="eyebrow orange">DECISION REQUIRED</span>
+          <span className="eyebrow orange">ACTION REQUIRED</span>
           <b>Review the complete RFA and attachments before acting.</b>
         </div>
         <div>
-          <button className="button danger-outline" onClick={() => setDialog('disapprove')}><XCircle size={16}/> Disapprove</button>
-          <button className="button secondary" onClick={() => setDialog('return')}><RotateCcw size={16}/> Return</button>
-          <button className="button primary" onClick={() => setDialog('approve')}><Check size={16}/> Approve</button>
+          <button className="button danger-outline" onClick={() => setDialog('disapprove')}><XCircle size={15} /> Disapprove</button>
+          <button className="button secondary" onClick={() => setDialog('return')}><RotateCcw size={15} /> Return</button>
+          <button className="button primary" onClick={() => setDialog('approve')}><Check size={15} /> Approve</button>
         </div>
       </>}
       {!permissions.canDecide && permissions.canImplement && <>
@@ -192,15 +203,18 @@ export function RfaDetailPage() {
           <span className="eyebrow orange">BUDGET ALLOCATION CONFIRMED</span>
           <b>Final approval is complete. Begin implementation when ready.</b>
         </div>
-        <button className="button primary" disabled={working} onClick={() => void transition('implementation')}><Send size={16}/> Start Implementation</button>
+        <button className="button primary" disabled={working} onClick={() => void transition('implementation')}><Send size={15} /> Start Implementation</button>
       </>}
       {!permissions.canDecide && permissions.canClose && rfa.STATUS === 'IMPLEMENTATION' && <>
         <div>
           <span className="eyebrow orange">IMPLEMENTATION</span>
           <b>File the completed RFA for audit when implementation is finished.</b>
         </div>
-        <button className="button primary" disabled={working} onClick={() => void transition('close')}><Check size={16}/> Close RFA</button>
+        <button className="button primary" disabled={working} onClick={() => void transition('close')}><Check size={15} /> Close RFA</button>
       </>}
+      {!permissions.canDecide && !permissions.canImplement && !permissions.canClose && <div>
+        <span className="eyebrow">STATUS</span><b>{rfa.STATUS.replaceAll('_',' ')} — No action available for your role at this stage.</b>
+      </div>}
     </section>
 
     {dialog && <Dialog
@@ -228,7 +242,7 @@ export function RfaDetailPage() {
 }
 
 function Fact({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
-  return <div className={wide ? 'wide' : ''}><span>{label}</span><b>{value || '---'}</b></div>;
+  return <div className={wide ? 'wide' : ''}><span>{label}</span><b>{value || '—'}</b></div>;
 }
 
 function DocumentSection({ title, children }: { title: string; children: React.ReactNode }) {
@@ -239,7 +253,7 @@ function WorkflowStep({ step, approvals, current }: { step: ApprovalStep; approv
   const completed = approvals.some((item) => item.STEP === step && item.ACTION === 'APPROVED');
   const exception = approvals.some((item) => item.STEP === step && ['RETURNED','DISAPPROVED','EXCEPTION'].includes(item.ACTION));
   return <div className={`${completed ? 'completed' : ''} ${current ? 'current' : ''} ${exception ? 'exception' : ''}`}>
-    <span>{completed ? <Check size={16}/> : steps.indexOf(step) + 1}</span>
+    <span>{completed ? <Check size={14} /> : steps.indexOf(step) + 1}</span>
     <b>{stepLabel(step)}</b>
     <small>{completed ? 'Complete' : current ? 'Awaiting action' : exception ? 'Action recorded' : 'Pending'}</small>
   </div>;
@@ -253,7 +267,7 @@ function HistoryTable({ approvals }: { approvals: Approval[] }) {
         <td data-label="Step">{stepLabel(approval.STEP)}</td>
         <td data-label="Approver">{approval.APPROVER_NAME || 'System'}</td>
         <td data-label="Action"><b>{approval.ACTION}</b></td>
-        <td data-label="Remarks">{approval.REMARKS || '---'}</td>
+        <td data-label="Remarks">{approval.REMARKS || '—'}</td>
         <td data-label="Timestamp">{dateTime(approval.TIMESTAMP)}</td>
       </tr>)}</tbody>
     </table>
