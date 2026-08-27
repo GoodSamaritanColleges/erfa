@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../auth';
 import { ErrorNotice, StatusBadge } from '../components';
-import { date, money } from '../format';
+import { date, money, stepLabel } from '../format';
 import type { Rfa } from '../types';
 
 function DashboardSkeleton() {
@@ -95,7 +95,7 @@ export function DashboardPage() {
         <Link to="/approvals">View all <ArrowRight size={14} /></Link>
       </header>
       {approvals.length
-        ? <RfaTable rfas={approvals.slice(0, 5)} />
+        ? <RfaTable rfas={approvals.slice(0, 5)} review />
         : <Empty title="No requests need your action" text="New requests will appear here when the approval matrix assigns them to you." />}
     </section>}
 
@@ -129,7 +129,7 @@ export function Empty({ title, text }: { title: string; text: string }) {
   </div>;
 }
 
-export function RfaTable({ rfas }: { rfas: Rfa[] }) {
+export function RfaTable({ rfas, review = false }: { rfas: Rfa[]; review?: boolean }) {
   return <div className="table-wrap">
     <table>
       <thead>
@@ -138,6 +138,7 @@ export function RfaTable({ rfas }: { rfas: Rfa[] }) {
           <th>Request</th>
           <th>Department</th>
           <th>Budget</th>
+          {review && <th>Current Step</th>}
           <th>Status</th>
           <th>Date Filed</th>
           <th aria-label="Action" />
@@ -152,9 +153,10 @@ export function RfaTable({ rfas }: { rfas: Rfa[] }) {
           </td>
           <td data-label="Department">{rfa.DEPARTMENT_NAME}</td>
           <td data-label="Budget">{money(rfa.BUDGET_ALLOCATION)}</td>
+          {review && <td data-label="Current Step">{rfa.CURRENT_STEP ? stepLabel(rfa.CURRENT_STEP) : '—'}</td>}
           <td data-label="Status"><StatusBadge status={rfa.STATUS} /></td>
           <td data-label="Date Filed">{date(rfa.DATE_FILED)}</td>
-          <td><Link className="row-link" to={`/rfa/${rfa.RFA_ID}`}>View <ArrowRight size={14} /></Link></td>
+          <td><Link className="row-link" to={`/rfa/${rfa.RFA_ID}`}>{review ? 'Review' : 'View'} <ArrowRight size={14} /></Link></td>
         </tr>)}
       </tbody>
     </table>

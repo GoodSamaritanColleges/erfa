@@ -52,7 +52,7 @@ export function RfaListPage({ approvalsOnly = false }: { approvalsOnly?: boolean
       {loading
         ? <Spinner label="Loading RFAs" />
         : rfas.length
-          ? <RfaTable rfas={rfas} />
+          ? <RfaTable rfas={rfas} review={approvalsOnly} />
           : <Empty title={approvalsOnly ? 'No requests need your action' : 'No matching RFAs'} text={approvalsOnly ? 'Your queue is clear.' : 'Try a different search or create a new Request for Approval.'} />}
     </section>
   </>;

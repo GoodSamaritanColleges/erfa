@@ -31,6 +31,13 @@ export function LoginPage() {
 
   if (user) return <Navigate to="/" replace />;
   return <main className="login-page">
+    <aside className="login-aside" style={{ backgroundImage: `linear-gradient(rgba(15,43,77,.36),rgba(15,43,77,.72)),url('${import.meta.env.BASE_URL}gscbg.jpg')` }}>
+      <div className="login-aside-content">
+        <span>GOOD SAMARITAN COLLEGES</span>
+        <b>Clear approvals. Complete accountability.</b>
+        <p>Preserves the institutional RFA form with electronic routing, Drive attachments, Workspace email, and append-only history.</p>
+      </div>
+    </aside>
     <section className="login-card">
       <img src={`${import.meta.env.BASE_URL}gsc-logo.png`} alt="Good Samaritan Colleges" className="login-logo" />
       <div className="login-title">
@@ -43,11 +50,5 @@ export function LoginPage() {
       {loading ? <Spinner label="Verifying your Google account" /> : <div ref={button} className="google-button" />}
       <p className="login-help">Use the Google Workspace account registered by your eRFA administrator. There is no public self-registration.</p>
     </section>
-    <aside className="login-aside" style={{ backgroundImage: `linear-gradient(rgba(15,43,77,.72),rgba(15,43,77,.88)),url('${import.meta.env.BASE_URL}gscbg.jpg')` }}>
-      <div className="login-aside-content">
-        <b>Clear approvals. Complete accountability.</b>
-        <p>Preserves the institutional RFA form with electronic routing, Drive attachments, Workspace email, and append-only history.</p>
-      </div>
-    </aside>
   </main>;
 }
