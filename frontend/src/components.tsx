@@ -38,10 +38,6 @@ export function Layout() {
     <aside className="sidebar">
       <div className="sidebar-brand">
         <img src={`${import.meta.env.BASE_URL}gsc-logo.png`} alt="Good Samaritan Colleges" />
-        <div className="sidebar-brand-text">
-          <b>eRFA</b>
-          <small>Request for Approval</small>
-        </div>
       </div>
 
       <nav className="sidebar-nav" aria-label="Main navigation">
