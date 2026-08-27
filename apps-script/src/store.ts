@@ -14,6 +14,12 @@ function invalidateSheetCache(name: keyof typeof SHEETS): void {
   if ((name as string) === 'SETTINGS') settingsMapCache = null;
 }
 
+export function resetPerRequestCache(): void {
+  sheetDataCache.clear();
+  settingsMapCache = null;
+  // keep cachedDb (spreadsheet handle) — safe to reuse; clear only sheet data
+}
+
 export function nowIso(): string {
   return new Date().toISOString();
 }

@@ -1,12 +1,15 @@
 import { APP_VERSION } from './constants';
 import { authenticate, requireCapability } from './auth';
 import { adminData, saveDepartment, saveMatrix, saveUser } from './admin';
-import { getDatabase } from './store';
+import { getDatabase, resetPerRequestCache } from './store';
+import { resetWorkflowCache } from './workflow';
 import { createRfa, decideRfa, detailRfa, downloadAttachment, listForApproval, listRfas, submitRfa, transitionCloseout, updateRfa, uploadAttachment } from './workflow';
 
 export interface ApiRequest { action: string; idToken?: string; payload?: Record<string, unknown> }
 
 export function dispatch(request: ApiRequest): unknown {
+  resetPerRequestCache();
+  resetWorkflowCache();
   if (request.action === 'health') return { version: APP_VERSION, status: 'ok', timestamp: new Date().toISOString() };
   const user = authenticate(String(request.idToken ?? ''));
   const payload = request.payload ?? {};

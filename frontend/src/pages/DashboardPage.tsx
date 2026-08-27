@@ -7,6 +7,29 @@ import { ErrorNotice, StatusBadge } from '../components';
 import { date, money } from '../format';
 import type { Rfa } from '../types';
 
+function DashboardSkeleton() {
+  return <>
+    <div className="dashboard-greeting">
+      <div className="skeleton" style={{ height: 22, width: 200, marginBottom: 8 }} />
+      <div className="skeleton" style={{ height: 14, width: 300 }} />
+      <div className="skeleton" style={{ height: 34, width: 130, marginTop: 12, borderRadius: 999 }} />
+    </div>
+    <div className="skeleton-metrics" aria-hidden>
+      {Array.from({ length: 5 }).map((_, i) => <div key={i} className="skeleton skeleton-metric" />)}
+    </div>
+    <div className="panel">
+      <div className="panel-header"><div className="skeleton" style={{ height: 14, width: 140 }} /><div className="skeleton" style={{ height: 14, width: 60 }} /></div>
+      <div className="skeleton-row"><div className="skeleton skeleton-cell" style={{ width: 90 }} /><div className="skeleton skeleton-cell" style={{ width: 160, flex: 1 }} /><div className="skeleton skeleton-cell" style={{ width: 70 }} /></div>
+      <div className="skeleton-row"><div className="skeleton skeleton-cell" style={{ width: 90 }} /><div className="skeleton skeleton-cell" style={{ width: 160, flex: 1 }} /><div className="skeleton skeleton-cell" style={{ width: 70 }} /></div>
+    </div>
+    <div className="panel">
+      <div className="panel-header"><div className="skeleton" style={{ height: 14, width: 150 }} /><div className="skeleton" style={{ height: 14, width: 60 }} /></div>
+      <div className="skeleton-row"><div className="skeleton skeleton-cell" style={{ width: 90 }} /><div className="skeleton skeleton-cell" style={{ width: 160, flex: 1 }} /><div className="skeleton skeleton-cell" style={{ width: 70 }} /></div>
+      <div className="skeleton-row"><div className="skeleton skeleton-cell" style={{ width: 90 }} /><div className="skeleton skeleton-cell" style={{ width: 160, flex: 1 }} /><div className="skeleton skeleton-cell" style={{ width: 70 }} /></div>
+    </div>
+  </>;
+}
+
 export function DashboardPage() {
   const { user } = useAuth();
   const [rfas, setRfas] = useState<Rfa[]>([]);
@@ -15,27 +38,35 @@ export function DashboardPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
     void Promise.all([
       api<Rfa[]>('rfa.list'),
-      user?.CAN_APPROVE_RFA ? api<Rfa[]>('rfa.forApproval') : Promise.resolve([])
-    ]).then(([mine, action]) => { setRfas(mine); setApprovals(action); })
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [user]);
+      user?.CAN_APPROVE_RFA ? api<Rfa[]>('rfa.forApproval') : Promise.resolve([] as Rfa[])
+    ]).then(([mine, action]) => {
+      if (cancelled) return;
+      setRfas(Array.isArray(mine) ? mine : []);
+      setApprovals(Array.isArray(action) ? action : []);
+    })
+      .catch((e: Error) => { if (!cancelled) setError(e.message); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [user?.CAN_APPROVE_RFA]);
 
   const counts = useMemo(() => ({
-    draft: rfas.filter((r) => r.STATUS === 'DRAFT').length,
-    pending: rfas.filter((r) => r.STATUS.startsWith('PENDING_') || r.STATUS === 'SUBMITTED').length,
-    returned: rfas.filter((r) => r.STATUS === 'RETURNED').length,
-    approved: rfas.filter((r) => ['APPROVED', 'IMPLEMENTATION'].includes(r.STATUS)).length,
-    closed: rfas.filter((r) => r.STATUS === 'CLOSED').length
+    draft: rfas.filter((r) => (r.STATUS ?? '') === 'DRAFT').length,
+    pending: rfas.filter((r) => (r.STATUS ?? '').startsWith('PENDING_') || (r.STATUS ?? '') === 'SUBMITTED').length,
+    returned: rfas.filter((r) => (r.STATUS ?? '') === 'RETURNED').length,
+    approved: rfas.filter((r) => ['APPROVED', 'IMPLEMENTATION'].includes(r.STATUS ?? '')).length,
+    closed: rfas.filter((r) => (r.STATUS ?? '') === 'CLOSED').length
   }), [rfas]);
 
   if (loading) return <DashboardSkeleton />;
 
+  const displayName = user?.FULL_NAME?.split(' ')[0] ?? 'there';
+
   return <>
     <div className="dashboard-greeting">
-      <h1>Good day, {user?.FULL_NAME.split(' ')[0]}.</h1>
+      <h1>Good day, {displayName}.</h1>
       <p>{approvals.length
         ? `You have ${approvals.length} request${approvals.length === 1 ? '' : 's'} waiting for your action.`
         : 'Your requests and approval work are up to date.'}
@@ -88,29 +119,6 @@ function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; 
     <span className="metric-icon">{icon}</span>
     <div><strong>{value}</strong><span>{label}</span></div>
   </div>;
-}
-
-function DashboardSkeleton() {
-  return <>
-    <div className="dashboard-greeting">
-      <div className="skeleton" style={{ height: 22, width: 200, marginBottom: 8 }} />
-      <div className="skeleton" style={{ height: 14, width: 300 }} />
-      <div className="skeleton" style={{ height: 34, width: 130, marginTop: 12, borderRadius: 999 }} />
-    </div>
-    <div className="skeleton-metrics" aria-hidden>
-      {Array.from({ length: 5 }).map((_, i) => <div key={i} className="skeleton skeleton-metric" />)}
-    </div>
-    <div className="panel">
-      <div className="panel-header"><div className="skeleton" style={{ height: 14, width: 140 }} /><div className="skeleton" style={{ height: 14, width: 60 }} /></div>
-      <div className="skeleton-row"><div className="skeleton skeleton-cell" style={{ width: 90 }} /><div className="skeleton skeleton-cell" style={{ width: 160, flex: 1 }} /><div className="skeleton skeleton-cell" style={{ width: 70 }} /></div>
-      <div className="skeleton-row"><div className="skeleton skeleton-cell" style={{ width: 90 }} /><div className="skeleton skeleton-cell" style={{ width: 160, flex: 1 }} /><div className="skeleton skeleton-cell" style={{ width: 70 }} /></div>
-    </div>
-    <div className="panel">
-      <div className="panel-header"><div className="skeleton" style={{ height: 14, width: 150 }} /><div className="skeleton" style={{ height: 14, width: 60 }} /></div>
-      <div className="skeleton-row"><div className="skeleton skeleton-cell" style={{ width: 90 }} /><div className="skeleton skeleton-cell" style={{ width: 160, flex: 1 }} /><div className="skeleton skeleton-cell" style={{ width: 70 }} /></div>
-      <div className="skeleton-row"><div className="skeleton skeleton-cell" style={{ width: 90 }} /><div className="skeleton skeleton-cell" style={{ width: 160, flex: 1 }} /><div className="skeleton skeleton-cell" style={{ width: 70 }} /></div>
-    </div>
-  </>;
 }
 
 export function Empty({ title, text }: { title: string; text: string }) {

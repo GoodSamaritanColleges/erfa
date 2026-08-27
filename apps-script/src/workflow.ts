@@ -31,6 +31,7 @@ function auditRows(rfaId: string): SheetRecord[] {
 
 // Execution-local Drive folder memoization
 const folderCache = new Map<string, GoogleAppsScript.Drive.Folder>();
+export function resetWorkflowCache(): void { folderCache.clear(); }
 
 function canView(user: SessionUser, rfa: RfaRecord): boolean {
   if (toBoolean(user.IS_ADMIN) || normalizeEmail(rfa.REQUESTER_EMAIL) === normalizeEmail(user.EMAIL)) return true;
