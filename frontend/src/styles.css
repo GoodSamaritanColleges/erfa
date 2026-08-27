@@ -30,10 +30,10 @@
   --text-2xl: 1.7rem;
   --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-serif: "Fraunces", Georgia, serif;
-  --sidebar-w: 232px;
+  --sidebar-w: 228px;
   --header-h: 52px;
-  --content-max: 1200px;
-  --form-max: 820px;
+  --content-max: 1280px;
+  --form-max: 860px;
   --radius-sm: 6px;
   --radius: 8px;
   --radius-md: 10px;
@@ -54,9 +54,17 @@ table { border-collapse: collapse; width: 100%; }
 .spin { animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* Skeleton — perceived performance */
+.skeleton { background: linear-gradient(90deg, #eef1f5 25%, #f6f7f9 37%, #eef1f5 63%); background-size: 400% 100%; animation: shimmer 1.2s ease-in-out infinite; border-radius: 6px; }
+@keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+.skeleton-row { display: flex; gap: .75rem; padding: .75rem .9rem; border-bottom: 1px solid #f0f2f5; align-items: center; }
+.skeleton-cell { height: 12px; border-radius: 6px; }
+.skeleton-metrics { display: grid; grid-template-columns: repeat(5,1fr); gap: .85rem; margin-bottom: 1.35rem; }
+.skeleton-metric { height: 64px; border-radius: 10px; }
+
 /* Typography */
 h1, h2, h3 { margin: 0; line-height: 1.3; font-weight: 650; color: var(--ink); }
-h1 { font-size: var(--text-2xl); letter-spacing: -.02em; }
+h1 { font-size: 1.85rem; letter-spacing: -.02em; }
 h2 { font-size: var(--text-lg); }
 h3 { font-size: var(--text-sm); }
 .eyebrow { display: block; font-size: .7rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--subtle); margin-bottom: .35rem; }

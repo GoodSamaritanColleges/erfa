@@ -29,10 +29,20 @@ function auditRows(rfaId: string): SheetRecord[] {
   return all<SheetRecord>('RFA_AUDIT').filter((row) => row.RFA_ID === rfaId);
 }
 
+// Execution-local Drive folder memoization
+const folderCache = new Map<string, GoogleAppsScript.Drive.Folder>();
+
 function canView(user: SessionUser, rfa: RfaRecord): boolean {
   if (toBoolean(user.IS_ADMIN) || normalizeEmail(rfa.REQUESTER_EMAIL) === normalizeEmail(user.EMAIL)) return true;
   if (normalizeEmail(rfa.CURRENT_APPROVER_EMAIL) === normalizeEmail(user.EMAIL)) return true;
   return approvalRows(rfa.RFA_ID).some((row) => normalizeEmail(row.APPROVER_EMAIL) === normalizeEmail(user.EMAIL));
+}
+
+/** Optimized canView that reuses preloaded approval index (avoids N+1). */
+function canViewWithApproverSet(user: SessionUser, rfa: RfaRecord, approverRfaSet: Set<string>): boolean {
+  if (toBoolean(user.IS_ADMIN) || normalizeEmail(rfa.REQUESTER_EMAIL) === normalizeEmail(user.EMAIL)) return true;
+  if (normalizeEmail(rfa.CURRENT_APPROVER_EMAIL) === normalizeEmail(user.EMAIL)) return true;
+  return approverRfaSet.has(String(rfa.RFA_ID));
 }
 
 function assertView(user: SessionUser, rfa: RfaRecord): void {
@@ -223,8 +233,15 @@ export function listRfas(user: SessionUser, filters: Record<string, unknown>): R
   const status = String(filters.status ?? '');
   const departmentId = String(filters.departmentId ?? '');
   const currentStep = String(filters.currentStep ?? '');
+  // Load once per request — eliminates N+1 approval scans inside canView
+  const allApprovals = all<SheetRecord>('RFA_APPROVALS');
+  const normalizedUserEmail = normalizeEmail(user.EMAIL);
+  const approverRfaSet = new Set<string>();
+  for (const row of allApprovals) {
+    if (normalizeEmail(row.APPROVER_EMAIL) === normalizedUserEmail) approverRfaSet.add(String(row.RFA_ID));
+  }
   return all<RfaRecord>('RFA').filter((rfa) => {
-    if (!canView(user, rfa)) return false;
+    if (!canViewWithApproverSet(user, rfa, approverRfaSet)) return false;
     if (status && rfa.STATUS !== status) return false;
     if (departmentId && rfa.DEPARTMENT_ID !== departmentId) return false;
     if (currentStep && rfa.CURRENT_STEP !== currentStep) return false;
@@ -258,12 +275,26 @@ export function detailRfa(user: SessionUser, rfaId: string): Record<string, unkn
 function rfaFolder(rfa: RfaRecord): GoogleAppsScript.Drive.Folder {
   const rootId = getSetting('ATTACHMENT_ROOT_FOLDER_ID');
   if (!rootId) businessError('Attachment storage is not configured. Run setupDatabase().', 'CONFIGURATION_REQUIRED');
-  const root = DriveApp.getFolderById(rootId);
+  const cacheKey = `rfa:${rfa.RFA_NUMBER}`;
+  const cached = folderCache.get(cacheKey);
+  if (cached) return cached;
   const year = rfa.RFA_NUMBER.split('-')[1] || new Date().getFullYear().toString();
-  const yearFolders = root.getFoldersByName(year);
-  const yearFolder = yearFolders.hasNext() ? yearFolders.next() : root.createFolder(year);
+  const yearCacheKey = `year:${year}:${rootId}`;
+  let yearFolder = folderCache.get(yearCacheKey) as GoogleAppsScript.Drive.Folder | undefined;
+  let root: GoogleAppsScript.Drive.Folder | undefined;
+  if (!yearFolder) {
+    root = DriveApp.getFolderById(rootId);
+    const yearFolders = root.getFoldersByName(year);
+    yearFolder = yearFolders.hasNext() ? yearFolders.next() : root.createFolder(year);
+    folderCache.set(yearCacheKey, yearFolder);
+  } else {
+    // Ensure yearFolder still accessible; if cached we still need rfa subfolder
+  }
+  // yearFolder is now resolved; ensure we have a reference to its parent root only if needed
   const rfaFolders = yearFolder.getFoldersByName(rfa.RFA_NUMBER);
-  return rfaFolders.hasNext() ? rfaFolders.next() : yearFolder.createFolder(rfa.RFA_NUMBER);
+  const folder = rfaFolders.hasNext() ? rfaFolders.next() : yearFolder.createFolder(rfa.RFA_NUMBER);
+  folderCache.set(cacheKey, folder);
+  return folder;
 }
 
 export function uploadAttachment(user: SessionUser, payload: Record<string, unknown>): SheetRecord {

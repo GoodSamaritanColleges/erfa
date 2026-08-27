@@ -4,6 +4,16 @@ import type { SheetRecord } from './types';
 
 const PROPERTY_SPREADSHEET_ID = 'ERFA_SPREADSHEET_ID';
 
+// --- Per-execution memoization (safe: lives only for this Apps Script invocation) ---
+let cachedDb: GoogleAppsScript.Spreadsheet.Spreadsheet | null = null;
+const sheetDataCache = new Map<string, SheetRecord[]>();
+let settingsMapCache: Map<string, string> | null = null;
+
+function invalidateSheetCache(name: keyof typeof SHEETS): void {
+  sheetDataCache.delete(name as string);
+  if ((name as string) === 'SETTINGS') settingsMapCache = null;
+}
+
 export function nowIso(): string {
   return new Date().toISOString();
 }
@@ -13,16 +23,22 @@ export function newId(prefix: string): string {
 }
 
 export function getDatabase(): GoogleAppsScript.Spreadsheet.Spreadsheet {
+  if (cachedDb) return cachedDb;
   const properties = PropertiesService.getScriptProperties();
   const configured = properties.getProperty(PROPERTY_SPREADSHEET_ID);
-  if (configured) return SpreadsheetApp.openById(configured);
+  if (configured) {
+    cachedDb = SpreadsheetApp.openById(configured);
+    return cachedDb;
+  }
   const active = SpreadsheetApp.getActiveSpreadsheet();
   if (active) {
     properties.setProperty(PROPERTY_SPREADSHEET_ID, active.getId());
-    return active;
+    cachedDb = active;
+    return cachedDb;
   }
   const created = SpreadsheetApp.create('eRFA Database');
   properties.setProperty(PROPERTY_SPREADSHEET_ID, created.getId());
+  cachedDb = created;
   return created;
 }
 
@@ -68,10 +84,38 @@ function normalizeCell(value: unknown): string | number | boolean {
 }
 
 export function all<T extends SheetRecord>(name: keyof typeof SHEETS): T[] {
+  const key = name as string;
+  if (sheetDataCache.has(key)) {
+    // Return shallow copies to prevent caller mutation from polluting cache
+    return (sheetDataCache.get(key)! as T[]).map((r) => ({ ...r }));
+  }
   const sheet = getSheet(name);
   const headers = [...SHEETS[name]] as string[];
-  if (sheet.getLastRow() < 2) return [];
-  return sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).getValues().map((row) => {
+  if (sheet.getLastRow() < 2) {
+    sheetDataCache.set(key, []);
+    return [];
+  }
+  const records = sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).getValues().map((row) => {
+    const record: SheetRecord = {};
+    headers.forEach((header, index) => { record[header] = normalizeCell(row[index]); });
+    return record as T;
+  });
+  sheetDataCache.set(key, records as SheetRecord[]);
+  return records.map((r) => ({ ...r }));
+}
+
+/**
+ * Read only the last `limit` rows (tail) — avoids full scan for large audit/log sheets.
+ * Preserves column order and normalization identically to `all()`.
+ */
+export function allTail<T extends SheetRecord>(name: keyof typeof SHEETS, limit: number): T[] {
+  const sheet = getSheet(name);
+  const headers = [...SHEETS[name]] as string[];
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  const rowCount = Math.min(limit, lastRow - 1);
+  const startRow = lastRow - rowCount + 1;
+  return sheet.getRange(startRow, 1, rowCount, headers.length).getValues().map((row) => {
     const record: SheetRecord = {};
     headers.forEach((header, index) => { record[header] = normalizeCell(row[index]); });
     return record as T;
@@ -81,6 +125,7 @@ export function all<T extends SheetRecord>(name: keyof typeof SHEETS): T[] {
 export function insert(name: keyof typeof SHEETS, record: SheetRecord): void {
   const headers = [...SHEETS[name]] as string[];
   getSheet(name).appendRow(headers.map((header) => record[header] ?? ''));
+  invalidateSheetCache(name);
 }
 
 export function updateBy(name: keyof typeof SHEETS, key: string, value: string, updates: SheetRecord): void {
@@ -98,21 +143,32 @@ export function updateBy(name: keyof typeof SHEETS, key: string, value: string, 
     if (index >= 0) row[index] = fieldValue;
   });
   sheet.getRange(rowIndex + 2, 1, 1, headers.length).setValues([row]);
+  invalidateSheetCache(name);
 }
 
 export function findBy<T extends SheetRecord>(name: keyof typeof SHEETS, key: string, value: string): T | undefined {
   return all<T>(name).find((record) => String(record[key]) === value);
 }
 
+function getSettingsMap(): Map<string, string> {
+  if (settingsMapCache) return settingsMapCache;
+  const map = new Map<string, string>();
+  // all('SETTINGS') is itself cached per execution after first load
+  const records = all<SheetRecord>('SETTINGS');
+  for (const r of records) map.set(String(r.KEY), String(r.VALUE ?? ''));
+  settingsMapCache = map;
+  return map;
+}
+
 export function getSetting(key: string): string {
-  const record = all<SheetRecord>('SETTINGS').find((item) => String(item.KEY) === key);
-  return record ? String(record.VALUE ?? '') : '';
+  return getSettingsMap().get(key) ?? '';
 }
 
 export function setSetting(key: string, value: string, description = ''): void {
   const existing = all<SheetRecord>('SETTINGS').find((item) => String(item.KEY) === key);
   if (existing) updateBy('SETTINGS', 'KEY', key, { VALUE: value, DESCRIPTION: description || existing.DESCRIPTION, UPDATED_AT: nowIso() });
   else insert('SETTINGS', { KEY: key, VALUE: value, DESCRIPTION: description, UPDATED_AT: nowIso() });
+  // caches invalidated by insert/updateBy -> settingsMapCache cleared
 }
 
 export function settingBoolean(key: string): boolean {

@@ -1,7 +1,7 @@
 import { audit } from './audit';
 import { normalizeEmail, toBoolean } from './core';
 import { requireCapability } from './auth';
-import { all, findBy, insert, newId, nowIso, updateBy } from './store';
+import { all, allTail, findBy, insert, newId, nowIso, updateBy } from './store';
 import type { ApprovalStep, DepartmentRecord, MatrixRecord, SessionUser, SheetRecord, UserRecord } from './types';
 import { APPROVAL_STEPS } from './constants';
 
@@ -13,9 +13,10 @@ function required(value: unknown, label: string): string {
 
 export function adminData(user: SessionUser): Record<string, unknown> {
   requireCapability(user, 'IS_ADMIN');
+  // Use tail read for large audit/log sheets — reads only last 500 rows instead of full scan
   return {
     users: all<UserRecord>('USERS'), departments: all<DepartmentRecord>('DEPARTMENTS'), matrix: all<MatrixRecord>('APPROVAL_MATRIX'),
-    audit: all<SheetRecord>('RFA_AUDIT').slice(-500).reverse(), notifications: all<SheetRecord>('NOTIFICATIONS').slice(-500).reverse()
+    audit: allTail<SheetRecord>('RFA_AUDIT', 500).reverse(), notifications: allTail<SheetRecord>('NOTIFICATIONS', 500).reverse()
   };
 }
 

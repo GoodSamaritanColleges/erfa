@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../auth';
-import { ErrorNotice, Spinner, StatusBadge } from '../components';
+import { ErrorNotice, StatusBadge } from '../components';
 import { date, money } from '../format';
 import type { Rfa } from '../types';
 
@@ -31,7 +31,7 @@ export function DashboardPage() {
     closed: rfas.filter((r) => r.STATUS === 'CLOSED').length
   }), [rfas]);
 
-  if (loading) return <Spinner label="Loading dashboard" />;
+  if (loading) return <DashboardSkeleton />;
 
   return <>
     <div className="dashboard-greeting">
@@ -88,6 +88,29 @@ function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; 
     <span className="metric-icon">{icon}</span>
     <div><strong>{value}</strong><span>{label}</span></div>
   </div>;
+}
+
+function DashboardSkeleton() {
+  return <>
+    <div className="dashboard-greeting">
+      <div className="skeleton" style={{ height: 22, width: 200, marginBottom: 8 }} />
+      <div className="skeleton" style={{ height: 14, width: 300 }} />
+      <div className="skeleton" style={{ height: 34, width: 130, marginTop: 12, borderRadius: 999 }} />
+    </div>
+    <div className="skeleton-metrics" aria-hidden>
+      {Array.from({ length: 5 }).map((_, i) => <div key={i} className="skeleton skeleton-metric" />)}
+    </div>
+    <div className="panel">
+      <div className="panel-header"><div className="skeleton" style={{ height: 14, width: 140 }} /><div className="skeleton" style={{ height: 14, width: 60 }} /></div>
+      <div className="skeleton-row"><div className="skeleton skeleton-cell" style={{ width: 90 }} /><div className="skeleton skeleton-cell" style={{ width: 160, flex: 1 }} /><div className="skeleton skeleton-cell" style={{ width: 70 }} /></div>
+      <div className="skeleton-row"><div className="skeleton skeleton-cell" style={{ width: 90 }} /><div className="skeleton skeleton-cell" style={{ width: 160, flex: 1 }} /><div className="skeleton skeleton-cell" style={{ width: 70 }} /></div>
+    </div>
+    <div className="panel">
+      <div className="panel-header"><div className="skeleton" style={{ height: 14, width: 150 }} /><div className="skeleton" style={{ height: 14, width: 60 }} /></div>
+      <div className="skeleton-row"><div className="skeleton skeleton-cell" style={{ width: 90 }} /><div className="skeleton skeleton-cell" style={{ width: 160, flex: 1 }} /><div className="skeleton skeleton-cell" style={{ width: 70 }} /></div>
+      <div className="skeleton-row"><div className="skeleton skeleton-cell" style={{ width: 90 }} /><div className="skeleton skeleton-cell" style={{ width: 160, flex: 1 }} /><div className="skeleton skeleton-cell" style={{ width: 70 }} /></div>
+    </div>
+  </>;
 }
 
 export function Empty({ title, text }: { title: string; text: string }) {
