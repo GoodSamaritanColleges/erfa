@@ -18,7 +18,7 @@ export interface Rfa {
 export interface Approval { APPROVAL_ID: string; STEP: ApprovalStep; APPROVER_USER_ID: string; APPROVER_NAME: string; APPROVER_EMAIL: string; ACTION: string; REMARKS: string; TIMESTAMP: string }
 export interface EligibleApprover { USER_ID: string; FULL_NAME: string; EMAIL: string; POSITION: string; DEPARTMENT: string }
 export type ApprovalAssignments = Record<ApprovalSection, string[]>;
-export type EligibleApprovers = Record<ApprovalSection, EligibleApprover[]>;
+export type EmployeeDirectory = EligibleApprover[];
 export interface Attachment { ATTACHMENT_ID: string; FILE_NAME: string; MIME_TYPE: string; SIZE_BYTES: number; UPLOADED_BY: string; UPLOADED_AT: string }
 export interface Audit { LOG_ID: string; ACTOR_NAME: string; ACTOR_EMAIL: string; ACTION: string; PREVIOUS_STATUS: string; NEW_STATUS: string; REMARKS: string; TIMESTAMP: string }
 export interface RfaDetail { rfa: Rfa; approvals: Approval[]; attachments: Attachment[]; audit: Audit[]; permissions: { canEdit: boolean; canDecide: boolean; canImplement: boolean; canClose: boolean } }

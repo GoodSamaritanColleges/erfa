@@ -26,7 +26,7 @@ export function notify(
     `Current Step: ${labels[rfa.CURRENT_STEP] || rfa.CURRENT_STEP || rfa.STATUS}`,
     actionRequired ? 'Action Required: Review this request inside the eRFA web application.' : `Update: ${type.replaceAll('_', ' ')}`,
     remarks ? `Remarks: ${remarks}` : '',
-    link ? `Secure Link: ${link}` : '', '',
+    link ? `View RFA: ${link}` : '', '',
     'Approval decisions must be completed inside eRFA. This email is only a notification.'
   ].filter(Boolean).join('\n');
   const log = {

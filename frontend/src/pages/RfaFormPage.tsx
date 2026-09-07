@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, fileToBase64 } from '../api';
 import { useAuth } from '../auth';
 import { ErrorNotice, Spinner } from '../components';
-import type { ApprovalAssignments, ApprovalSection, EligibleApprover, EligibleApprovers, Rfa, RfaDetail } from '../types';
+import type { ApprovalAssignments, ApprovalSection, EligibleApprover, EmployeeDirectory, Rfa, RfaDetail } from '../types';
 
 interface FormState { requestTitle: string; purpose: string; budgetAllocation: string; targetDate: string; justification: string }
 const blank: FormState = { requestTitle: '', purpose: '', budgetAllocation: '', targetDate: '', justification: '' };
@@ -15,7 +15,7 @@ const sections: Array<{ key: ApprovalSection; label: string }> = [
   { key: 'APPROVED_BY', label: 'Approved By' }
 ];
 const emptyAssignments = (): ApprovalAssignments => ({ RECOMMENDING_APPROVAL: [], REVIEWED_BY: [], NOTED_BY: [], APPROVED_BY: [] });
-const emptyEligible = (): EligibleApprovers => ({ RECOMMENDING_APPROVAL: [], REVIEWED_BY: [], NOTED_BY: [], APPROVED_BY: [] });
+const assignmentWorkflowMarker = 'RFA_ASSIGNMENTS_V1';
 
 export function RfaFormPage() {
   const { id } = useParams();
@@ -24,8 +24,9 @@ export function RfaFormPage() {
   const [form, setForm] = useState<FormState>(blank);
   const [existing, setExisting] = useState<Rfa | null>(null);
   const [files, setFiles] = useState<File[]>([]);
-  const [eligible, setEligible] = useState<EligibleApprovers>(emptyEligible);
+  const [employees, setEmployees] = useState<EmployeeDirectory>([]);
   const [assignments, setAssignments] = useState<ApprovalAssignments>(emptyAssignments);
+  const [usesAssignmentWorkflow, setUsesAssignmentWorkflow] = useState(!id);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(Boolean(id));
@@ -36,17 +37,22 @@ export function RfaFormPage() {
       if (!permissions.canEdit) throw new Error('This RFA is not editable.');
       setExisting(rfa);
       setForm({ requestTitle: rfa.REQUEST_TITLE, purpose: rfa.PURPOSE, budgetAllocation: String(rfa.BUDGET_ALLOCATION), targetDate: rfa.TARGET_DATE, justification: rfa.JUSTIFICATION });
-      setAssignments(sections.reduce((current, section) => ({ ...current, [section.key]: approvals.filter((row) => row.STEP === section.key && !row.ACTION).map((row) => row.APPROVER_USER_ID) }), emptyAssignments()));
+      const usesAssignments = rfa.CURRENT_MATRIX_ID === assignmentWorkflowMarker;
+      setUsesAssignmentWorkflow(usesAssignments);
+      setAssignments(usesAssignments
+        ? sections.reduce((current, section) => ({ ...current, [section.key]: approvals.filter((row) => row.STEP === section.key && !row.ACTION).map((row) => row.APPROVER_USER_ID) }), emptyAssignments())
+        : emptyAssignments());
     }).catch((e: Error) => setError(e.message)).finally(() => setLoading(false));
   }, [id]);
 
   useEffect(() => {
     let cancelled = false;
-    void api<{ sections: EligibleApprovers }>('rfa.eligibleApprovers').then(({ sections: available }) => {
-      if (!cancelled) setEligible(available ?? emptyEligible());
+    if (!usesAssignmentWorkflow) return;
+    void api<{ employees: EmployeeDirectory }>('rfa.eligibleApprovers').then(({ employees: available }) => {
+      if (!cancelled) setEmployees(available ?? []);
     }).catch((e: Error) => { if (!cancelled) setError(e.message); });
     return () => { cancelled = true; };
-  }, []);
+  }, [usesAssignmentWorkflow]);
 
   const set = (key: keyof FormState, value: string) => setForm((current) => ({ ...current, [key]: value }));
 
@@ -54,7 +60,7 @@ export function RfaFormPage() {
     setSaving(true);
     setError('');
     try {
-      const payload = { ...form, budgetAllocation: Number(form.budgetAllocation || 0), approvalAssignments: assignments };
+      const payload = { ...form, budgetAllocation: Number(form.budgetAllocation || 0), ...(usesAssignmentWorkflow ? { approvalAssignments: assignments } : {}) };
       const rfa = existing ? await api<Rfa>('rfa.update', { rfaId: existing.RFA_ID, ...payload }) : await api<Rfa>('rfa.create', payload);
       for (const file of files) await api('attachment.upload', { rfaId: rfa.RFA_ID, fileName: file.name, mimeType: file.type, base64: await fileToBase64(file) });
       if (submit) await api(existing?.STATUS === 'RETURNED' ? 'rfa.resubmit' : 'rfa.submit', { rfaId: rfa.RFA_ID });
@@ -137,15 +143,19 @@ export function RfaFormPage() {
         </li>)}</ul>}
       </section>
 
-      <section className="form-card approval-assignment-card">
+      {usesAssignmentWorkflow && <section className="form-card approval-assignment-card">
         <div className="section-title">
           <span>04</span>
-          <div><h2>Approval assignments</h2><p>Select the authorized people who should receive this RFA at each step. A section may be left empty and will be skipped automatically.</p></div>
+          <div><h2>Approval route</h2><p>Prepared By is automatic. Select any active employee for each remaining signature stage; empty stages are skipped automatically.</p></div>
         </div>
         <div className="approval-assignment-grid">
-          {sections.map((section) => <ApproverSelector key={section.key} section={section} eligible={eligible[section.key]} selectedIds={assignments[section.key]} onChange={(ids) => setAssignments((current) => ({ ...current, [section.key]: ids }))} />)}
+          {sections.map((section) => <ApproverSelector key={section.key} section={section} employees={employees} selectedIds={assignments[section.key]} onChange={(ids) => setAssignments((current) => ({ ...current, [section.key]: ids }))} />)}
         </div>
-      </section>
+      </section>}
+
+      {!usesAssignmentWorkflow && existing && <section className="form-card approval-assignment-card legacy-route-notice">
+        <div className="section-title"><span>04</span><div><h2>Legacy approval route</h2><p>This historical RFA keeps its original Approval Matrix route. Its routing configuration cannot be changed here.</p></div></div>
+      </section>}
 
       <section className="approval-preview">
         <span className="eyebrow">APPROVAL SIGNATURES</span>
@@ -156,7 +166,7 @@ export function RfaFormPage() {
           <b>Noted By</b>
           <b>Approved By</b>
         </div>
-        <p>Approvers are assigned from the active department approval matrix. You cannot approve your own request.</p>
+        <p>{usesAssignmentWorkflow ? 'Selected active employees are stored with this RFA. You cannot approve your own request.' : 'This historical RFA preserves its original approval route.'}</p>
       </section>
 
       <div className="form-actions">
@@ -167,10 +177,10 @@ export function RfaFormPage() {
   </>;
 }
 
-function ApproverSelector({ section, eligible, selectedIds, onChange }: { section: { key: ApprovalSection; label: string }; eligible: EligibleApprover[]; selectedIds: string[]; onChange: (ids: string[]) => void }) {
+function ApproverSelector({ section, employees, selectedIds, onChange }: { section: { key: ApprovalSection; label: string }; employees: EmployeeDirectory; selectedIds: string[]; onChange: (ids: string[]) => void }) {
   const [candidateId, setCandidateId] = useState('');
-  const selected = selectedIds.map((id) => eligible.find((candidate) => candidate.USER_ID === id)).filter((candidate): candidate is EligibleApprover => Boolean(candidate));
-  const available = eligible.filter((candidate) => !selectedIds.includes(candidate.USER_ID));
+  const selected = selectedIds.map((id) => employees.find((candidate) => candidate.USER_ID === id)).filter((candidate): candidate is EligibleApprover => Boolean(candidate));
+  const available = employees.filter((candidate) => !selectedIds.includes(candidate.USER_ID));
   const add = () => {
     if (!candidateId || selectedIds.includes(candidateId)) return;
     onChange([...selectedIds, candidateId]);
@@ -178,16 +188,16 @@ function ApproverSelector({ section, eligible, selectedIds, onChange }: { sectio
   };
   return <div className="approver-selector">
     <h3>{section.label}</h3>
-    <p>{eligible.length ? 'Choose zero or more authorized approvers.' : 'No authorized approvers are currently configured for this step.'}</p>
+    <p>{employees.length ? 'Choose zero or more active employees.' : 'No active employees are currently available.'}</p>
     <div className="approver-add">
       <select value={candidateId} onChange={(event) => setCandidateId(event.target.value)} aria-label={`Add approver for ${section.label}`}>
         <option value="">Select person</option>
-        {available.map((candidate) => <option key={candidate.USER_ID} value={candidate.USER_ID}>{candidate.FULL_NAME}{candidate.POSITION ? ` — ${candidate.POSITION}` : ''}</option>)}
+        {available.map((candidate) => <option key={candidate.USER_ID} value={candidate.USER_ID}>{candidate.FULL_NAME} — {candidate.POSITION || 'No position'} · {candidate.DEPARTMENT}</option>)}
       </select>
       <button type="button" className="button secondary" onClick={add} disabled={!candidateId}><Plus size={16} /> Add</button>
     </div>
     {selected.length > 0 && <ul className="selected-approvers">
-      {selected.map((candidate) => <li key={candidate.USER_ID}><span><b>{candidate.FULL_NAME}</b><small>{candidate.POSITION || candidate.EMAIL}</small></span><button type="button" className="icon-button" onClick={() => onChange(selectedIds.filter((id) => id !== candidate.USER_ID))} aria-label={`Remove ${candidate.FULL_NAME} from ${section.label}`}><X size={16} /></button></li>)}
+      {selected.map((candidate) => <li key={candidate.USER_ID}><span><b>{candidate.FULL_NAME}</b><small>{candidate.POSITION || 'No position'} · {candidate.DEPARTMENT}</small></span><button type="button" className="icon-button" onClick={() => onChange(selectedIds.filter((id) => id !== candidate.USER_ID))} aria-label={`Remove ${candidate.FULL_NAME} from ${section.label}`}><X size={16} /></button></li>)}
     </ul>}
   </div>;
 }

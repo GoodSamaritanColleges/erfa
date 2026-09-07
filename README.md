@@ -33,19 +33,19 @@ pnpm dev
 1. Build `apps-script/dist/Code.js` with `pnpm --filter @erfa/apps-script build`.
 2. Create an Apps Script project, add the built `Code.js`, and use the built `appsscript.json` manifest.
 3. Run `setupDatabase()` once from the Apps Script editor and authorize Sheets, Drive, external token verification, and email.
-4. In the generated `SETTINGS` sheet, set `GOOGLE_CLIENT_ID`, `ALLOWED_DOMAIN` if required, and `FRONTEND_URL`.
+4. In the generated `SETTINGS` sheet, set `GOOGLE_CLIENT_ID`, `ALLOWED_DOMAIN` if required, and `FRONTEND_URL`. For the production Pages site, use `https://kyojin03.github.io/erfa/`; notification emails use this configured base URL to link directly to each RFA.
 5. Run `bootstrapAdmin('admin@institution.edu', 'Administrator Name')` once using the real initial administrator. This is intentionally not seeded.
 6. Deploy the Apps Script project as a Web App executing as the owner and accessible to the users in scope.
 7. Set the GitHub repository variables `VITE_API_URL`, `VITE_GOOGLE_CLIENT_ID`, and optionally `VITE_BASE_PATH`, then enable GitHub Pages through Actions.
-8. Sign in as the bootstrapped administrator and configure departments, users, and the approval matrix.
+8. Sign in as the bootstrapped administrator and configure departments and users. The Approval Matrix is retained only for historical RFAs that already use the legacy routing model.
 
 Full procedures are in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). The deployed system cannot authenticate or send mail until the administrator supplies Google configuration and grants authorization.
 
 ## Core workflow
 
-`DRAFT -> SUBMITTED -> RECOMMENDING APPROVAL -> REVIEWED AND NOTED -> AUTHORITY APPROVAL -> APPROVED -> IMPLEMENTATION -> CLOSED`
+`DRAFT -> SUBMITTED -> RECOMMENDING APPROVAL -> REVIEWED BY -> NOTED BY -> APPROVED BY -> APPROVED -> IMPLEMENTATION -> CLOSED`
 
-Approvers can return an RFA for revision or disapprove it. Returned RFAs resume at the returning route after the requester edits and resubmits. If a configured approver is the requester, inactive, missing, or lacks approval permission, the router records the skip and chooses the next valid route. If none exists, the RFA enters `EXCEPTION` and configured administrators are notified.
+For new RFAs, the requester selects active directory employees per RFA and the saved route is processed sequentially; all selected people in a stage must approve before the next stage is notified. Empty stages are skipped. Approvers can return an RFA for revision or disapprove it. Historical matrix-routed RFAs retain their legacy behavior.
 
 ## Documentation
 

@@ -164,31 +164,36 @@ function emptyAssignments(): RfaSectionAssignments {
   return { RECOMMENDING_APPROVAL: [], REVIEWED_BY: [], NOTED_BY: [], APPROVED_BY: [] };
 }
 
-function eligibleForDepartment(user: SessionUser, departmentId: string): Record<ApprovalSection, EligibleApprover[]> {
-  const eligible = emptyAssignments();
-  const users = new Map(all<UserRecord>('USERS').filter((candidate) => toBoolean(candidate.ACTIVE) && toBoolean(candidate.CAN_APPROVE_RFA)).map((candidate) => [candidate.USER_ID, candidate]));
-  all<MatrixRecord>('APPROVAL_MATRIX')
-    .filter((row) => row.DEPARTMENT_ID === departmentId && toBoolean(row.ACTIVE) && toBoolean(row.REQUIRED) && APPROVAL_SECTIONS.includes(row.APPROVAL_STEP as ApprovalSection))
-    .forEach((row) => {
-      const approver = users.get(row.APPROVER_USER_ID);
-      const section = row.APPROVAL_STEP as ApprovalSection;
-      if (!approver || normalizeEmail(approver.EMAIL) === normalizeEmail(user.EMAIL) || eligible[section].some((candidate) => candidate.USER_ID === approver.USER_ID)) return;
-      eligible[section].push({ USER_ID: approver.USER_ID, FULL_NAME: approver.FULL_NAME, EMAIL: approver.EMAIL, POSITION: approver.POSITION, DEPARTMENT: departmentId });
-    });
-  return eligible;
+function activeEmployeeDirectory(user: SessionUser, users = all<UserRecord>('USERS')): EligibleApprover[] {
+  const departments = new Map(all<DepartmentRecord>('DEPARTMENTS').map((department) => [department.DEPARTMENT_ID, department.DEPARTMENT_NAME]));
+  const requesterEmail = normalizeEmail(user.EMAIL);
+  return users
+    .filter((candidate) => toBoolean(candidate.ACTIVE) && candidate.USER_ID !== user.USER_ID && normalizeEmail(candidate.EMAIL) !== requesterEmail)
+    .map((candidate) => ({
+      USER_ID: candidate.USER_ID,
+      FULL_NAME: candidate.FULL_NAME,
+      EMAIL: candidate.EMAIL,
+      POSITION: candidate.POSITION,
+      DEPARTMENT: departments.get(candidate.DEPARTMENT_ID) || 'Not assigned'
+    }))
+    .sort((left, right) => left.FULL_NAME.localeCompare(right.FULL_NAME) || left.EMAIL.localeCompare(right.EMAIL));
 }
 
-function parseAssignments(user: SessionUser, departmentId: string, value: unknown): RfaSectionAssignments {
+function parseAssignments(user: SessionUser, value: unknown): RfaSectionAssignments {
   const source = value && typeof value === 'object' ? value as Record<string, unknown> : {};
-  const eligible = eligibleForDepartment(user, departmentId);
+  const users = all<UserRecord>('USERS');
+  const activeEmployees = new Map(activeEmployeeDirectory(user, users).map((candidate) => [candidate.USER_ID, candidate]));
+  const usersById = new Map(users.map((candidate) => [candidate.USER_ID, candidate]));
   const assignments = emptyAssignments();
   APPROVAL_SECTIONS.forEach((section) => {
     const ids = Array.isArray(source[section]) ? source[section].map((id) => String(id)) : [];
     if (new Set(ids).size !== ids.length) businessError(`Duplicate approvers are not allowed in ${section}.`);
-    const byId = new Map(eligible[section].map((candidate) => [candidate.USER_ID, candidate]));
     assignments[section] = ids.map((id) => {
-      const candidate = byId.get(id);
-      if (!candidate) businessError(`Selected approver is not eligible for ${section}.`, 'FORBIDDEN');
+      const directoryUser = usersById.get(id);
+      if (!directoryUser) businessError('A selected employee no longer exists in the employee directory.', 'FORBIDDEN');
+      if (!toBoolean(directoryUser.ACTIVE)) businessError('A selected employee is inactive and cannot be assigned.', 'FORBIDDEN');
+      const candidate = activeEmployees.get(id);
+      if (!candidate) businessError('You cannot assign yourself as an approver for this RFA.', 'SELF_APPROVAL');
       return candidate;
     });
   });
@@ -202,7 +207,7 @@ function saveAssignments(rfa: RfaRecord, assignments: RfaSectionAssignments): vo
 
 export function eligibleApprovers(user: SessionUser): Record<string, unknown> {
   if (!toBoolean(user.CAN_CREATE_RFA) || !user.DEPARTMENT_ID) businessError('You do not have permission to select approvers.', 'FORBIDDEN');
-  return { sections: eligibleForDepartment(user, user.DEPARTMENT_ID) };
+  return { employees: activeEmployeeDirectory(user) };
 }
 
 export function createRfa(user: SessionUser, payload: Record<string, unknown>): RfaRecord {
@@ -211,7 +216,7 @@ export function createRfa(user: SessionUser, payload: Record<string, unknown>): 
   const department = findBy<DepartmentRecord>('DEPARTMENTS', 'DEPARTMENT_ID', user.DEPARTMENT_ID);
   if (!department || !toBoolean(department.ACTIVE)) businessError('Your configured department is missing or inactive.', 'CONFIGURATION_REQUIRED');
   const clean = validateRfaInput(payload, false);
-  const assignments = parseAssignments(user, department.DEPARTMENT_ID, payload.approvalAssignments);
+  const assignments = parseAssignments(user, payload.approvalAssignments);
   const timestamp = nowIso();
   const record: RfaRecord = {
     RFA_ID: newId('rfa'), RFA_NUMBER: nextNumber(), DATE_FILED: timestamp.slice(0, 10),
@@ -233,7 +238,8 @@ export function updateRfa(user: SessionUser, payload: Record<string, unknown>): 
   assertOwnerEditable(user, rfa);
   const clean = validateRfaInput(payload, false);
   const usesAssignments = Object.prototype.hasOwnProperty.call(payload, 'approvalAssignments');
-  const assignments = usesAssignments ? parseAssignments(user, rfa.DEPARTMENT_ID, payload.approvalAssignments) : null;
+  if (usesAssignments && !isAssignmentWorkflow(rfa)) businessError('Legacy RFAs retain their original Approval Matrix route and cannot be converted.', 'FORBIDDEN');
+  const assignments = usesAssignments ? parseAssignments(user, payload.approvalAssignments) : null;
   const updates = {
     REQUEST_TITLE: clean.requestTitle, PURPOSE: clean.purpose, BUDGET_ALLOCATION: clean.budgetAllocation,
     TARGET_DATE: clean.targetDate, JUSTIFICATION: clean.justification, CURRENT_MATRIX_ID: usesAssignments ? ASSIGNMENT_WORKFLOW_MARKER : rfa.CURRENT_MATRIX_ID, UPDATED_AT: nowIso(), VERSION: Number(rfa.VERSION) + 1
@@ -273,7 +279,7 @@ export function submitRfa(user: SessionUser, rfaId: string, resubmit = false): R
 
 export function decideRfa(user: SessionUser, rfaId: string, action: 'APPROVED' | 'RETURNED' | 'DISAPPROVED', remarks: string): RfaRecord {
   const rfa = getRfa(rfaId);
-  if (!toBoolean(user.CAN_APPROVE_RFA)) businessError('You do not have approval permission.', 'FORBIDDEN');
+  if (!isAssignmentWorkflow(rfa) && !toBoolean(user.CAN_APPROVE_RFA)) businessError('You do not have approval permission.', 'FORBIDDEN');
   if (normalizeEmail(rfa.REQUESTER_EMAIL) === normalizeEmail(user.EMAIL)) businessError('You cannot approve, return, or disapprove your own RFA.', 'SELF_APPROVAL');
   const assignmentSection = currentAssignmentSection(rfa);
   const assigned = isAssignmentWorkflow(rfa) && assignmentSection
@@ -363,13 +369,12 @@ export function listRfas(user: SessionUser, filters: Record<string, unknown>): R
 }
 
 export function listForApproval(user: SessionUser): RfaRecord[] {
-  if (!toBoolean(user.CAN_APPROVE_RFA)) return [];
   return all<RfaRecord>('RFA').filter((rfa) => {
     if (isAssignmentWorkflow(rfa)) {
       const section = currentAssignmentSection(rfa);
       return Boolean(section && getAssignmentsBySection(rfa.RFA_ID, section).some((row) => String(row.APPROVER_USER_ID) === user.USER_ID) && !getApprovedAssignments(rfa, section).some((row) => String(row.APPROVER_USER_ID) === user.USER_ID));
     }
-    return normalizeEmail(rfa.CURRENT_APPROVER_EMAIL) === normalizeEmail(user.EMAIL);
+    return toBoolean(user.CAN_APPROVE_RFA) && normalizeEmail(rfa.CURRENT_APPROVER_EMAIL) === normalizeEmail(user.EMAIL);
   });
 }
 
@@ -383,7 +388,7 @@ export function detailRfa(user: SessionUser, rfaId: string): Record<string, unkn
   // canEdit: requester or admin, and RFA is in DRAFT or RETURNED status
   const canEdit = (normalizeEmail(rfa.REQUESTER_EMAIL) === normalizeEmail(user.EMAIL) || toBoolean(user.IS_ADMIN)) && ['DRAFT', 'RETURNED'].includes(rfa.STATUS);
   // An administrator may view any RFA but can decide only when explicitly assigned.
-  const canDecide = isCurrentSectionHead && normalizeEmail(rfa.REQUESTER_EMAIL) !== normalizeEmail(user.EMAIL);
+  const canDecide = isCurrentSectionHead && normalizeEmail(rfa.REQUESTER_EMAIL) !== normalizeEmail(user.EMAIL) && (isAssignmentWorkflow(rfa) || toBoolean(user.CAN_APPROVE_RFA));
   // canImplement: requester or admin, and RFA is APPROVED
   const canImplement = (normalizeEmail(rfa.REQUESTER_EMAIL) === normalizeEmail(user.EMAIL) || toBoolean(user.IS_ADMIN)) && rfa.STATUS === 'APPROVED';
   // canClose: requester or admin, and RFA is APPROVED or IMPLEMENTATION

@@ -39,15 +39,15 @@ export function AdminPage() {
     <nav className="tabs">
       <button className={tab === 'users' ? 'active' : ''} onClick={() => setTab('users')}><Users /> Users</button>
       <button className={tab === 'departments' ? 'active' : ''} onClick={() => setTab('departments')}><Building2 /> Departments</button>
-      <button className={tab === 'matrix' ? 'active' : ''} onClick={() => setTab('matrix')}><GitBranch /> Approval Matrix</button>
+      <button className={tab === 'matrix' ? 'active' : ''} onClick={() => setTab('matrix')}><GitBranch /> Legacy Approval Matrix</button>
       <button className={tab === 'logs' ? 'active' : ''} onClick={() => setTab('logs')}>System Logs</button>
     </nav>
 
     <section className="panel flush admin-panel">
       {tab !== 'logs' && <header className="panel-header">
         <div>
-          <h2>{tab === 'users' ? 'Registered users' : tab === 'departments' ? 'Departments' : 'Approval routing'}</h2>
-          <p>{tab === 'matrix' ? 'Routes run by institutional step and sequence. Self-approval conflicts are skipped automatically.' : 'No public registration or destructive deletion.'}</p>
+          <h2>{tab === 'users' ? 'Registered users' : tab === 'departments' ? 'Departments' : 'Legacy approval routing'}</h2>
+          <p>{tab === 'matrix' ? 'Used only by historical RFAs that retain the former matrix-based route. New RFAs use their saved employee selections.' : 'No public registration or destructive deletion.'}</p>
         </div>
         <button className="button primary" onClick={() => setEditing('new')}><Plus size={16}/> Add {tab === 'users' ? 'User' : tab === 'departments' ? 'Department' : 'Route'}</button>
       </header>}

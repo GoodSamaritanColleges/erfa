@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { Dialog, ErrorNotice, Spinner, StatusBadge, SuccessNotice } from '../components';
 import { date, dateTime, money, stepLabel } from '../format';
-import type { Approval, ApprovalStep, Attachment, RfaDetail } from '../types';
+import type { Approval, ApprovalStep, Attachment, Rfa, RfaDetail } from '../types';
 
 const legacySteps: ApprovalStep[] = ['PREPARED_BY', 'RECOMMENDING_APPROVAL', 'REVIEWED_AND_NOTED', 'APPROVED_BY'];
 const assignmentSteps: ApprovalStep[] = ['PREPARED_BY', 'RECOMMENDING_APPROVAL', 'REVIEWED_BY', 'NOTED_BY', 'APPROVED_BY'];
@@ -149,23 +149,13 @@ export function RfaDetailPage() {
           <StatusBadge status={rfa.STATUS} />
         </header>
         <div className="workflow-steps">
-          {steps.map((step, index) => <WorkflowStep key={step} step={step} index={index} approvals={approvals} current={rfa.CURRENT_STEP === step} />)}
+          {steps.map((step, index) => <WorkflowStep key={step} step={step} index={index} rfa={rfa} approvals={approvals} current={rfa.CURRENT_STEP === step} />)}
         </div>
       </section>
 
       <section className="approval-signatures">
         <h2>Approval Signatures</h2>
-        <div>
-          {steps.map((step) => {
-            const approval = [...approvals].reverse().find((item) => item.STEP === step && item.ACTION === 'APPROVED');
-            return <div key={step}>
-              <b>{stepLabel(step).toUpperCase()}</b>
-              {approval
-                ? <><strong>Approved electronically by<br />{approval.APPROVER_NAME}</strong><span>{dateTime(approval.TIMESTAMP)}</span></>
-                : <strong>Pending electronic approval</strong>}
-            </div>;
-          })}
-        </div>
+        <div>{steps.map((step) => <ApprovalSignature key={step} step={step} rfa={rfa} approvals={approvals} current={rfa.CURRENT_STEP === step} />)}</div>
       </section>
 
       <DocumentSection title="Approval History">
@@ -252,13 +242,41 @@ function DocumentSection({ title, children }: { title: string; children: React.R
   return <section className="document-section"><h2>{title}</h2>{children}</section>;
 }
 
-function WorkflowStep({ step, index, approvals, current }: { step: ApprovalStep; index: number; approvals: Approval[]; current: boolean }) {
-  const completed = approvals.some((item) => item.STEP === step && item.ACTION === 'APPROVED');
+function currentSubmissionActions(rfa: Rfa, step: ApprovalStep, approvals: Approval[]): Approval[] {
+  const submittedAt = Date.parse(rfa.SUBMITTED_AT);
+  return approvals.filter((item) => item.STEP === step && item.ACTION && (!Number.isFinite(submittedAt) || Date.parse(item.TIMESTAMP) >= submittedAt));
+}
+
+function assignmentRows(step: ApprovalStep, approvals: Approval[]): Approval[] {
+  return approvals.filter((item) => item.STEP === step && !item.ACTION);
+}
+
+function WorkflowStep({ step, index, rfa, approvals, current }: { step: ApprovalStep; index: number; rfa: Rfa; approvals: Approval[]; current: boolean }) {
+  const assigned = assignmentRows(step, approvals);
+  const approvedUsers = new Set(currentSubmissionActions(rfa, step, approvals).filter((item) => item.ACTION === 'APPROVED').map((item) => item.APPROVER_USER_ID));
+  const completed = assigned.length ? assigned.every((item) => approvedUsers.has(item.APPROVER_USER_ID)) : approvedUsers.size > 0;
   const exception = approvals.some((item) => item.STEP === step && ['RETURNED','DISAPPROVED','EXCEPTION'].includes(item.ACTION));
   return <div className={`${completed ? 'completed' : ''} ${current ? 'current' : ''} ${exception ? 'exception' : ''}`}>
     <span>{completed ? <Check size={14} /> : index + 1}</span>
     <b>{stepLabel(step)}</b>
     <small>{completed ? 'Complete' : current ? 'Awaiting action' : exception ? 'Action recorded' : 'Pending'}</small>
+  </div>;
+}
+
+function ApprovalSignature({ step, rfa, approvals, current }: { step: ApprovalStep; rfa: Rfa; approvals: Approval[]; current: boolean }) {
+  const assigned = assignmentRows(step, approvals);
+  const actions = new Map(currentSubmissionActions(rfa, step, approvals).map((item) => [item.APPROVER_USER_ID, item]));
+  const fallback = [...currentSubmissionActions(rfa, step, approvals)].reverse()[0];
+  return <div>
+    <b>{stepLabel(step).toUpperCase()}</b>
+    {assigned.length > 0 ? <ul className="signature-assignees">
+      {assigned.map((employee) => {
+        const action = actions.get(employee.APPROVER_USER_ID);
+        return <li key={employee.APPROVAL_ID}><strong>{employee.APPROVER_NAME}</strong><span>{action ? `${action.ACTION} · ${dateTime(action.TIMESTAMP)}` : current ? 'Awaiting action' : 'Waiting for prior stage'}</span></li>;
+      })}
+    </ul> : fallback
+      ? <><strong>{fallback.ACTION === 'APPROVED' ? `Approved electronically by ${fallback.APPROVER_NAME}` : `${fallback.ACTION} by ${fallback.APPROVER_NAME}`}</strong><span>{dateTime(fallback.TIMESTAMP)}</span></>
+      : <strong>Pending electronic approval</strong>}
   </div>;
 }
 

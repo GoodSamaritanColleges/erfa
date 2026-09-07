@@ -11,7 +11,7 @@ Except for `health`, every action authenticates the Google token, checks the reg
 ## Actions
 
 - `health`, `session`
-- `rfa.list`, `rfa.forApproval`, `rfa.detail`
+- `rfa.list`, `rfa.forApproval`, `rfa.detail`, `rfa.eligibleApprovers`
 - `rfa.create`, `rfa.update`, `rfa.submit`, `rfa.resubmit`
 - `rfa.approve`, `rfa.return`, `rfa.disapprove`
 - `rfa.implementation`, `rfa.close`, `rfa.cancel`
@@ -21,4 +21,3 @@ Except for `health`, every action authenticates the Google token, checks the reg
 The API is an explicit allow-list. It exposes no arbitrary sheet read/write operation. Mutations run under a script lock. Error responses contain safe user-facing messages and stable categories such as `UNAUTHORIZED`, `NOT_REGISTERED`, `INACTIVE_USER`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, and `CONFIGURATION_REQUIRED`.
 
 Attachments are base64-encoded only for the request/response boundary. The backend validates MIME type and decoded size, saves the file to private Drive storage, and returns metadata without a Drive file ID. Download requests re-check RFA access before reading the blob.
-
