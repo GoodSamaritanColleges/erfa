@@ -95,5 +95,16 @@ export function nextAssignedSection(counts: Record<ApprovalSection, number>, sta
 }
 
 export function isAssignedSectionComplete(assignedCount: number, approvedCount: number): boolean {
-  return assignedCount === 0 || approvedCount >= assignedCount;
+  return assignedCount > 0 && approvedCount === assignedCount;
+}
+
+/** Returns the current incomplete stage, the next stage, or undefined only after all assigned stages finish. */
+export function nextAssignedStageAfterAction(
+  assignedCounts: Record<ApprovalSection, number>,
+  approvedCounts: Record<ApprovalSection, number>,
+  currentIndex: number
+): ApprovalSection | undefined {
+  const current = APPROVAL_SECTIONS[currentIndex];
+  if (current && !isAssignedSectionComplete(assignedCounts[current], approvedCounts[current])) return current;
+  return nextAssignedSection(assignedCounts, currentIndex + 1);
 }

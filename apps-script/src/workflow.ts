@@ -1,6 +1,6 @@
 import { ALLOWED_ATTACHMENT_TYPES, APPROVAL_SECTIONS, ASSIGNMENT_WORKFLOW_MARKER, STEP_STATUS } from './constants';
 import { audit } from './audit';
-import { formatRfaNumber, isAssignedSectionComplete, nextAssignedSection, normalizeEmail, orderedMatrix, selectNextApprover, toBoolean, validateRfaInput } from './core';
+import { formatRfaNumber, nextAssignedSection, nextAssignedStageAfterAction, normalizeEmail, orderedMatrix, selectNextApprover, toBoolean, validateRfaInput } from './core';
 import { notify } from './notifications';
 import { all, clearPendingRfaAssignments, findBy, getAssignmentsBySection, getSetting, insert, newId, nowIso, saveRfaSectionAssignments, setSetting, updateBy } from './store';
 import type { ApprovalSection, DepartmentRecord, EligibleApprover, MatrixRecord, RfaRecord, RfaSectionAssignments, SessionUser, SheetRecord, UserRecord } from './types';
@@ -22,13 +22,6 @@ function currentAssignmentSection(rfa: RfaRecord): ApprovalSection | null {
 function getApprovedAssignments(rfa: RfaRecord, section: ApprovalSection): SheetRecord[] {
   const submittedAt = Date.parse(String(rfa.SUBMITTED_AT || ''));
   return approvalRows(rfa.RFA_ID).filter((row) => row.STEP === section && row.ACTION === 'APPROVED' && (!Number.isFinite(submittedAt) || Date.parse(String(row.TIMESTAMP || '')) >= submittedAt));
-}
-
-function isCurrentSectionComplete(rfa: RfaRecord): boolean {
-  const section = currentAssignmentSection(rfa);
-  if (!section) return false;
-  const assigned = getAssignmentsBySection(rfa.RFA_ID, section);
-  return isAssignedSectionComplete(assigned.length, getApprovedAssignments(rfa, section).length);
 }
 
 function getRfa(id: string): RfaRecord {
@@ -145,13 +138,14 @@ function completeAssignedWorkflow(rfa: RfaRecord, actor: SessionUser): RfaRecord
 }
 
 function routeAssigned(rfa: RfaRecord, actor: SessionUser, startIndex: number): RfaRecord {
-  const counts = APPROVAL_SECTIONS.reduce((allCounts, section) => ({ ...allCounts, [section]: getAssignmentsBySection(rfa.RFA_ID, section).length }), {} as Record<ApprovalSection, number>);
+  const assignments = approvalRows(rfa.RFA_ID).filter((row) => row.ACTION === '');
+  const counts = APPROVAL_SECTIONS.reduce((allCounts, section) => ({ ...allCounts, [section]: assignments.filter((row) => row.STEP === section).length }), {} as Record<ApprovalSection, number>);
   const section = nextAssignedSection(counts, startIndex);
   if (section) {
     for (let index = startIndex; index < APPROVAL_SECTIONS.indexOf(section); index += 1) {
       audit('STAGE_SKIPPED', actor, rfa.RFA_ID, rfa.STATUS, rfa.STATUS, 'No approvers selected for this section.', { section: APPROVAL_SECTIONS[index] });
     }
-    const assigned = getAssignmentsBySection(rfa.RFA_ID, section);
+    const assigned = assignments.filter((row) => row.STEP === section);
     const updates = { STATUS: STEP_STATUS[section], CURRENT_STEP: section, CURRENT_APPROVER_USER_ID: '', CURRENT_APPROVER_EMAIL: '', CURRENT_MATRIX_ID: ASSIGNMENT_WORKFLOW_MARKER, RESUME_MATRIX_ID: '', UPDATED_AT: nowIso(), VERSION: Number(rfa.VERSION) + 1 };
     updateBy('RFA', 'RFA_ID', rfa.RFA_ID, updates);
     const routed = { ...rfa, ...updates } as RfaRecord;
@@ -207,6 +201,9 @@ function parseAssignments(user: SessionUser, value: unknown): RfaSectionAssignme
 function saveAssignments(rfa: RfaRecord, assignments: RfaSectionAssignments): void {
   clearPendingRfaAssignments(rfa.RFA_ID);
   APPROVAL_SECTIONS.forEach((section) => saveRfaSectionAssignments(rfa.RFA_ID, rfa.RFA_NUMBER, section, assignments[section]));
+  const persisted = approvalRows(rfa.RFA_ID).filter((row) => row.ACTION === '');
+  const savedCorrectly = APPROVAL_SECTIONS.every((section) => persisted.filter((row) => row.STEP === section).length === assignments[section].length);
+  if (!savedCorrectly) businessError('The approval route could not be saved. Please try again.', 'CONFLICT');
 }
 
 export function eligibleApprovers(user: SessionUser): Record<string, unknown> {
@@ -316,7 +313,10 @@ export function decideRfa(user: SessionUser, rfaId: string, action: 'APPROVED' |
 
   audit('APPROVED', user, rfa.RFA_ID, previous, previous, remarks, { step: rfa.CURRENT_STEP });
   if (isAssignmentWorkflow(rfa) && assignmentSection) {
-    if (!isCurrentSectionComplete(rfa)) return rfa;
+    const assignedCounts = APPROVAL_SECTIONS.reduce((counts, section) => ({ ...counts, [section]: getAssignmentsBySection(rfa.RFA_ID, section).length }), {} as Record<ApprovalSection, number>);
+    const approvedCounts = APPROVAL_SECTIONS.reduce((counts, section) => ({ ...counts, [section]: getApprovedAssignments(rfa, section).length }), {} as Record<ApprovalSection, number>);
+    const next = nextAssignedStageAfterAction(assignedCounts, approvedCounts, APPROVAL_SECTIONS.indexOf(assignmentSection));
+    if (next === assignmentSection) return rfa;
     return routeAssigned(rfa, user, APPROVAL_SECTIONS.indexOf(assignmentSection) + 1);
   }
   const matrix = orderedMatrix(all<MatrixRecord>('APPROVAL_MATRIX').filter((row) => row.DEPARTMENT_ID === rfa.DEPARTMENT_ID));

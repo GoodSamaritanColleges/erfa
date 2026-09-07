@@ -1,4 +1,4 @@
-import { ArrowLeft, FileText, Paperclip, Plus, Save, Send, X } from 'lucide-react';
+import { ArrowLeft, FileText, Paperclip, Save, Send, X } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, fileToBase64 } from '../api';
@@ -179,23 +179,16 @@ export function RfaFormPage() {
 }
 
 function ApproverSelector({ section, employees, selectedIds, onChange }: { section: { key: ApprovalSection; label: string }; employees: EmployeeDirectory; selectedIds: string[]; onChange: (ids: string[]) => void }) {
-  const [candidateId, setCandidateId] = useState('');
   const selected = selectedIds.map((id) => employees.find((candidate) => candidate.USER_ID === id)).filter((candidate): candidate is EligibleApprover => Boolean(candidate));
   const available = employees.filter((candidate) => !selectedIds.includes(candidate.USER_ID));
-  const add = () => {
-    if (!candidateId || selectedIds.includes(candidateId)) return;
-    onChange([...selectedIds, candidateId]);
-    setCandidateId('');
-  };
   return <div className="approver-selector">
     <h3>{section.label}</h3>
-        <p>{employees.length ? 'Choose zero or more active approvers.' : 'No active approvers are currently available.'}</p>
+    <p>{employees.length ? 'Choose zero or more active approvers. Each selection is added immediately.' : 'No active approvers are currently available.'}</p>
     <div className="approver-add">
-      <select value={candidateId} onChange={(event) => setCandidateId(event.target.value)} aria-label={`Add approver for ${section.label}`}>
+      <select value="" onChange={(event) => { const id = event.target.value; if (id && !selectedIds.includes(id)) onChange([...selectedIds, id]); }} aria-label={`Add approver for ${section.label}`}>
         <option value="">Select person</option>
         {available.map((candidate) => <option key={candidate.USER_ID} value={candidate.USER_ID}>{candidate.FULL_NAME} — {candidate.POSITION || 'No position'} · {candidate.DEPARTMENT}</option>)}
       </select>
-      <button type="button" className="button secondary" onClick={add} disabled={!candidateId}><Plus size={16} /> Add</button>
     </div>
     {selected.length > 0 && <ul className="selected-approvers">
       {selected.map((candidate) => <li key={candidate.USER_ID}><span><b>{candidate.FULL_NAME}</b><small>{candidate.POSITION || 'No position'} · {candidate.DEPARTMENT}</small></span><button type="button" className="icon-button" onClick={() => onChange(selectedIds.filter((id) => id !== candidate.USER_ID))} aria-label={`Remove ${candidate.FULL_NAME} from ${section.label}`}><X size={16} /></button></li>)}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canonicalIsoDate, formatRfaNumber, isAssignedSectionComplete, nextAssignedSection, selectNextApprover, validateRfaInput } from '../src/core';
+import { canonicalIsoDate, formatRfaNumber, isAssignedSectionComplete, nextAssignedSection, nextAssignedStageAfterAction, selectNextApprover, validateRfaInput } from '../src/core';
 import type { MatrixRecord, UserRecord } from '../src/types';
 
 const baseUser = (id: string, email: string, overrides: Partial<UserRecord> = {}): UserRecord => ({
@@ -57,6 +57,16 @@ describe('eRFA workflow core', () => {
     expect(isAssignedSectionComplete(3, 1)).toBe(false);
     expect(isAssignedSectionComplete(3, 2)).toBe(false);
     expect(isAssignedSectionComplete(3, 3)).toBe(true);
-    expect(isAssignedSectionComplete(0, 0)).toBe(true);
+    expect(isAssignedSectionComplete(0, 0)).toBe(false);
+  });
+
+  it('advances a saved multi-stage route only after every current assignee approves', () => {
+    const assigned = { RECOMMENDING_APPROVAL: 2, REVIEWED_BY: 1, NOTED_BY: 1, APPROVED_BY: 1 };
+    expect(nextAssignedStageAfterAction(assigned, { RECOMMENDING_APPROVAL: 0, REVIEWED_BY: 0, NOTED_BY: 0, APPROVED_BY: 0 }, 0)).toBe('RECOMMENDING_APPROVAL');
+    expect(nextAssignedStageAfterAction(assigned, { RECOMMENDING_APPROVAL: 1, REVIEWED_BY: 0, NOTED_BY: 0, APPROVED_BY: 0 }, 0)).toBe('RECOMMENDING_APPROVAL');
+    expect(nextAssignedStageAfterAction(assigned, { RECOMMENDING_APPROVAL: 2, REVIEWED_BY: 0, NOTED_BY: 0, APPROVED_BY: 0 }, 0)).toBe('REVIEWED_BY');
+    expect(nextAssignedStageAfterAction(assigned, { RECOMMENDING_APPROVAL: 2, REVIEWED_BY: 1, NOTED_BY: 0, APPROVED_BY: 0 }, 1)).toBe('NOTED_BY');
+    expect(nextAssignedStageAfterAction(assigned, { RECOMMENDING_APPROVAL: 2, REVIEWED_BY: 1, NOTED_BY: 1, APPROVED_BY: 0 }, 2)).toBe('APPROVED_BY');
+    expect(nextAssignedStageAfterAction(assigned, { RECOMMENDING_APPROVAL: 2, REVIEWED_BY: 1, NOTED_BY: 1, APPROVED_BY: 1 }, 3)).toBeUndefined();
   });
 });

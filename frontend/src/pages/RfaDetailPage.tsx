@@ -149,7 +149,7 @@ export function RfaDetailPage() {
           <StatusBadge status={rfa.STATUS} />
         </header>
         <div className="workflow-steps">
-          {steps.map((step, index) => <WorkflowStep key={step} step={step} index={index} rfa={rfa} approvals={approvals} current={rfa.CURRENT_STEP === step} />)}
+          {steps.map((step, index) => <WorkflowStep key={step} step={step} index={index} rfa={rfa} approvals={approvals} current={rfa.CURRENT_STEP === step && rfa.STATUS.startsWith('PENDING_')} />)}
         </div>
       </section>
 

@@ -286,5 +286,5 @@ export function countApprovedUsers(rfaId: string, section: ApprovalSection): num
 export function isSectionComplete(rfaId: string, section: ApprovalSection): boolean {
   const assigned = countAssignedUsers(rfaId, section);
   const approved = countApprovedUsers(rfaId, section);
-  return assigned === 0 || approved >= assigned;
+  return assigned > 0 && approved === assigned;
 }

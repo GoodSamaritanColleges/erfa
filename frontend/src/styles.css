@@ -320,7 +320,7 @@ tbody td small { display: block; color: var(--muted); font-size: var(--text-xs);
 .approver-selector { border: 1px solid var(--line); border-radius: var(--radius); padding: .9rem; background: #fcfcfd; }
 .approver-selector h3 { font-size: var(--text-sm); }
 .approver-selector > p { margin: .2rem 0 .7rem; color: var(--muted); font-size: var(--text-xs); line-height: 1.45; }
-.approver-add { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem; }
+.approver-add { display: grid; grid-template-columns: minmax(0, 1fr); gap: .5rem; }
 .approver-add select { width: 100%; min-width: 0; padding: .55rem .65rem; border: 1px solid #d0d5dd; border-radius: var(--radius-sm); background: #fff; color: var(--ink); font-size: var(--text-sm); }
 .selected-approvers { display: grid; gap: .35rem; margin: .7rem 0 0; padding: 0; list-style: none; }
 .selected-approvers li { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .5rem .55rem; border: 1px solid #e7eaf0; border-radius: var(--radius-sm); background: #fff; }
