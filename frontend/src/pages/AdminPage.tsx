@@ -71,7 +71,7 @@ function UsersTable({ users, departments, edit }: { users: User[]; departments: 
     <tbody>{users.map((user) => <tr key={user.USER_ID}>
       <td data-label="Name"><b>{user.FULL_NAME}</b><small>{user.EMAIL}</small></td>
       <td data-label="Department">{departments.find((d) => d.DEPARTMENT_ID === user.DEPARTMENT_ID)?.DEPARTMENT_NAME || 'Not assigned'}<small>{user.POSITION}</small></td>
-      <td data-label="Capabilities"><div className="chips">{user.CAN_CREATE_RFA && <span>Create</span>}{user.CAN_APPROVE_RFA && <span>Approve</span>}{user.IS_ADMIN && <span>Admin</span>}</div></td>
+      <td data-label="Capabilities"><div className="chips">{user.CAN_CREATE_RFA && <span>Create</span>}{user.CAN_APPROVE_RFA && <span>Approve</span>}{user.CAN_IMPLEMENT_RFA && <span>Implement</span>}{user.IS_ADMIN && <span>Admin</span>}</div></td>
       <td data-label="Status">{user.ACTIVE ? 'Active' : 'Inactive'}</td>
       <td><button className="icon-button" onClick={() => edit(user)} aria-label={`Edit ${user.FULL_NAME}`}><Pencil/></button></td>
     </tr>)}</tbody>
@@ -137,7 +137,7 @@ function AdminForm({ tab, editing, data, onSaved, onError }: { tab: Tab; editing
     setSaving(true);
     onError('');
     try {
-      if (tab === 'users') await api('admin.user.save', { userId: form.USER_ID, fullName: form.FULL_NAME, email: form.EMAIL, departmentId: form.DEPARTMENT_ID, position: form.POSITION, canCreateRfa: form.CAN_CREATE_RFA ?? true, canApproveRfa: form.CAN_APPROVE_RFA ?? false, isAdmin: form.IS_ADMIN ?? false, active: form.ACTIVE ?? true });
+      if (tab === 'users') await api('admin.user.save', { userId: form.USER_ID, fullName: form.FULL_NAME, email: form.EMAIL, departmentId: form.DEPARTMENT_ID, position: form.POSITION, canCreateRfa: form.CAN_CREATE_RFA ?? true, canApproveRfa: form.CAN_APPROVE_RFA ?? false, canImplementRfa: form.CAN_IMPLEMENT_RFA ?? false, isAdmin: form.IS_ADMIN ?? false, active: form.ACTIVE ?? true });
       else if (tab === 'departments') await api('admin.department.save', { departmentId: form.DEPARTMENT_ID, departmentName: form.DEPARTMENT_NAME, departmentCode: form.DEPARTMENT_CODE, active: form.ACTIVE ?? true });
       else await api('admin.matrix.save', { matrixId: form.MATRIX_ID, departmentId: form.DEPARTMENT_ID, approvalStep: form.APPROVAL_STEP ?? 'RECOMMENDING_APPROVAL', approverUserId: form.APPROVER_USER_ID, sequence: form.SEQUENCE ?? 1, required: true, active: form.ACTIVE ?? true });
       onSaved();
@@ -153,6 +153,7 @@ function AdminForm({ tab, editing, data, onSaved, onError }: { tab: Tab; editing
       <label className="field"><span>Position</span><input value={String(form.POSITION ?? '')} onChange={(e) => set('POSITION',e.target.value)}/></label>
       <Checkbox label="Can Create RFA" checked={Boolean(form.CAN_CREATE_RFA ?? true)} set={(v) => set('CAN_CREATE_RFA',v)}/>
       <Checkbox label="Can Approve RFA" checked={Boolean(form.CAN_APPROVE_RFA)} set={(v) => set('CAN_APPROVE_RFA',v)}/>
+      <Checkbox label="Can Implement RFA" checked={Boolean(form.CAN_IMPLEMENT_RFA)} set={(v) => set('CAN_IMPLEMENT_RFA',v)}/>
       <Checkbox label="Administrator" checked={Boolean(form.IS_ADMIN)} set={(v) => set('IS_ADMIN',v)}/>
       <Checkbox label="Active" checked={Boolean(form.ACTIVE ?? true)} set={(v) => set('ACTIVE',v)}/>
     </>}

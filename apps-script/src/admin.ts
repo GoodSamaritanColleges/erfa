@@ -32,7 +32,7 @@ export function saveUser(actor: SessionUser, payload: Record<string, unknown>): 
   const values = {
     FULL_NAME: required(payload.fullName, 'Full Name'), EMAIL: email, DEPARTMENT_ID: departmentId,
     POSITION: String(payload.position ?? '').trim(), CAN_CREATE_RFA: toBoolean(payload.canCreateRfa),
-    CAN_APPROVE_RFA: toBoolean(payload.canApproveRfa), IS_ADMIN: toBoolean(payload.isAdmin), ACTIVE: payload.active === undefined ? true : toBoolean(payload.active), UPDATED_AT: timestamp
+    CAN_APPROVE_RFA: toBoolean(payload.canApproveRfa), CAN_IMPLEMENT_RFA: toBoolean(payload.canImplementRfa), IS_ADMIN: toBoolean(payload.isAdmin), ACTIVE: payload.active === undefined ? true : toBoolean(payload.active), UPDATED_AT: timestamp
   };
   if (id) {
     const existing = findBy<UserRecord>('USERS', 'USER_ID', id);

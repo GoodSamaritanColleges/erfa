@@ -4,7 +4,7 @@ import type { MatrixRecord, UserRecord } from '../src/types';
 
 const baseUser = (id: string, email: string, overrides: Partial<UserRecord> = {}): UserRecord => ({
   USER_ID: id, FULL_NAME: id, EMAIL: email, DEPARTMENT_ID: 'dep', POSITION: '', CAN_CREATE_RFA: true,
-  CAN_APPROVE_RFA: true, IS_ADMIN: false, ACTIVE: true, CREATED_AT: '', UPDATED_AT: '', ...overrides
+  CAN_APPROVE_RFA: true, CAN_IMPLEMENT_RFA: false, IS_ADMIN: false, ACTIVE: true, CREATED_AT: '', UPDATED_AT: '', ...overrides
 });
 const matrix = (id: string, userId: string, step: MatrixRecord['APPROVAL_STEP'], sequence: number): MatrixRecord => ({
   MATRIX_ID: id, DEPARTMENT_ID: 'dep', APPROVAL_STEP: step, APPROVER_USER_ID: userId, SEQUENCE: sequence,

@@ -6,7 +6,7 @@
 
 ### USERS
 
-Stable user identity, profile, and independent `CAN_CREATE_RFA`, `CAN_APPROVE_RFA`, `IS_ADMIN`, and `ACTIVE` capabilities. Deactivation is soft.
+Stable user identity, profile, and independent `CAN_CREATE_RFA`, `CAN_APPROVE_RFA`, `CAN_IMPLEMENT_RFA`, `IS_ADMIN`, and `ACTIVE` capabilities. Deactivation is soft.
 
 ### DEPARTMENTS
 
@@ -39,4 +39,3 @@ Real delivery attempts with recipient, type, subject, sent timestamp, status, er
 ### SETTINGS
 
 Configuration and internal numbering state. Required deployment values are `GOOGLE_CLIENT_ID` and `FRONTEND_URL`; `ALLOWED_DOMAIN` is optional. `ATTACHMENT_ROOT_FOLDER_ID` is created automatically. No secret belongs in this sheet or the frontend.
-

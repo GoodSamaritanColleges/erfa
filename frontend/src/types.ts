@@ -4,7 +4,7 @@ export type ApprovalSection = 'RECOMMENDING_APPROVAL' | 'REVIEWED_BY' | 'NOTED_B
 
 export interface SessionUser {
   USER_ID: string; FULL_NAME: string; EMAIL: string; DEPARTMENT_ID: string; DEPARTMENT_NAME: string; POSITION: string;
-  CAN_CREATE_RFA: boolean; CAN_APPROVE_RFA: boolean; IS_ADMIN: boolean; ACTIVE: boolean;
+  CAN_CREATE_RFA: boolean; CAN_APPROVE_RFA: boolean; CAN_IMPLEMENT_RFA: boolean; IS_ADMIN: boolean; ACTIVE: boolean;
 }
 export interface Department { DEPARTMENT_ID: string; DEPARTMENT_NAME: string; DEPARTMENT_CODE: string; ACTIVE: boolean; CREATED_AT: string; UPDATED_AT: string }
 export interface User extends Omit<SessionUser, 'DEPARTMENT_NAME'> { CREATED_AT: string; UPDATED_AT: string }

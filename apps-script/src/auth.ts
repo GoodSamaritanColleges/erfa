@@ -42,7 +42,7 @@ export function authenticate(idToken: string): SessionUser {
   return { ...user, DEPARTMENT_NAME: department?.DEPARTMENT_NAME ?? '' };
 }
 
-export function requireCapability(user: SessionUser, capability: 'CAN_CREATE_RFA' | 'CAN_APPROVE_RFA' | 'IS_ADMIN'): void {
+export function requireCapability(user: SessionUser, capability: 'CAN_CREATE_RFA' | 'CAN_APPROVE_RFA' | 'CAN_IMPLEMENT_RFA' | 'IS_ADMIN'): void {
   if (!toBoolean(user[capability])) {
     audit('ACCESS_DENIED', user, '', '', '', `Missing capability ${capability}.`);
     fail('You do not have permission to perform this action.', 'FORBIDDEN');
@@ -57,10 +57,9 @@ export function bootstrapAdmin(email: string, fullName: string): UserRecord {
   const timestamp = nowIso();
   const admin: UserRecord = {
     USER_ID: newId('usr'), FULL_NAME: fullName.trim(), EMAIL: normalized, DEPARTMENT_ID: '', POSITION: '',
-    CAN_CREATE_RFA: true, CAN_APPROVE_RFA: true, IS_ADMIN: true, ACTIVE: true, CREATED_AT: timestamp, UPDATED_AT: timestamp
+    CAN_CREATE_RFA: true, CAN_APPROVE_RFA: true, CAN_IMPLEMENT_RFA: true, IS_ADMIN: true, ACTIVE: true, CREATED_AT: timestamp, UPDATED_AT: timestamp
   };
   insert('USERS', admin);
   audit('USER_CREATED', admin as SessionUser, '', '', '', 'Initial administrator bootstrapped.');
   return admin;
 }
-

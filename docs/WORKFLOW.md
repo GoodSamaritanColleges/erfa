@@ -4,7 +4,7 @@
 
 1. An authenticated user with `CAN_CREATE_RFA` saves a draft. eRFA assigns a locked, unique number such as `RFA-2026-0001`.
 2. Submission validates all institutional form fields and records `PREPARED_BY` electronically.
-3. The requester-selected active employees are saved as the RFA's immutable route: Recommending Approval, Reviewed By, Noted By, then Approved By.
+3. The requester-selected active approvers are saved as the RFA's immutable route: Recommending Approval, Reviewed By, Noted By, then Approved By.
 4. Only the employees in the first non-empty stage receive a direct **View RFA** email link and see the RFA under **For My Action**.
 5. Each selected employee's action is appended to history. A stage advances only after every selected employee approves; then the next non-empty stage is activated and emailed.
 6. After the final selected stage approves, status becomes `APPROVED` and the requester is notified. If every selectable stage is empty, the RFA completes without leaving a pending route.

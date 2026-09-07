@@ -146,7 +146,7 @@ export function RfaFormPage() {
       {usesAssignmentWorkflow && <section className="form-card approval-assignment-card">
         <div className="section-title">
           <span>04</span>
-          <div><h2>Approval route</h2><p>Prepared By is automatic. Select any active employee for each remaining signature stage; empty stages are skipped automatically.</p></div>
+          <div><h2>Approval route</h2><p>Prepared By is automatic. Select active approvers for each remaining signature stage; empty stages are skipped automatically.</p></div>
         </div>
         <div className="approval-assignment-grid">
           {sections.map((section) => <ApproverSelector key={section.key} section={section} employees={employees} selectedIds={assignments[section.key]} onChange={(ids) => setAssignments((current) => ({ ...current, [section.key]: ids }))} />)}
@@ -188,7 +188,7 @@ function ApproverSelector({ section, employees, selectedIds, onChange }: { secti
   };
   return <div className="approver-selector">
     <h3>{section.label}</h3>
-    <p>{employees.length ? 'Choose zero or more active employees.' : 'No active employees are currently available.'}</p>
+        <p>{employees.length ? 'Choose zero or more active approvers.' : 'No active approvers are currently available.'}</p>
     <div className="approver-add">
       <select value={candidateId} onChange={(event) => setCandidateId(event.target.value)} aria-label={`Add approver for ${section.label}`}>
         <option value="">Select person</option>

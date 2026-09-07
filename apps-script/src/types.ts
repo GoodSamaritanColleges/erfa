@@ -8,6 +8,7 @@ export interface UserRecord extends SheetRecord {
   POSITION: string;
   CAN_CREATE_RFA: boolean;
   CAN_APPROVE_RFA: boolean;
+  CAN_IMPLEMENT_RFA: boolean;
   IS_ADMIN: boolean;
   ACTIVE: boolean;
   CREATED_AT: string;

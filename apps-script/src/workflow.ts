@@ -55,6 +55,7 @@ export function resetWorkflowCache(): void { folderCache.clear(); }
 
 function canView(user: SessionUser, rfa: RfaRecord): boolean {
   if (toBoolean(user.IS_ADMIN) || normalizeEmail(rfa.REQUESTER_EMAIL) === normalizeEmail(user.EMAIL)) return true;
+  if (toBoolean(user.CAN_IMPLEMENT_RFA) && ['APPROVED', 'IMPLEMENTATION'].includes(rfa.STATUS)) return true;
   if (normalizeEmail(rfa.CURRENT_APPROVER_EMAIL) === normalizeEmail(user.EMAIL)) return true;
   return approvalRows(rfa.RFA_ID).some((row) => normalizeEmail(row.APPROVER_EMAIL) === normalizeEmail(user.EMAIL));
 }
@@ -62,6 +63,7 @@ function canView(user: SessionUser, rfa: RfaRecord): boolean {
 /** Optimized canView that reuses preloaded approval index (avoids N+1). */
 function canViewWithApproverSet(user: SessionUser, rfa: RfaRecord, approverRfaSet: Set<string>): boolean {
   if (toBoolean(user.IS_ADMIN) || normalizeEmail(rfa.REQUESTER_EMAIL) === normalizeEmail(user.EMAIL)) return true;
+  if (toBoolean(user.CAN_IMPLEMENT_RFA) && ['APPROVED', 'IMPLEMENTATION'].includes(rfa.STATUS)) return true;
   if (normalizeEmail(rfa.CURRENT_APPROVER_EMAIL) === normalizeEmail(user.EMAIL)) return true;
   return approverRfaSet.has(String(rfa.RFA_ID));
 }
@@ -168,7 +170,7 @@ function activeEmployeeDirectory(user: SessionUser, users = all<UserRecord>('USE
   const departments = new Map(all<DepartmentRecord>('DEPARTMENTS').map((department) => [department.DEPARTMENT_ID, department.DEPARTMENT_NAME]));
   const requesterEmail = normalizeEmail(user.EMAIL);
   return users
-    .filter((candidate) => toBoolean(candidate.ACTIVE) && candidate.USER_ID !== user.USER_ID && normalizeEmail(candidate.EMAIL) !== requesterEmail)
+    .filter((candidate) => toBoolean(candidate.ACTIVE) && toBoolean(candidate.CAN_APPROVE_RFA) && candidate.USER_ID !== user.USER_ID && normalizeEmail(candidate.EMAIL) !== requesterEmail)
     .map((candidate) => ({
       USER_ID: candidate.USER_ID,
       FULL_NAME: candidate.FULL_NAME,
@@ -192,8 +194,10 @@ function parseAssignments(user: SessionUser, value: unknown): RfaSectionAssignme
       const directoryUser = usersById.get(id);
       if (!directoryUser) businessError('A selected employee no longer exists in the employee directory.', 'FORBIDDEN');
       if (!toBoolean(directoryUser.ACTIVE)) businessError('A selected employee is inactive and cannot be assigned.', 'FORBIDDEN');
+      if (directoryUser.USER_ID === user.USER_ID || normalizeEmail(directoryUser.EMAIL) === normalizeEmail(user.EMAIL)) businessError('You cannot assign yourself as an approver for this RFA.', 'SELF_APPROVAL');
+      if (!toBoolean(directoryUser.CAN_APPROVE_RFA)) businessError('A selected employee does not have approval capability.', 'FORBIDDEN');
       const candidate = activeEmployees.get(id);
-      if (!candidate) businessError('You cannot assign yourself as an approver for this RFA.', 'SELF_APPROVAL');
+      if (!candidate) businessError('A selected employee is not available for approval.', 'FORBIDDEN');
       return candidate;
     });
   });
@@ -279,7 +283,7 @@ export function submitRfa(user: SessionUser, rfaId: string, resubmit = false): R
 
 export function decideRfa(user: SessionUser, rfaId: string, action: 'APPROVED' | 'RETURNED' | 'DISAPPROVED', remarks: string): RfaRecord {
   const rfa = getRfa(rfaId);
-  if (!isAssignmentWorkflow(rfa) && !toBoolean(user.CAN_APPROVE_RFA)) businessError('You do not have approval permission.', 'FORBIDDEN');
+  if (!toBoolean(user.CAN_APPROVE_RFA)) businessError('You do not have approval permission.', 'FORBIDDEN');
   if (normalizeEmail(rfa.REQUESTER_EMAIL) === normalizeEmail(user.EMAIL)) businessError('You cannot approve, return, or disapprove your own RFA.', 'SELF_APPROVAL');
   const assignmentSection = currentAssignmentSection(rfa);
   const assigned = isAssignmentWorkflow(rfa) && assignmentSection
@@ -330,7 +334,8 @@ export function decideRfa(user: SessionUser, rfaId: string, action: 'APPROVED' |
 export function transitionCloseout(user: SessionUser, rfaId: string, action: 'IMPLEMENTATION' | 'CLOSED' | 'CANCELLED'): RfaRecord {
   const rfa = getRfa(rfaId);
   const owns = normalizeEmail(rfa.REQUESTER_EMAIL) === normalizeEmail(user.EMAIL);
-  if (!owns && !toBoolean(user.IS_ADMIN)) businessError('Only the requester or an administrator can update implementation status.', 'FORBIDDEN');
+  const canImplement = toBoolean(user.CAN_IMPLEMENT_RFA) || toBoolean(user.IS_ADMIN);
+  if (action === 'CANCELLED' ? !owns && !toBoolean(user.IS_ADMIN) : !canImplement) businessError(action === 'CANCELLED' ? 'Only the requester or an administrator can cancel this RFA.' : 'You do not have implementation permission.', 'FORBIDDEN');
   if (action === 'IMPLEMENTATION' && rfa.STATUS !== 'APPROVED') businessError('Only an approved RFA can enter implementation.');
   if (action === 'CLOSED' && !['APPROVED', 'IMPLEMENTATION'].includes(rfa.STATUS)) businessError('Only an approved or implementation-stage RFA can be closed.');
   if (action === 'CANCELLED' && !['DRAFT', 'RETURNED'].includes(rfa.STATUS)) businessError('Only a draft or returned RFA can be cancelled.');
@@ -369,6 +374,7 @@ export function listRfas(user: SessionUser, filters: Record<string, unknown>): R
 }
 
 export function listForApproval(user: SessionUser): RfaRecord[] {
+  if (!toBoolean(user.CAN_APPROVE_RFA)) return [];
   return all<RfaRecord>('RFA').filter((rfa) => {
     if (isAssignmentWorkflow(rfa)) {
       const section = currentAssignmentSection(rfa);
@@ -388,11 +394,9 @@ export function detailRfa(user: SessionUser, rfaId: string): Record<string, unkn
   // canEdit: requester or admin, and RFA is in DRAFT or RETURNED status
   const canEdit = (normalizeEmail(rfa.REQUESTER_EMAIL) === normalizeEmail(user.EMAIL) || toBoolean(user.IS_ADMIN)) && ['DRAFT', 'RETURNED'].includes(rfa.STATUS);
   // An administrator may view any RFA but can decide only when explicitly assigned.
-  const canDecide = isCurrentSectionHead && normalizeEmail(rfa.REQUESTER_EMAIL) !== normalizeEmail(user.EMAIL) && (isAssignmentWorkflow(rfa) || toBoolean(user.CAN_APPROVE_RFA));
-  // canImplement: requester or admin, and RFA is APPROVED
-  const canImplement = (normalizeEmail(rfa.REQUESTER_EMAIL) === normalizeEmail(user.EMAIL) || toBoolean(user.IS_ADMIN)) && rfa.STATUS === 'APPROVED';
-  // canClose: requester or admin, and RFA is APPROVED or IMPLEMENTATION
-  const canClose = (normalizeEmail(rfa.REQUESTER_EMAIL) === normalizeEmail(user.EMAIL) || toBoolean(user.IS_ADMIN)) && ['APPROVED', 'IMPLEMENTATION'].includes(rfa.STATUS);
+  const canDecide = isCurrentSectionHead && normalizeEmail(rfa.REQUESTER_EMAIL) !== normalizeEmail(user.EMAIL) && toBoolean(user.CAN_APPROVE_RFA);
+  const canImplement = (toBoolean(user.CAN_IMPLEMENT_RFA) || toBoolean(user.IS_ADMIN)) && rfa.STATUS === 'APPROVED';
+  const canClose = (toBoolean(user.CAN_IMPLEMENT_RFA) || toBoolean(user.IS_ADMIN)) && ['APPROVED', 'IMPLEMENTATION'].includes(rfa.STATUS);
 
   return {
     rfa,
