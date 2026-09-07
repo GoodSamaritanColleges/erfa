@@ -6,7 +6,8 @@ import { Dialog, ErrorNotice, Spinner, StatusBadge, SuccessNotice } from '../com
 import { date, dateTime, money, stepLabel } from '../format';
 import type { Approval, ApprovalStep, Attachment, RfaDetail } from '../types';
 
-const steps: ApprovalStep[] = ['PREPARED_BY', 'RECOMMENDING_APPROVAL', 'REVIEWED_AND_NOTED', 'APPROVED_BY'];
+const legacySteps: ApprovalStep[] = ['PREPARED_BY', 'RECOMMENDING_APPROVAL', 'REVIEWED_AND_NOTED', 'APPROVED_BY'];
+const assignmentSteps: ApprovalStep[] = ['PREPARED_BY', 'RECOMMENDING_APPROVAL', 'REVIEWED_BY', 'NOTED_BY', 'APPROVED_BY'];
 
 export function RfaDetailPage() {
   const { id = '' } = useParams();
@@ -67,6 +68,8 @@ export function RfaDetailPage() {
   if (!detail) return <><ErrorNotice message={error || 'RFA was not found.'} /><button className="button secondary" onClick={() => navigate('/rfas')}>Back to My RFAs</button></>;
 
   const { rfa, approvals, attachments, audit, permissions } = detail;
+  const usesAssignmentWorkflow = rfa.CURRENT_MATRIX_ID === 'RFA_ASSIGNMENTS_V1' || approvals.some((approval) => approval.STEP === 'REVIEWED_BY' || approval.STEP === 'NOTED_BY') || rfa.CURRENT_STEP === 'REVIEWED_BY' || rfa.CURRENT_STEP === 'NOTED_BY';
+  const steps = usesAssignmentWorkflow ? assignmentSteps : legacySteps;
 
   return <>
     <div className="screen-only">
@@ -146,7 +149,7 @@ export function RfaDetailPage() {
           <StatusBadge status={rfa.STATUS} />
         </header>
         <div className="workflow-steps">
-          {steps.map((step) => <WorkflowStep key={step} step={step} approvals={approvals} current={rfa.CURRENT_STEP === step} />)}
+          {steps.map((step, index) => <WorkflowStep key={step} step={step} index={index} approvals={approvals} current={rfa.CURRENT_STEP === step} />)}
         </div>
       </section>
 
@@ -249,11 +252,11 @@ function DocumentSection({ title, children }: { title: string; children: React.R
   return <section className="document-section"><h2>{title}</h2>{children}</section>;
 }
 
-function WorkflowStep({ step, approvals, current }: { step: ApprovalStep; approvals: Approval[]; current: boolean }) {
+function WorkflowStep({ step, index, approvals, current }: { step: ApprovalStep; index: number; approvals: Approval[]; current: boolean }) {
   const completed = approvals.some((item) => item.STEP === step && item.ACTION === 'APPROVED');
   const exception = approvals.some((item) => item.STEP === step && ['RETURNED','DISAPPROVED','EXCEPTION'].includes(item.ACTION));
   return <div className={`${completed ? 'completed' : ''} ${current ? 'current' : ''} ${exception ? 'exception' : ''}`}>
-    <span>{completed ? <Check size={14} /> : steps.indexOf(step) + 1}</span>
+    <span>{completed ? <Check size={14} /> : index + 1}</span>
     <b>{stepLabel(step)}</b>
     <small>{completed ? 'Complete' : current ? 'Awaiting action' : exception ? 'Action recorded' : 'Pending'}</small>
   </div>;

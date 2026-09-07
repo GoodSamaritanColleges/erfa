@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatRfaNumber, selectNextApprover, validateRfaInput } from '../src/core';
+import { formatRfaNumber, isAssignedSectionComplete, nextAssignedSection, selectNextApprover, validateRfaInput } from '../src/core';
 import type { MatrixRecord, UserRecord } from '../src/types';
 
 const baseUser = (id: string, email: string, overrides: Partial<UserRecord> = {}): UserRecord => ({
@@ -39,5 +39,18 @@ describe('eRFA workflow core', () => {
     expect(() => validateRfaInput({ requestTitle: 'Lab equipment', purpose: 'Replace broken equipment', budgetAllocation: 1000, targetDate: '2026-09-01', justification: 'Required for safe classes' }, true)).not.toThrow();
     expect(() => validateRfaInput({ requestTitle: '', purpose: '', targetDate: '' }, true)).toThrow();
   });
-});
 
+  it('skips zero-assignment sections and finishes when none are assigned', () => {
+    expect(nextAssignedSection({ RECOMMENDING_APPROVAL: 0, REVIEWED_BY: 1, NOTED_BY: 1, APPROVED_BY: 1 })).toBe('REVIEWED_BY');
+    expect(nextAssignedSection({ RECOMMENDING_APPROVAL: 1, REVIEWED_BY: 0, NOTED_BY: 0, APPROVED_BY: 2 }, 1)).toBe('APPROVED_BY');
+    expect(nextAssignedSection({ RECOMMENDING_APPROVAL: 0, REVIEWED_BY: 0, NOTED_BY: 0, APPROVED_BY: 0 })).toBeUndefined();
+  });
+
+  it('requires every selected approver before a section is complete', () => {
+    expect(isAssignedSectionComplete(3, 0)).toBe(false);
+    expect(isAssignedSectionComplete(3, 1)).toBe(false);
+    expect(isAssignedSectionComplete(3, 2)).toBe(false);
+    expect(isAssignedSectionComplete(3, 3)).toBe(true);
+    expect(isAssignedSectionComplete(0, 0)).toBe(true);
+  });
+});

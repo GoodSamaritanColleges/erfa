@@ -3,7 +3,7 @@ import { authenticate, requireCapability } from './auth';
 import { adminData, saveDepartment, saveMatrix, saveUser } from './admin';
 import { getDatabase, resetPerRequestCache } from './store';
 import { resetWorkflowCache } from './workflow';
-import { createRfa, decideRfa, detailRfa, downloadAttachment, listForApproval, listRfas, submitRfa, transitionCloseout, updateRfa, uploadAttachment } from './workflow';
+import { createRfa, decideRfa, detailRfa, downloadAttachment, eligibleApprovers, listForApproval, listRfas, submitRfa, transitionCloseout, updateRfa, uploadAttachment } from './workflow';
 
 export interface ApiRequest { action: string; idToken?: string; payload?: Record<string, unknown> }
 
@@ -18,6 +18,7 @@ export function dispatch(request: ApiRequest): unknown {
     case 'rfa.list': return listRfas(user, payload);
     case 'rfa.forApproval': return listForApproval(user);
     case 'rfa.detail': return detailRfa(user, String(payload.rfaId ?? ''));
+    case 'rfa.eligibleApprovers': return eligibleApprovers(user);
     case 'rfa.create': return withLock(() => createRfa(user, payload));
     case 'rfa.update': return withLock(() => updateRfa(user, payload));
     case 'rfa.submit': return withLock(() => submitRfa(user, String(payload.rfaId ?? ''), false));
@@ -44,4 +45,3 @@ function withLock<T>(operation: () => T): T {
   if (!lock.tryLock(30000)) throw Object.assign(new Error('The system is busy. Please try again.'), { code: 'CONFLICT' });
   try { return operation(); } finally { lock.releaseLock(); }
 }
-

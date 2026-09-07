@@ -3,7 +3,7 @@ import { getSetting, insert, newId, nowIso, settingBoolean } from './store';
 import type { RfaRecord, SessionUser, UserRecord } from './types';
 
 const labels: Record<string, string> = {
-  RECOMMENDING_APPROVAL: 'Recommending Approval', REVIEWED_AND_NOTED: 'Reviewed and Noted', APPROVED_BY: 'Approved By'
+  RECOMMENDING_APPROVAL: 'Recommending Approval', REVIEWED_AND_NOTED: 'Reviewed and Noted', REVIEWED_BY: 'Reviewed By', NOTED_BY: 'Noted By', APPROVED_BY: 'Approved By'
 };
 
 export function notify(

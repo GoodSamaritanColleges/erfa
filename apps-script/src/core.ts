@@ -1,5 +1,5 @@
-import { APPROVAL_STEPS } from './constants';
-import type { MatrixRecord, UserRecord } from './types';
+import { APPROVAL_SECTIONS, APPROVAL_STEPS } from './constants';
+import type { ApprovalSection, MatrixRecord, UserRecord } from './types';
 
 export function formatRfaNumber(year: number, sequence: number): string {
   if (!Number.isInteger(year) || !Number.isInteger(sequence) || sequence < 1) {
@@ -79,3 +79,14 @@ export function validateRfaInput(payload: Record<string, unknown>, forSubmission
   return clean;
 }
 
+export function nextAssignedSection(counts: Record<ApprovalSection, number>, startIndex = 0): ApprovalSection | undefined {
+  for (let index = Math.max(0, startIndex); index < APPROVAL_SECTIONS.length; index += 1) {
+    const section = APPROVAL_SECTIONS[index];
+    if (counts[section] > 0) return section;
+  }
+  return undefined;
+}
+
+export function isAssignedSectionComplete(assignedCount: number, approvedCount: number): boolean {
+  return assignedCount === 0 || approvedCount >= assignedCount;
+}

@@ -1,6 +1,6 @@
 import { DEFAULT_SETTINGS, SHEETS } from './constants';
 import { toBoolean } from './core';
-import type { SheetRecord } from './types';
+import type { SheetRecord, ApprovalSection } from './types';
 
 const PROPERTY_SPREADSHEET_ID = 'ERFA_SPREADSHEET_ID';
 
@@ -179,4 +179,109 @@ export function setSetting(key: string, value: string, description = ''): void {
 
 export function settingBoolean(key: string): boolean {
   return toBoolean(getSetting(key));
+}
+
+/**
+ * Insert an RFA approval assignment row.
+ * Assignment rows have ACTION = '' (empty), distinguishing them from approval action rows.
+ */
+export function insertRfaAssignment(rfaId: string, rfaNumber: string, section: ApprovalSection, assignment: { USER_ID: string; FULL_NAME: string; EMAIL: string; POSITION: string; DEPARTMENT: string }): void {
+  const record = {
+    APPROVAL_ID: newId('apr'), RFA_ID: rfaId, RFA_NUMBER: rfaNumber, STEP: section,
+    APPROVER_USER_ID: assignment.USER_ID, APPROVER_NAME: assignment.FULL_NAME,
+    APPROVER_EMAIL: assignment.EMAIL, ACTION: '', REMARKS: '', TIMESTAMP: nowIso()
+  };
+  insert('RFA_APPROVALS', record);
+}
+
+/**
+ * Get all approval rows for an RFA (both assignments and actions).
+ */
+export function getRfaApprovals(rfaId: string): SheetRecord[] {
+  return all<SheetRecord>('RFA_APPROVALS').filter((row) => row.RFA_ID === rfaId);
+}
+
+/**
+ * Get assignment rows for a specific section (ACTION = '' means assigned but not yet acted upon).
+ */
+export function getAssignmentsBySection(rfaId: string, section: ApprovalSection): SheetRecord[] {
+  return all<SheetRecord>('RFA_APPROVALS').filter((row) => row.RFA_ID === rfaId && row.STEP === section && row.ACTION === '');
+}
+
+/**
+ * Get approved users for a specific section.
+ */
+export function getApprovedBySection(rfaId: string, section: ApprovalSection): SheetRecord[] {
+  return all<SheetRecord>('RFA_APPROVALS').filter((row) => row.RFA_ID === rfaId && row.STEP === section && row.ACTION === 'APPROVED');
+}
+
+/**
+ * Get pending users for a specific section (assigned but not yet approved).
+ */
+export function getPendingBySection(rfaId: string, section: ApprovalSection): SheetRecord[] {
+  return all<SheetRecord>('RFA_APPROVALS').filter((row) => row.RFA_ID === rfaId && row.STEP === section && row.ACTION === '');
+}
+
+/**
+ * Get all users who have approved for a specific section.
+ */
+export function getApprovedUsers(rfaId: string, section: ApprovalSection): { userId: string; name: string }[] {
+  return all<SheetRecord>('RFA_APPROVALS')
+    .filter((row) => row.RFA_ID === rfaId && row.STEP === section && row.ACTION === 'APPROVED')
+    .map((row) => ({ userId: String(row.APPROVER_USER_ID), name: String(row.APPROVER_NAME) }));
+}
+
+/** Store the current RFA's immutable assignment snapshot after pending markers are cleared. */
+export function saveRfaSectionAssignments(rfaId: string, rfaNumber: string, section: ApprovalSection, assignments: { USER_ID: string; FULL_NAME: string; EMAIL: string; POSITION: string; DEPARTMENT: string }[]): void {
+  assignments.forEach((assignment) => insertRfaAssignment(rfaId, rfaNumber, section, assignment));
+}
+
+/** Remove only unacted assignment markers before a draft or returned RFA is resaved. */
+export function clearPendingRfaAssignments(rfaId: string): void {
+  const sheet = getSheet('RFA_APPROVALS');
+  const headers = [...SHEETS.RFA_APPROVALS] as string[];
+  const rfaIdIndex = headers.indexOf('RFA_ID');
+  const actionIndex = headers.indexOf('ACTION');
+  const values = sheet.getLastRow() < 2 ? [] : sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).getValues();
+  for (let index = values.length - 1; index >= 0; index -= 1) {
+    if (String(values[index][rfaIdIndex]) === rfaId && String(values[index][actionIndex] ?? '') === '') sheet.deleteRow(index + 2);
+  }
+  invalidateSheetCache('RFA_APPROVALS');
+}
+
+/**
+ * Find an assignment row by user ID and section.
+ */
+export function findAssignmentByUser(rfaId: string, section: ApprovalSection, userId: string): SheetRecord | undefined {
+  return all<SheetRecord>('RFA_APPROVALS').find((row) => row.RFA_ID === rfaId && row.STEP === section && row.APPROVER_USER_ID === userId && row.ACTION === '');
+}
+
+/**
+ * Check if a user is assigned to a section.
+ */
+export function isUserAssignedToSection(rfaId: string, section: ApprovalSection, userId: string): boolean {
+  return !!(all<SheetRecord>('RFA_APPROVALS').find((row) => row.RFA_ID === rfaId && row.STEP === section && row.APPROVER_USER_ID === userId && row.ACTION === ''));
+}
+
+/**
+ * Get the count of assigned users for a section.
+ */
+export function countAssignedUsers(rfaId: string, section: ApprovalSection): number {
+  return getAssignmentsBySection(rfaId, section).length;
+}
+
+/**
+ * Get the count of approved users for a section.
+ */
+export function countApprovedUsers(rfaId: string, section: ApprovalSection): number {
+  return getApprovedBySection(rfaId, section).length;
+}
+
+/**
+ * Check if all assigned users have approved for a section.
+ */
+export function isSectionComplete(rfaId: string, section: ApprovalSection): boolean {
+  const assigned = countAssignedUsers(rfaId, section);
+  const approved = countApprovedUsers(rfaId, section);
+  return assigned === 0 || approved >= assigned;
 }

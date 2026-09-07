@@ -1,13 +1,21 @@
-import { ArrowLeft, FileText, Paperclip, Save, Send } from 'lucide-react';
+import { ArrowLeft, FileText, Paperclip, Plus, Save, Send, X } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, fileToBase64 } from '../api';
 import { useAuth } from '../auth';
 import { ErrorNotice, Spinner } from '../components';
-import type { Rfa, RfaDetail } from '../types';
+import type { ApprovalAssignments, ApprovalSection, EligibleApprover, EligibleApprovers, Rfa, RfaDetail } from '../types';
 
 interface FormState { requestTitle: string; purpose: string; budgetAllocation: string; targetDate: string; justification: string }
 const blank: FormState = { requestTitle: '', purpose: '', budgetAllocation: '', targetDate: '', justification: '' };
+const sections: Array<{ key: ApprovalSection; label: string }> = [
+  { key: 'RECOMMENDING_APPROVAL', label: 'Recommending Approval' },
+  { key: 'REVIEWED_BY', label: 'Reviewed By' },
+  { key: 'NOTED_BY', label: 'Noted By' },
+  { key: 'APPROVED_BY', label: 'Approved By' }
+];
+const emptyAssignments = (): ApprovalAssignments => ({ RECOMMENDING_APPROVAL: [], REVIEWED_BY: [], NOTED_BY: [], APPROVED_BY: [] });
+const emptyEligible = (): EligibleApprovers => ({ RECOMMENDING_APPROVAL: [], REVIEWED_BY: [], NOTED_BY: [], APPROVED_BY: [] });
 
 export function RfaFormPage() {
   const { id } = useParams();
@@ -16,18 +24,29 @@ export function RfaFormPage() {
   const [form, setForm] = useState<FormState>(blank);
   const [existing, setExisting] = useState<Rfa | null>(null);
   const [files, setFiles] = useState<File[]>([]);
+  const [eligible, setEligible] = useState<EligibleApprovers>(emptyEligible);
+  const [assignments, setAssignments] = useState<ApprovalAssignments>(emptyAssignments);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(Boolean(id));
 
   useEffect(() => {
     if (!id) return;
-    void api<RfaDetail>('rfa.detail', { rfaId: id }).then(({ rfa, permissions }) => {
+    void api<RfaDetail>('rfa.detail', { rfaId: id }).then(({ rfa, permissions, approvals }) => {
       if (!permissions.canEdit) throw new Error('This RFA is not editable.');
       setExisting(rfa);
       setForm({ requestTitle: rfa.REQUEST_TITLE, purpose: rfa.PURPOSE, budgetAllocation: String(rfa.BUDGET_ALLOCATION), targetDate: rfa.TARGET_DATE, justification: rfa.JUSTIFICATION });
+      setAssignments(sections.reduce((current, section) => ({ ...current, [section.key]: approvals.filter((row) => row.STEP === section.key && !row.ACTION).map((row) => row.APPROVER_USER_ID) }), emptyAssignments()));
     }).catch((e: Error) => setError(e.message)).finally(() => setLoading(false));
   }, [id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api<{ sections: EligibleApprovers }>('rfa.eligibleApprovers').then(({ sections: available }) => {
+      if (!cancelled) setEligible(available ?? emptyEligible());
+    }).catch((e: Error) => { if (!cancelled) setError(e.message); });
+    return () => { cancelled = true; };
+  }, []);
 
   const set = (key: keyof FormState, value: string) => setForm((current) => ({ ...current, [key]: value }));
 
@@ -35,7 +54,7 @@ export function RfaFormPage() {
     setSaving(true);
     setError('');
     try {
-      const payload = { ...form, budgetAllocation: Number(form.budgetAllocation || 0) };
+      const payload = { ...form, budgetAllocation: Number(form.budgetAllocation || 0), approvalAssignments: assignments };
       const rfa = existing ? await api<Rfa>('rfa.update', { rfaId: existing.RFA_ID, ...payload }) : await api<Rfa>('rfa.create', payload);
       for (const file of files) await api('attachment.upload', { rfaId: rfa.RFA_ID, fileName: file.name, mimeType: file.type, base64: await fileToBase64(file) });
       if (submit) await api(existing?.STATUS === 'RETURNED' ? 'rfa.resubmit' : 'rfa.submit', { rfaId: rfa.RFA_ID });
@@ -118,12 +137,23 @@ export function RfaFormPage() {
         </li>)}</ul>}
       </section>
 
+      <section className="form-card approval-assignment-card">
+        <div className="section-title">
+          <span>04</span>
+          <div><h2>Approval assignments</h2><p>Select the authorized people who should receive this RFA at each step. A section may be left empty and will be skipped automatically.</p></div>
+        </div>
+        <div className="approval-assignment-grid">
+          {sections.map((section) => <ApproverSelector key={section.key} section={section} eligible={eligible[section.key]} selectedIds={assignments[section.key]} onChange={(ids) => setAssignments((current) => ({ ...current, [section.key]: ids }))} />)}
+        </div>
+      </section>
+
       <section className="approval-preview">
         <span className="eyebrow">APPROVAL SIGNATURES</span>
         <div>
           <b>Prepared By</b>
           <b>Recommending Approval</b>
-          <b>Reviewed and Noted By</b>
+          <b>Reviewed By</b>
+          <b>Noted By</b>
           <b>Approved By</b>
         </div>
         <p>Approvers are assigned from the active department approval matrix. You cannot approve your own request.</p>
@@ -135,6 +165,31 @@ export function RfaFormPage() {
       </div>
     </form>
   </>;
+}
+
+function ApproverSelector({ section, eligible, selectedIds, onChange }: { section: { key: ApprovalSection; label: string }; eligible: EligibleApprover[]; selectedIds: string[]; onChange: (ids: string[]) => void }) {
+  const [candidateId, setCandidateId] = useState('');
+  const selected = selectedIds.map((id) => eligible.find((candidate) => candidate.USER_ID === id)).filter((candidate): candidate is EligibleApprover => Boolean(candidate));
+  const available = eligible.filter((candidate) => !selectedIds.includes(candidate.USER_ID));
+  const add = () => {
+    if (!candidateId || selectedIds.includes(candidateId)) return;
+    onChange([...selectedIds, candidateId]);
+    setCandidateId('');
+  };
+  return <div className="approver-selector">
+    <h3>{section.label}</h3>
+    <p>{eligible.length ? 'Choose zero or more authorized approvers.' : 'No authorized approvers are currently configured for this step.'}</p>
+    <div className="approver-add">
+      <select value={candidateId} onChange={(event) => setCandidateId(event.target.value)} aria-label={`Add approver for ${section.label}`}>
+        <option value="">Select person</option>
+        {available.map((candidate) => <option key={candidate.USER_ID} value={candidate.USER_ID}>{candidate.FULL_NAME}{candidate.POSITION ? ` — ${candidate.POSITION}` : ''}</option>)}
+      </select>
+      <button type="button" className="button secondary" onClick={add} disabled={!candidateId}><Plus size={16} /> Add</button>
+    </div>
+    {selected.length > 0 && <ul className="selected-approvers">
+      {selected.map((candidate) => <li key={candidate.USER_ID}><span><b>{candidate.FULL_NAME}</b><small>{candidate.POSITION || candidate.EMAIL}</small></span><button type="button" className="icon-button" onClick={() => onChange(selectedIds.filter((id) => id !== candidate.USER_ID))} aria-label={`Remove ${candidate.FULL_NAME} from ${section.label}`}><X size={16} /></button></li>)}
+    </ul>}
+  </div>;
 }
 
 function ReadOnly({ label, value }: { label: string; value: string }) {

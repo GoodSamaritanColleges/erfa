@@ -18,8 +18,19 @@ export const APPROVAL_STEPS: ApprovalStep[] = [
   'PREPARED_BY',
   'RECOMMENDING_APPROVAL',
   'REVIEWED_AND_NOTED',
+  'REVIEWED_BY',
+  'NOTED_BY',
   'APPROVED_BY'
 ];
+
+export const APPROVAL_SECTIONS = [
+  'RECOMMENDING_APPROVAL',
+  'REVIEWED_BY',
+  'NOTED_BY',
+  'APPROVED_BY'
+] as const;
+
+export const ASSIGNMENT_WORKFLOW_MARKER = 'RFA_ASSIGNMENTS_V1';
 
 export const STATUS: Record<RfaStatus, RfaStatus> = {
   DRAFT: 'DRAFT',
@@ -40,6 +51,8 @@ export const STEP_STATUS: Record<ApprovalStep, RfaStatus> = {
   PREPARED_BY: 'SUBMITTED',
   RECOMMENDING_APPROVAL: 'PENDING_RECOMMENDING_APPROVAL',
   REVIEWED_AND_NOTED: 'PENDING_REVIEW',
+  REVIEWED_BY: 'PENDING_REVIEW',
+  NOTED_BY: 'PENDING_AUTHORITY_APPROVAL',
   APPROVED_BY: 'PENDING_AUTHORITY_APPROVAL'
 };
 
@@ -62,4 +75,3 @@ export const ALLOWED_ATTACHMENT_TYPES = [
   'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 ];
-

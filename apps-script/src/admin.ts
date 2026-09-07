@@ -77,7 +77,7 @@ export function saveMatrix(actor: SessionUser, payload: Record<string, unknown>)
   const departmentId = required(payload.departmentId, 'Department');
   const approverUserId = required(payload.approverUserId, 'Approver');
   const step = required(payload.approvalStep, 'Approval Step') as ApprovalStep;
-  if (!APPROVAL_STEPS.includes(step) || step === 'PREPARED_BY') throw new Error('Approval Step must be Recommending Approval, Reviewed and Noted, or Approved By.');
+  if (!APPROVAL_STEPS.includes(step) || step === 'PREPARED_BY') throw new Error('Approval Step must be Recommending Approval, Reviewed By, Noted By, or Approved By.');
   const department = findBy<DepartmentRecord>('DEPARTMENTS', 'DEPARTMENT_ID', departmentId);
   const approver = findBy<UserRecord>('USERS', 'USER_ID', approverUserId);
   if (!department || !toBoolean(department.ACTIVE)) throw new Error('Department is missing or inactive.');
@@ -99,4 +99,3 @@ export function saveMatrix(actor: SessionUser, payload: Record<string, unknown>)
   audit('APPROVAL_MATRIX_CHANGED', actor, '', '', '', step, { matrixId: record.MATRIX_ID });
   return record;
 }
-

@@ -1,14 +1,34 @@
-import { ALLOWED_ATTACHMENT_TYPES, STEP_STATUS } from './constants';
+import { ALLOWED_ATTACHMENT_TYPES, APPROVAL_SECTIONS, ASSIGNMENT_WORKFLOW_MARKER, STEP_STATUS } from './constants';
 import { audit } from './audit';
-import { formatRfaNumber, normalizeEmail, orderedMatrix, selectNextApprover, toBoolean, validateRfaInput } from './core';
+import { formatRfaNumber, isAssignedSectionComplete, nextAssignedSection, normalizeEmail, orderedMatrix, selectNextApprover, toBoolean, validateRfaInput } from './core';
 import { notify } from './notifications';
-import { all, findBy, getSetting, insert, newId, nowIso, setSetting, updateBy } from './store';
-import type { DepartmentRecord, MatrixRecord, RfaRecord, SessionUser, SheetRecord, UserRecord } from './types';
+import { all, clearPendingRfaAssignments, findBy, getAssignmentsBySection, getSetting, insert, newId, nowIso, saveRfaSectionAssignments, setSetting, updateBy } from './store';
+import type { ApprovalSection, DepartmentRecord, EligibleApprover, MatrixRecord, RfaRecord, RfaSectionAssignments, SessionUser, SheetRecord, UserRecord } from './types';
 
 function businessError(message: string, code = 'INVALID_OPERATION'): never {
   const error = new Error(message) as Error & { code?: string };
   error.code = code;
   throw error;
+}
+
+function isAssignmentWorkflow(rfa: RfaRecord): boolean {
+  return rfa.CURRENT_MATRIX_ID === ASSIGNMENT_WORKFLOW_MARKER;
+}
+
+function currentAssignmentSection(rfa: RfaRecord): ApprovalSection | null {
+  return APPROVAL_SECTIONS.includes(rfa.CURRENT_STEP as ApprovalSection) ? rfa.CURRENT_STEP as ApprovalSection : null;
+}
+
+function getApprovedAssignments(rfa: RfaRecord, section: ApprovalSection): SheetRecord[] {
+  const submittedAt = Date.parse(String(rfa.SUBMITTED_AT || ''));
+  return approvalRows(rfa.RFA_ID).filter((row) => row.STEP === section && row.ACTION === 'APPROVED' && (!Number.isFinite(submittedAt) || Date.parse(String(row.TIMESTAMP || '')) >= submittedAt));
+}
+
+function isCurrentSectionComplete(rfa: RfaRecord): boolean {
+  const section = currentAssignmentSection(rfa);
+  if (!section) return false;
+  const assigned = getAssignmentsBySection(rfa.RFA_ID, section);
+  return isAssignedSectionComplete(assigned.length, getApprovedAssignments(rfa, section).length);
 }
 
 function getRfa(id: string): RfaRecord {
@@ -79,39 +99,110 @@ function admins(): UserRecord[] {
   return all<UserRecord>('USERS').filter((user) => toBoolean(user.ACTIVE) && toBoolean(user.IS_ADMIN));
 }
 
-function route(rfa: RfaRecord, actor: SessionUser, startIndex: number): RfaRecord {
+function routeLegacy(rfa: RfaRecord, actor: SessionUser, startIndex: number): RfaRecord {
   const matrix = all<MatrixRecord>('APPROVAL_MATRIX').filter((row) => row.DEPARTMENT_ID === rfa.DEPARTMENT_ID);
-  const users = all<UserRecord>('USERS');
-  const result = selectNextApprover(matrix, users, rfa.REQUESTER_EMAIL, startIndex);
+  const result = selectNextApprover(matrix, all<UserRecord>('USERS'), rfa.REQUESTER_EMAIL, startIndex);
   result.skipped.forEach((skip) => {
     const skippedUser = skip.user ?? { USER_ID: skip.matrix.APPROVER_USER_ID, FULL_NAME: 'Unknown approver', EMAIL: '' };
     appendApproval(rfa, skip.matrix.APPROVAL_STEP, skippedUser, 'SKIPPED', skip.reason);
     audit('APPROVER_SKIPPED', actor, rfa.RFA_ID, rfa.STATUS, rfa.STATUS, skip.reason, { matrixId: skip.matrix.MATRIX_ID, approverUserId: skip.matrix.APPROVER_USER_ID });
   });
-
   if (!result.next) {
-    const previous = rfa.STATUS;
     const updates = { STATUS: 'EXCEPTION', CURRENT_STEP: '', CURRENT_APPROVER_USER_ID: '', CURRENT_APPROVER_EMAIL: '', CURRENT_MATRIX_ID: '', UPDATED_AT: nowIso(), VERSION: Number(rfa.VERSION) + 1 };
     updateBy('RFA', 'RFA_ID', rfa.RFA_ID, updates);
     const exceptionRfa = { ...rfa, ...updates } as RfaRecord;
     appendApproval(exceptionRfa, rfa.CURRENT_STEP || 'RECOMMENDING_APPROVAL', { USER_ID: '', FULL_NAME: 'SYSTEM', EMAIL: '' }, 'EXCEPTION', 'No valid configured approver is available.');
-    audit('WORKFLOW_EXCEPTION', actor, rfa.RFA_ID, previous, 'EXCEPTION', 'No valid configured approver is available.');
+    audit('WORKFLOW_EXCEPTION', actor, rfa.RFA_ID, rfa.STATUS, 'EXCEPTION', 'No valid configured approver is available.');
     admins().forEach((admin) => notify('WORKFLOW_EXCEPTION', admin, exceptionRfa, actor, 'No valid configured approver is available.'));
     return exceptionRfa;
   }
-
   const { matrix: nextMatrix, user: nextUser } = result.next;
-  const previous = rfa.STATUS;
-  const updates = {
-    STATUS: STEP_STATUS[nextMatrix.APPROVAL_STEP], CURRENT_STEP: nextMatrix.APPROVAL_STEP,
-    CURRENT_APPROVER_USER_ID: nextUser.USER_ID, CURRENT_APPROVER_EMAIL: nextUser.EMAIL,
-    CURRENT_MATRIX_ID: nextMatrix.MATRIX_ID, RESUME_MATRIX_ID: '', UPDATED_AT: nowIso(), VERSION: Number(rfa.VERSION) + 1
-  };
+  const updates = { STATUS: STEP_STATUS[nextMatrix.APPROVAL_STEP], CURRENT_STEP: nextMatrix.APPROVAL_STEP, CURRENT_APPROVER_USER_ID: nextUser.USER_ID, CURRENT_APPROVER_EMAIL: nextUser.EMAIL, CURRENT_MATRIX_ID: nextMatrix.MATRIX_ID, RESUME_MATRIX_ID: '', UPDATED_AT: nowIso(), VERSION: Number(rfa.VERSION) + 1 };
   updateBy('RFA', 'RFA_ID', rfa.RFA_ID, updates);
   const routed = { ...rfa, ...updates } as RfaRecord;
-  audit('APPROVAL_REQUESTED', actor, rfa.RFA_ID, previous, routed.STATUS, '', { step: nextMatrix.APPROVAL_STEP, approver: nextUser.EMAIL });
+  audit('APPROVAL_REQUESTED', actor, rfa.RFA_ID, rfa.STATUS, routed.STATUS, '', { step: nextMatrix.APPROVAL_STEP, approver: nextUser.EMAIL });
   notify('APPROVAL_REQUIRED', nextUser, routed, actor);
   return routed;
+}
+
+function notifyAssignedStage(rfa: RfaRecord, actor: SessionUser, section: ApprovalSection): void {
+  const approvedEmails = new Set(getApprovedAssignments(rfa, section).map((row) => normalizeEmail(row.APPROVER_EMAIL)));
+  getAssignmentsBySection(rfa.RFA_ID, section)
+    .filter((row) => !approvedEmails.has(normalizeEmail(row.APPROVER_EMAIL)))
+    .forEach((row) => notify('APPROVAL_REQUIRED', { FULL_NAME: row.APPROVER_NAME, EMAIL: row.APPROVER_EMAIL } as UserRecord, rfa, actor, `This RFA is awaiting your approval action for the ${section} section.`));
+}
+
+function completeAssignedWorkflow(rfa: RfaRecord, actor: SessionUser): RfaRecord {
+  const updates = { STATUS: 'APPROVED', CURRENT_STEP: 'APPROVED_BY', CURRENT_APPROVER_USER_ID: '', CURRENT_APPROVER_EMAIL: '', CURRENT_MATRIX_ID: ASSIGNMENT_WORKFLOW_MARKER, COMPLETED_AT: nowIso(), UPDATED_AT: nowIso(), VERSION: Number(rfa.VERSION) + 1 };
+  updateBy('RFA', 'RFA_ID', rfa.RFA_ID, updates);
+  const approved = { ...rfa, ...updates } as RfaRecord;
+  audit('STATUS_CHANGED', actor, rfa.RFA_ID, rfa.STATUS, 'APPROVED', 'All assigned approval sections completed.');
+  const requester = all<UserRecord>('USERS').find((candidate) => normalizeEmail(candidate.EMAIL) === normalizeEmail(rfa.REQUESTER_EMAIL));
+  if (requester) notify('RFA_APPROVED', requester, approved, actor);
+  return approved;
+}
+
+function routeAssigned(rfa: RfaRecord, actor: SessionUser, startIndex: number): RfaRecord {
+  const counts = APPROVAL_SECTIONS.reduce((allCounts, section) => ({ ...allCounts, [section]: getAssignmentsBySection(rfa.RFA_ID, section).length }), {} as Record<ApprovalSection, number>);
+  const section = nextAssignedSection(counts, startIndex);
+  if (section) {
+    for (let index = startIndex; index < APPROVAL_SECTIONS.indexOf(section); index += 1) {
+      audit('STAGE_SKIPPED', actor, rfa.RFA_ID, rfa.STATUS, rfa.STATUS, 'No approvers selected for this section.', { section: APPROVAL_SECTIONS[index] });
+    }
+    const assigned = getAssignmentsBySection(rfa.RFA_ID, section);
+    const updates = { STATUS: STEP_STATUS[section], CURRENT_STEP: section, CURRENT_APPROVER_USER_ID: '', CURRENT_APPROVER_EMAIL: '', CURRENT_MATRIX_ID: ASSIGNMENT_WORKFLOW_MARKER, RESUME_MATRIX_ID: '', UPDATED_AT: nowIso(), VERSION: Number(rfa.VERSION) + 1 };
+    updateBy('RFA', 'RFA_ID', rfa.RFA_ID, updates);
+    const routed = { ...rfa, ...updates } as RfaRecord;
+    audit('APPROVAL_REQUESTED', actor, rfa.RFA_ID, rfa.STATUS, routed.STATUS, '', { section, approverCount: assigned.length });
+    notifyAssignedStage(routed, actor, section);
+    return routed;
+  }
+  return completeAssignedWorkflow(rfa, actor);
+}
+
+function emptyAssignments(): RfaSectionAssignments {
+  return { RECOMMENDING_APPROVAL: [], REVIEWED_BY: [], NOTED_BY: [], APPROVED_BY: [] };
+}
+
+function eligibleForDepartment(user: SessionUser, departmentId: string): Record<ApprovalSection, EligibleApprover[]> {
+  const eligible = emptyAssignments();
+  const users = new Map(all<UserRecord>('USERS').filter((candidate) => toBoolean(candidate.ACTIVE) && toBoolean(candidate.CAN_APPROVE_RFA)).map((candidate) => [candidate.USER_ID, candidate]));
+  all<MatrixRecord>('APPROVAL_MATRIX')
+    .filter((row) => row.DEPARTMENT_ID === departmentId && toBoolean(row.ACTIVE) && toBoolean(row.REQUIRED) && APPROVAL_SECTIONS.includes(row.APPROVAL_STEP as ApprovalSection))
+    .forEach((row) => {
+      const approver = users.get(row.APPROVER_USER_ID);
+      const section = row.APPROVAL_STEP as ApprovalSection;
+      if (!approver || normalizeEmail(approver.EMAIL) === normalizeEmail(user.EMAIL) || eligible[section].some((candidate) => candidate.USER_ID === approver.USER_ID)) return;
+      eligible[section].push({ USER_ID: approver.USER_ID, FULL_NAME: approver.FULL_NAME, EMAIL: approver.EMAIL, POSITION: approver.POSITION, DEPARTMENT: departmentId });
+    });
+  return eligible;
+}
+
+function parseAssignments(user: SessionUser, departmentId: string, value: unknown): RfaSectionAssignments {
+  const source = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+  const eligible = eligibleForDepartment(user, departmentId);
+  const assignments = emptyAssignments();
+  APPROVAL_SECTIONS.forEach((section) => {
+    const ids = Array.isArray(source[section]) ? source[section].map((id) => String(id)) : [];
+    if (new Set(ids).size !== ids.length) businessError(`Duplicate approvers are not allowed in ${section}.`);
+    const byId = new Map(eligible[section].map((candidate) => [candidate.USER_ID, candidate]));
+    assignments[section] = ids.map((id) => {
+      const candidate = byId.get(id);
+      if (!candidate) businessError(`Selected approver is not eligible for ${section}.`, 'FORBIDDEN');
+      return candidate;
+    });
+  });
+  return assignments;
+}
+
+function saveAssignments(rfa: RfaRecord, assignments: RfaSectionAssignments): void {
+  clearPendingRfaAssignments(rfa.RFA_ID);
+  APPROVAL_SECTIONS.forEach((section) => saveRfaSectionAssignments(rfa.RFA_ID, rfa.RFA_NUMBER, section, assignments[section]));
+}
+
+export function eligibleApprovers(user: SessionUser): Record<string, unknown> {
+  if (!toBoolean(user.CAN_CREATE_RFA) || !user.DEPARTMENT_ID) businessError('You do not have permission to select approvers.', 'FORBIDDEN');
+  return { sections: eligibleForDepartment(user, user.DEPARTMENT_ID) };
 }
 
 export function createRfa(user: SessionUser, payload: Record<string, unknown>): RfaRecord {
@@ -120,6 +211,7 @@ export function createRfa(user: SessionUser, payload: Record<string, unknown>): 
   const department = findBy<DepartmentRecord>('DEPARTMENTS', 'DEPARTMENT_ID', user.DEPARTMENT_ID);
   if (!department || !toBoolean(department.ACTIVE)) businessError('Your configured department is missing or inactive.', 'CONFIGURATION_REQUIRED');
   const clean = validateRfaInput(payload, false);
+  const assignments = parseAssignments(user, department.DEPARTMENT_ID, payload.approvalAssignments);
   const timestamp = nowIso();
   const record: RfaRecord = {
     RFA_ID: newId('rfa'), RFA_NUMBER: nextNumber(), DATE_FILED: timestamp.slice(0, 10),
@@ -127,10 +219,11 @@ export function createRfa(user: SessionUser, payload: Record<string, unknown>): 
     REQUESTED_BY: user.FULL_NAME, REQUESTER_EMAIL: normalizeEmail(user.EMAIL), POSITION: user.POSITION,
     REQUEST_TITLE: String(clean.requestTitle), PURPOSE: String(clean.purpose), BUDGET_ALLOCATION: Number(clean.budgetAllocation),
     TARGET_DATE: String(clean.targetDate), JUSTIFICATION: String(clean.justification), STATUS: 'DRAFT', CURRENT_STEP: '',
-    CURRENT_APPROVER_USER_ID: '', CURRENT_APPROVER_EMAIL: '', CURRENT_MATRIX_ID: '', RESUME_MATRIX_ID: '',
+    CURRENT_APPROVER_USER_ID: '', CURRENT_APPROVER_EMAIL: '', CURRENT_MATRIX_ID: ASSIGNMENT_WORKFLOW_MARKER, RESUME_MATRIX_ID: '',
     CREATED_AT: timestamp, UPDATED_AT: timestamp, SUBMITTED_AT: '', COMPLETED_AT: '', VERSION: 1
   };
   insert('RFA', record);
+  saveAssignments(record, assignments);
   audit('RFA_CREATED', user, record.RFA_ID, '', 'DRAFT', '', { rfaNumber: record.RFA_NUMBER });
   return record;
 }
@@ -139,13 +232,17 @@ export function updateRfa(user: SessionUser, payload: Record<string, unknown>): 
   const rfa = getRfa(String(payload.rfaId ?? ''));
   assertOwnerEditable(user, rfa);
   const clean = validateRfaInput(payload, false);
+  const usesAssignments = Object.prototype.hasOwnProperty.call(payload, 'approvalAssignments');
+  const assignments = usesAssignments ? parseAssignments(user, rfa.DEPARTMENT_ID, payload.approvalAssignments) : null;
   const updates = {
     REQUEST_TITLE: clean.requestTitle, PURPOSE: clean.purpose, BUDGET_ALLOCATION: clean.budgetAllocation,
-    TARGET_DATE: clean.targetDate, JUSTIFICATION: clean.justification, UPDATED_AT: nowIso(), VERSION: Number(rfa.VERSION) + 1
+    TARGET_DATE: clean.targetDate, JUSTIFICATION: clean.justification, CURRENT_MATRIX_ID: usesAssignments ? ASSIGNMENT_WORKFLOW_MARKER : rfa.CURRENT_MATRIX_ID, UPDATED_AT: nowIso(), VERSION: Number(rfa.VERSION) + 1
   };
   updateBy('RFA', 'RFA_ID', rfa.RFA_ID, updates);
+  const updated = { ...rfa, ...updates } as RfaRecord;
+  if (assignments) saveAssignments(updated, assignments);
   audit('RFA_UPDATED', user, rfa.RFA_ID, rfa.STATUS, rfa.STATUS);
-  return { ...rfa, ...updates } as RfaRecord;
+  return updated;
 }
 
 export function submitRfa(user: SessionUser, rfaId: string, resubmit = false): RfaRecord {
@@ -154,31 +251,42 @@ export function submitRfa(user: SessionUser, rfaId: string, resubmit = false): R
   validateRfaInput({ requestTitle: rfa.REQUEST_TITLE, purpose: rfa.PURPOSE, budgetAllocation: rfa.BUDGET_ALLOCATION, targetDate: rfa.TARGET_DATE, justification: rfa.JUSTIFICATION }, true);
   if (resubmit && rfa.STATUS !== 'RETURNED') businessError('Only a returned RFA can be resubmitted.');
   if (!resubmit && rfa.STATUS !== 'DRAFT') businessError('Only a draft RFA can be submitted.');
-  const matrix = orderedMatrix(all<MatrixRecord>('APPROVAL_MATRIX').filter((row) => row.DEPARTMENT_ID === rfa.DEPARTMENT_ID));
-  if (!matrix.length) businessError('No active approval matrix is configured for your department.', 'CONFIGURATION_REQUIRED');
+
   const previous = rfa.STATUS;
   const timestamp = nowIso();
-  const updates = { STATUS: 'SUBMITTED', SUBMITTED_AT: rfa.SUBMITTED_AT || timestamp, UPDATED_AT: timestamp, VERSION: Number(rfa.VERSION) + 1 };
+  const updates = { STATUS: 'SUBMITTED', SUBMITTED_AT: timestamp, UPDATED_AT: timestamp, VERSION: Number(rfa.VERSION) + 1 };
   updateBy('RFA', 'RFA_ID', rfa.RFA_ID, updates);
   const submitted = { ...rfa, ...updates } as RfaRecord;
+
+  // Append PREPARED_BY approval (only for new submissions, not resubmits)
   if (!resubmit) appendApproval(submitted, 'PREPARED_BY', user, 'APPROVED', 'Submitted electronically by requester.');
+
   audit(resubmit ? 'RESUBMITTED' : 'RFA_SUBMITTED', user, rfa.RFA_ID, previous, 'SUBMITTED');
   notify(resubmit ? 'RFA_RESUBMITTED' : 'RFA_SUBMITTED', user, submitted, user);
+
+  if (isAssignmentWorkflow(submitted)) return routeAssigned(submitted, user, 0);
+  const matrix = orderedMatrix(all<MatrixRecord>('APPROVAL_MATRIX').filter((row) => row.DEPARTMENT_ID === submitted.DEPARTMENT_ID));
+  if (!matrix.length) businessError('No active approval matrix is configured for your department.', 'CONFIGURATION_REQUIRED');
   const resumeIndex = resubmit && rfa.RESUME_MATRIX_ID ? Math.max(0, matrix.findIndex((row) => row.MATRIX_ID === rfa.RESUME_MATRIX_ID)) : 0;
-  return route(submitted, user, resumeIndex);
+  return routeLegacy(submitted, user, resumeIndex);
 }
 
 export function decideRfa(user: SessionUser, rfaId: string, action: 'APPROVED' | 'RETURNED' | 'DISAPPROVED', remarks: string): RfaRecord {
   const rfa = getRfa(rfaId);
   if (!toBoolean(user.CAN_APPROVE_RFA)) businessError('You do not have approval permission.', 'FORBIDDEN');
   if (normalizeEmail(rfa.REQUESTER_EMAIL) === normalizeEmail(user.EMAIL)) businessError('You cannot approve, return, or disapprove your own RFA.', 'SELF_APPROVAL');
-  if (normalizeEmail(rfa.CURRENT_APPROVER_EMAIL) !== normalizeEmail(user.EMAIL)) businessError('This RFA is not assigned to you.', 'FORBIDDEN');
+  const assignmentSection = currentAssignmentSection(rfa);
+  const assigned = isAssignmentWorkflow(rfa) && assignmentSection
+    ? getAssignmentsBySection(rfa.RFA_ID, assignmentSection).some((row) => String(row.APPROVER_USER_ID) === user.USER_ID)
+    : normalizeEmail(rfa.CURRENT_APPROVER_EMAIL) === normalizeEmail(user.EMAIL);
+  if (!assigned) businessError('This RFA is not assigned to you.', 'FORBIDDEN');
+  if (isAssignmentWorkflow(rfa) && assignmentSection && getApprovedAssignments(rfa, assignmentSection).some((row) => String(row.APPROVER_USER_ID) === user.USER_ID)) businessError('You have already acted on this RFA section.', 'CONFLICT');
   if (action !== 'APPROVED' && remarks.trim().length < 3) businessError('A reason is required for return or disapproval.');
   appendApproval(rfa, rfa.CURRENT_STEP, user, action, remarks.trim());
   const previous = rfa.STATUS;
 
   if (action === 'RETURNED') {
-    const updates = { STATUS: 'RETURNED', RESUME_MATRIX_ID: rfa.CURRENT_MATRIX_ID, CURRENT_APPROVER_USER_ID: '', CURRENT_APPROVER_EMAIL: '', CURRENT_MATRIX_ID: '', UPDATED_AT: nowIso(), VERSION: Number(rfa.VERSION) + 1 };
+    const updates = { STATUS: 'RETURNED', RESUME_MATRIX_ID: isAssignmentWorkflow(rfa) ? '' : rfa.CURRENT_MATRIX_ID, CURRENT_APPROVER_USER_ID: '', CURRENT_APPROVER_EMAIL: '', CURRENT_MATRIX_ID: isAssignmentWorkflow(rfa) ? ASSIGNMENT_WORKFLOW_MARKER : '', UPDATED_AT: nowIso(), VERSION: Number(rfa.VERSION) + 1 };
     updateBy('RFA', 'RFA_ID', rfa.RFA_ID, updates);
     const returned = { ...rfa, ...updates } as RfaRecord;
     audit('RETURNED', user, rfa.RFA_ID, previous, 'RETURNED', remarks);
@@ -197,10 +305,13 @@ export function decideRfa(user: SessionUser, rfaId: string, action: 'APPROVED' |
   }
 
   audit('APPROVED', user, rfa.RFA_ID, previous, previous, remarks, { step: rfa.CURRENT_STEP });
+  if (isAssignmentWorkflow(rfa) && assignmentSection) {
+    if (!isCurrentSectionComplete(rfa)) return rfa;
+    return routeAssigned(rfa, user, APPROVAL_SECTIONS.indexOf(assignmentSection) + 1);
+  }
   const matrix = orderedMatrix(all<MatrixRecord>('APPROVAL_MATRIX').filter((row) => row.DEPARTMENT_ID === rfa.DEPARTMENT_ID));
   const currentIndex = matrix.findIndex((row) => row.MATRIX_ID === rfa.CURRENT_MATRIX_ID);
-  if (matrix.slice(currentIndex + 1).length) return route(rfa, user, currentIndex + 1);
-
+  if (matrix.slice(currentIndex + 1).length) return routeLegacy(rfa, user, currentIndex + 1);
   const updates = { STATUS: 'APPROVED', CURRENT_STEP: 'APPROVED_BY', CURRENT_APPROVER_USER_ID: '', CURRENT_APPROVER_EMAIL: '', CURRENT_MATRIX_ID: '', COMPLETED_AT: nowIso(), UPDATED_AT: nowIso(), VERSION: Number(rfa.VERSION) + 1 };
   updateBy('RFA', 'RFA_ID', rfa.RFA_ID, updates);
   const approved = { ...rfa, ...updates } as RfaRecord;
@@ -253,22 +364,41 @@ export function listRfas(user: SessionUser, filters: Record<string, unknown>): R
 
 export function listForApproval(user: SessionUser): RfaRecord[] {
   if (!toBoolean(user.CAN_APPROVE_RFA)) return [];
-  return all<RfaRecord>('RFA').filter((rfa) => normalizeEmail(rfa.CURRENT_APPROVER_EMAIL) === normalizeEmail(user.EMAIL));
+  return all<RfaRecord>('RFA').filter((rfa) => {
+    if (isAssignmentWorkflow(rfa)) {
+      const section = currentAssignmentSection(rfa);
+      return Boolean(section && getAssignmentsBySection(rfa.RFA_ID, section).some((row) => String(row.APPROVER_USER_ID) === user.USER_ID) && !getApprovedAssignments(rfa, section).some((row) => String(row.APPROVER_USER_ID) === user.USER_ID));
+    }
+    return normalizeEmail(rfa.CURRENT_APPROVER_EMAIL) === normalizeEmail(user.EMAIL);
+  });
 }
 
 export function detailRfa(user: SessionUser, rfaId: string): Record<string, unknown> {
   const rfa = getRfa(rfaId);
   assertView(user, rfa);
+  const section = currentAssignmentSection(rfa);
+  const isCurrentSectionHead = isAssignmentWorkflow(rfa) && section
+    ? getAssignmentsBySection(rfa.RFA_ID, section).some((row) => String(row.APPROVER_USER_ID) === user.USER_ID) && !getApprovedAssignments(rfa, section).some((row) => String(row.APPROVER_USER_ID) === user.USER_ID)
+    : normalizeEmail(rfa.CURRENT_APPROVER_EMAIL) === normalizeEmail(user.EMAIL);
+  // canEdit: requester or admin, and RFA is in DRAFT or RETURNED status
+  const canEdit = (normalizeEmail(rfa.REQUESTER_EMAIL) === normalizeEmail(user.EMAIL) || toBoolean(user.IS_ADMIN)) && ['DRAFT', 'RETURNED'].includes(rfa.STATUS);
+  // An administrator may view any RFA but can decide only when explicitly assigned.
+  const canDecide = isCurrentSectionHead && normalizeEmail(rfa.REQUESTER_EMAIL) !== normalizeEmail(user.EMAIL);
+  // canImplement: requester or admin, and RFA is APPROVED
+  const canImplement = (normalizeEmail(rfa.REQUESTER_EMAIL) === normalizeEmail(user.EMAIL) || toBoolean(user.IS_ADMIN)) && rfa.STATUS === 'APPROVED';
+  // canClose: requester or admin, and RFA is APPROVED or IMPLEMENTATION
+  const canClose = (normalizeEmail(rfa.REQUESTER_EMAIL) === normalizeEmail(user.EMAIL) || toBoolean(user.IS_ADMIN)) && ['APPROVED', 'IMPLEMENTATION'].includes(rfa.STATUS);
+
   return {
     rfa,
     approvals: approvalRows(rfaId),
     attachments: attachmentRows(rfaId).map(({ DRIVE_FILE_ID: _hidden, ...attachment }) => attachment),
     audit: auditRows(rfaId).map(({ METADATA_JSON: _metadata, ...entry }) => entry),
     permissions: {
-      canEdit: (normalizeEmail(rfa.REQUESTER_EMAIL) === normalizeEmail(user.EMAIL) || toBoolean(user.IS_ADMIN)) && ['DRAFT', 'RETURNED'].includes(rfa.STATUS),
-      canDecide: normalizeEmail(rfa.CURRENT_APPROVER_EMAIL) === normalizeEmail(user.EMAIL) && normalizeEmail(rfa.REQUESTER_EMAIL) !== normalizeEmail(user.EMAIL),
-      canImplement: (normalizeEmail(rfa.REQUESTER_EMAIL) === normalizeEmail(user.EMAIL) || toBoolean(user.IS_ADMIN)) && rfa.STATUS === 'APPROVED',
-      canClose: (normalizeEmail(rfa.REQUESTER_EMAIL) === normalizeEmail(user.EMAIL) || toBoolean(user.IS_ADMIN)) && ['APPROVED', 'IMPLEMENTATION'].includes(rfa.STATUS)
+      canEdit,
+      canDecide,
+      canImplement,
+      canClose
     }
   };
 }

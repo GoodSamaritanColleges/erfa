@@ -66,6 +66,8 @@ export type ApprovalStep =
   | 'PREPARED_BY'
   | 'RECOMMENDING_APPROVAL'
   | 'REVIEWED_AND_NOTED'
+  | 'REVIEWED_BY'
+  | 'NOTED_BY'
   | 'APPROVED_BY';
 
 export type RfaStatus =
@@ -86,3 +88,29 @@ export interface SessionUser extends UserRecord {
   DEPARTMENT_NAME: string;
 }
 
+export interface RfaApprovalAssignment {
+  USER_ID: string;
+  USER_NAME: string;
+  POSITION: string;
+  DEPARTMENT: string;
+  EMAIL: string;
+  STATUS: 'PENDING' | 'APPROVED' | 'RETURNED' | 'DISAPPROVED';
+  ACTION_AT: string;
+  COMMENTS: string;
+}
+
+export interface EligibleApprover {
+  USER_ID: string;
+  FULL_NAME: string;
+  EMAIL: string;
+  POSITION: string;
+  DEPARTMENT: string;
+}
+
+export type ApprovalSection =
+  | 'RECOMMENDING_APPROVAL'
+  | 'REVIEWED_BY'
+  | 'NOTED_BY'
+  | 'APPROVED_BY';
+
+export type RfaSectionAssignments = Record<ApprovalSection, EligibleApprover[]>;
