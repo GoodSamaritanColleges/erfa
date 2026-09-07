@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatRfaNumber, isAssignedSectionComplete, nextAssignedSection, selectNextApprover, validateRfaInput } from '../src/core';
+import { canonicalIsoDate, formatRfaNumber, isAssignedSectionComplete, nextAssignedSection, selectNextApprover, validateRfaInput } from '../src/core';
 import type { MatrixRecord, UserRecord } from '../src/types';
 
 const baseUser = (id: string, email: string, overrides: Partial<UserRecord> = {}): UserRecord => ({
@@ -38,6 +38,12 @@ describe('eRFA workflow core', () => {
   it('validates institutional RFA submission fields', () => {
     expect(() => validateRfaInput({ requestTitle: 'Lab equipment', purpose: 'Replace broken equipment', budgetAllocation: 1000, targetDate: '2026-09-01', justification: 'Required for safe classes' }, true)).not.toThrow();
     expect(() => validateRfaInput({ requestTitle: '', purpose: '', targetDate: '' }, true)).toThrow();
+  });
+
+  it('preserves an ISO target date through a Sheets timestamp round-trip', () => {
+    expect(canonicalIsoDate('2026-09-10T00:00:00.000Z')).toBe('2026-09-10');
+    expect(validateRfaInput({ requestTitle: 'Lab equipment', purpose: 'Replace broken equipment', budgetAllocation: 1000, targetDate: '2026-09-10T00:00:00.000Z', justification: 'Required for safe classes' }, true).targetDate).toBe('2026-09-10');
+    expect(() => validateRfaInput({ requestTitle: 'Lab equipment', purpose: 'Replace broken equipment', budgetAllocation: 1000, targetDate: '', justification: 'Required for safe classes' }, true)).toThrow('Target Date is required.');
   });
 
   it('skips zero-assignment sections and finishes when none are assigned', () => {

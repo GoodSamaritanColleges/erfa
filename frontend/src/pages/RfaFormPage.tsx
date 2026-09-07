@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, fileToBase64 } from '../api';
 import { useAuth } from '../auth';
 import { ErrorNotice, Spinner } from '../components';
+import { dateInputValue } from '../format';
 import type { ApprovalAssignments, ApprovalSection, EligibleApprover, EmployeeDirectory, Rfa, RfaDetail } from '../types';
 
 interface FormState { requestTitle: string; purpose: string; budgetAllocation: string; targetDate: string; justification: string }
@@ -36,7 +37,7 @@ export function RfaFormPage() {
     void api<RfaDetail>('rfa.detail', { rfaId: id }).then(({ rfa, permissions, approvals }) => {
       if (!permissions.canEdit) throw new Error('This RFA is not editable.');
       setExisting(rfa);
-      setForm({ requestTitle: rfa.REQUEST_TITLE, purpose: rfa.PURPOSE, budgetAllocation: String(rfa.BUDGET_ALLOCATION), targetDate: rfa.TARGET_DATE, justification: rfa.JUSTIFICATION });
+      setForm({ requestTitle: rfa.REQUEST_TITLE, purpose: rfa.PURPOSE, budgetAllocation: String(rfa.BUDGET_ALLOCATION), targetDate: dateInputValue(rfa.TARGET_DATE), justification: rfa.JUSTIFICATION });
       const usesAssignments = rfa.CURRENT_MATRIX_ID === assignmentWorkflowMarker;
       setUsesAssignmentWorkflow(usesAssignments);
       setAssignments(usesAssignments

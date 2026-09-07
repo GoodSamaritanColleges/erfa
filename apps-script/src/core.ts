@@ -12,6 +12,13 @@ export function normalizeEmail(value: unknown): string {
   return String(value ?? '').trim().toLowerCase();
 }
 
+/** Keeps HTML-date and persisted ISO timestamps in the canonical date-only form. */
+export function canonicalIsoDate(value: unknown): string {
+  const raw = String(value ?? '').trim();
+  const match = raw.match(/^(\d{4}-\d{2}-\d{2})(?:T.*)?$/);
+  return match ? match[1] : raw;
+}
+
 export function toBoolean(value: unknown): boolean {
   return value === true || String(value).toUpperCase() === 'TRUE' || value === 1 || value === '1';
 }
@@ -66,7 +73,7 @@ export function validateRfaInput(payload: Record<string, unknown>, forSubmission
     requestTitle: String(payload.requestTitle ?? '').trim(),
     purpose: String(payload.purpose ?? '').trim(),
     budgetAllocation: Number(payload.budgetAllocation ?? 0),
-    targetDate: String(payload.targetDate ?? '').trim(),
+    targetDate: canonicalIsoDate(payload.targetDate),
     justification: String(payload.justification ?? '').trim()
   };
   if (forSubmission) {

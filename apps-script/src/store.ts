@@ -84,7 +84,10 @@ export function setupSchema(): { spreadsheetId: string; spreadsheetUrl: string; 
   return { spreadsheetId: db.getId(), spreadsheetUrl: db.getUrl(), sheets: Object.keys(SHEETS), attachmentFolderId };
 }
 
-function normalizeCell(value: unknown): string | number | boolean {
+function normalizeCell(value: unknown, header = ''): string | number | boolean {
+  // Sheets returns date-only cells as Date objects. Format TARGET_DATE in the
+  // spreadsheet timezone so an HTML date remains YYYY-MM-DD without UTC drift.
+  if (value instanceof Date && header === 'TARGET_DATE') return Utilities.formatDate(value, getDatabase().getSpreadsheetTimeZone(), 'yyyy-MM-dd');
   if (value instanceof Date) return value.toISOString();
   return value as string | number | boolean;
 }
@@ -103,7 +106,7 @@ export function all<T extends SheetRecord>(name: keyof typeof SHEETS): T[] {
   }
   const records = sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).getValues().map((row) => {
     const record: SheetRecord = {};
-    headers.forEach((header, index) => { record[header] = normalizeCell(row[index]); });
+    headers.forEach((header, index) => { record[header] = normalizeCell(row[index], header); });
     return record as T;
   });
   sheetDataCache.set(key, records as SheetRecord[]);
@@ -123,7 +126,7 @@ export function allTail<T extends SheetRecord>(name: keyof typeof SHEETS, limit:
   const startRow = lastRow - rowCount + 1;
   return sheet.getRange(startRow, 1, rowCount, headers.length).getValues().map((row) => {
     const record: SheetRecord = {};
-    headers.forEach((header, index) => { record[header] = normalizeCell(row[index]); });
+    headers.forEach((header, index) => { record[header] = normalizeCell(row[index], header); });
     return record as T;
   });
 }
