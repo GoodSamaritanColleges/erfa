@@ -47,6 +47,8 @@ export function Layout() {
         {user.CAN_CREATE_RFA && <NavLink to="/rfa/new"><Send /> Create RFA</NavLink>}
         {user.CAN_APPROVE_RFA && <NavLink to="/approvals"><ShieldCheck /> For My Action</NavLink>}
         {user.IS_ADMIN && <NavLink to="/admin"><LayoutGrid /> Administration</NavLink>}
+        {user.IS_ADMIN && <NavLink to="/admin/budgets"><LayoutGrid /> Budget Management</NavLink>}
+        {user.IS_ADMIN && <NavLink to="/admin/budget-reports"><ListTodo /> Expense Reports</NavLink>}
       </nav>
 
       <div className="sidebar-footer">
@@ -81,6 +83,7 @@ export function Layout() {
       {user.CAN_CREATE_RFA && <NavLink to="/rfa/new">Create RFA</NavLink>}
       {user.CAN_APPROVE_RFA && <NavLink to="/approvals">For My Action</NavLink>}
       {user.IS_ADMIN && <NavLink to="/admin">Admin</NavLink>}
+      {user.IS_ADMIN && <NavLink to="/admin/budgets">Budgets</NavLink>}
     </nav>
   </div>;
 }

@@ -36,6 +36,7 @@ export function DashboardPage() {
   const [approvals, setApprovals] = useState<Rfa[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [budget, setBudget] = useState<{ totals: { allocated: number; committed: number; actualSpent: number; available: number }; rows: Array<{ departmentName: string; utilization: number }> } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -51,6 +52,11 @@ export function DashboardPage() {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [user?.CAN_APPROVE_RFA]);
+
+  useEffect(() => {
+    if (!user?.IS_ADMIN) return;
+    void api<{ totals: { allocated: number; committed: number; actualSpent: number; available: number }; rows: Array<{ departmentName: string; utilization: number }> }>('admin.budget.overview', { fiscalYear: String(new Date().getFullYear()) }).then(setBudget).catch(() => undefined);
+  }, [user?.IS_ADMIN]);
 
   const counts = useMemo(() => ({
     draft: rfas.filter((r) => (r.STATUS ?? '') === 'DRAFT').length,
@@ -86,6 +92,12 @@ export function DashboardPage() {
       <Metric icon={<ShieldCheck />} label="Closed" value={counts.closed} />
     </section>
 
+    {user?.IS_ADMIN && budget && <section className="panel budget-dashboard">
+      <header className="panel-header"><div><span className="eyebrow orange">BUDGET OVERVIEW</span><h2>Current fiscal year</h2></div><Link to="/admin/budgets">Manage budgets <ArrowRight size={14} /></Link></header>
+      <div className="metric-grid"><MetricValue label="Institutional budget" value={money(budget.totals.allocated)} /><MetricValue label="Committed" value={money(budget.totals.committed)} /><MetricValue label="Actual spent" value={money(budget.totals.actualSpent)} /><MetricValue label="Available" value={money(budget.totals.available)} /></div>
+      {budget.rows.length > 0 && <p className="muted">{budget.rows.slice(0, 4).map((row) => `${row.departmentName}: ${(row.utilization * 100).toFixed(0)}% utilized`).join(' · ')}</p>}
+    </section>}
+
     {user?.CAN_APPROVE_RFA && <section className="panel">
       <header className="panel-header">
         <div>
@@ -120,6 +132,8 @@ function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; 
     <div><strong>{value}</strong><span>{label}</span></div>
   </div>;
 }
+
+function MetricValue({ label, value }: { label: string; value: string }) { return <div className="metric-card"><span>{label}</span><b>{value}</b></div>; }
 
 export function Empty({ title, text }: { title: string; text: string }) {
   return <div className="empty">

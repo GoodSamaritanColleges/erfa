@@ -4,11 +4,12 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, fileToBase64 } from '../api';
 import { useAuth } from '../auth';
 import { ErrorNotice, Spinner } from '../components';
-import { dateInputValue } from '../format';
+import { dateInputValue, money } from '../format';
 import type { ApprovalAssignments, ApprovalSection, EligibleApprover, EmployeeDirectory, Rfa, RfaDetail } from '../types';
 
-interface FormState { requestTitle: string; purpose: string; budgetAllocation: string; targetDate: string; justification: string }
-const blank: FormState = { requestTitle: '', purpose: '', budgetAllocation: '', targetDate: '', justification: '' };
+interface FormState { requestTitle: string; purpose: string; budgetAllocation: string; targetDate: string; justification: string; isBudgetRequest: boolean; fiscalYear: string; expenseCategoryId: string; requestedAmount: string }
+type BudgetContext = { fiscalYear: string; budget: { allocated: number; committed: number; actualSpent: number; available: number } | null; categories: Array<{ id: string; name: string }> };
+const blank: FormState = { requestTitle: '', purpose: '', budgetAllocation: '', targetDate: '', justification: '', isBudgetRequest: false, fiscalYear: String(new Date().getFullYear()), expenseCategoryId: '', requestedAmount: '' };
 const sections: Array<{ key: ApprovalSection; label: string }> = [
   { key: 'RECOMMENDING_APPROVAL', label: 'Recommending Approval' },
   { key: 'REVIEWED_BY', label: 'Reviewed By' },
@@ -31,13 +32,14 @@ export function RfaFormPage() {
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(Boolean(id));
+  const [budgetContext, setBudgetContext] = useState<BudgetContext | null>(null);
 
   useEffect(() => {
     if (!id) return;
     void api<RfaDetail>('rfa.detail', { rfaId: id }).then(({ rfa, permissions, approvals }) => {
       if (!permissions.canEdit) throw new Error('This RFA is not editable.');
       setExisting(rfa);
-      setForm({ requestTitle: rfa.REQUEST_TITLE, purpose: rfa.PURPOSE, budgetAllocation: String(rfa.BUDGET_ALLOCATION), targetDate: dateInputValue(rfa.TARGET_DATE), justification: rfa.JUSTIFICATION });
+      setForm({ requestTitle: rfa.REQUEST_TITLE, purpose: rfa.PURPOSE, budgetAllocation: String(rfa.BUDGET_ALLOCATION), targetDate: dateInputValue(rfa.TARGET_DATE), justification: rfa.JUSTIFICATION, isBudgetRequest: rfa.IS_BUDGET_REQUEST, fiscalYear: rfa.FISCAL_YEAR || String(new Date().getFullYear()), expenseCategoryId: rfa.EXPENSE_CATEGORY_ID || '', requestedAmount: rfa.REQUESTED_AMOUNT ? String(rfa.REQUESTED_AMOUNT / 100) : '' });
       const usesAssignments = rfa.CURRENT_MATRIX_ID === assignmentWorkflowMarker;
       setUsesAssignmentWorkflow(usesAssignments);
       setAssignments(usesAssignments
@@ -54,6 +56,11 @@ export function RfaFormPage() {
     }).catch((e: Error) => { if (!cancelled) setError(e.message); });
     return () => { cancelled = true; };
   }, [usesAssignmentWorkflow]);
+
+  useEffect(() => {
+    if (!form.isBudgetRequest) { setBudgetContext(null); return; }
+    void api<BudgetContext>('budget.context', { fiscalYear: form.fiscalYear }).then(setBudgetContext).catch((e: Error) => setError(e.message));
+  }, [form.isBudgetRequest, form.fiscalYear]);
 
   const set = (key: keyof FormState, value: string) => setForm((current) => ({ ...current, [key]: value }));
 
@@ -102,6 +109,19 @@ export function RfaFormPage() {
         </label>
       </section>
 
+      <section className="form-card financial-card">
+        <div className="section-title"><span>03</span><div><h2>Budget / Financial Information</h2><p>Use this only when the RFA will reserve department funds after final approval.</p></div></div>
+        <label className="toggle-field"><input type="checkbox" checked={form.isBudgetRequest} onChange={(e) => setForm((current) => ({ ...current, isBudgetRequest: e.target.checked }))} /> Financial request</label>
+        {form.isBudgetRequest && <>
+          <div className="form-grid">
+            <label className="field"><span>Fiscal Year <b>*</b></span><input required pattern="\\d{4}" value={form.fiscalYear} onChange={(e) => set('fiscalYear', e.target.value)} /></label>
+            <label className="field"><span>Expense Category <b>*</b></span><select required value={form.expenseCategoryId} onChange={(e) => set('expenseCategoryId', e.target.value)}><option value="">Select category</option>{budgetContext?.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+            <label className="field"><span>Requested Amount (PHP) <b>*</b></span><input required min="0.01" step="0.01" type="number" value={form.requestedAmount} onChange={(e) => set('requestedAmount', e.target.value)} placeholder="0.00" /></label>
+          </div>
+          {budgetContext?.budget ? <div className="budget-context"><span>Allocated <b>{money(budgetContext.budget.allocated)}</b></span><span>Committed <b>{money(budgetContext.budget.committed)}</b></span><span>Actual Spent <b>{money(budgetContext.budget.actualSpent)}</b></span><span>Available <b>{money(budgetContext.budget.available)}</b></span><span>Projected <b>{money(budgetContext.budget.available - Number(form.requestedAmount || 0))}</b></span></div> : <p className="muted">No FY {form.fiscalYear} budget has been configured for your department. A financial RFA cannot be submitted until an administrator configures it.</p>}
+        </>}
+      </section>
+
       <section className="form-card">
         <div className="section-title">
           <span>02</span>
@@ -129,7 +149,7 @@ export function RfaFormPage() {
 
       <section className="form-card">
         <div className="section-title">
-          <span>03</span>
+          <span>04</span>
           <div><h2>Picture / Letter Attachment</h2><p>Files are stored privately in the configured Google Drive folder.</p></div>
         </div>
         <label className="upload-zone">
@@ -146,7 +166,7 @@ export function RfaFormPage() {
 
       {usesAssignmentWorkflow && <section className="form-card approval-assignment-card">
         <div className="section-title">
-          <span>04</span>
+          <span>05</span>
           <div><h2>Approval route</h2><p>Prepared By is automatic. Select active approvers for each remaining signature stage; empty stages are skipped automatically.</p></div>
         </div>
         <div className="approval-assignment-grid">
@@ -155,7 +175,7 @@ export function RfaFormPage() {
       </section>}
 
       {!usesAssignmentWorkflow && existing && <section className="form-card approval-assignment-card legacy-route-notice">
-        <div className="section-title"><span>04</span><div><h2>Legacy approval route</h2><p>This historical RFA keeps its original Approval Matrix route. Its routing configuration cannot be changed here.</p></div></div>
+        <div className="section-title"><span>05</span><div><h2>Legacy approval route</h2><p>This historical RFA keeps its original Approval Matrix route. Its routing configuration cannot be changed here.</p></div></div>
       </section>}
 
       <section className="approval-preview">

@@ -19,6 +19,18 @@ export function canonicalIsoDate(value: unknown): string {
   return match ? match[1] : raw;
 }
 
+/** Parse a PHP amount exactly into integer centavos for financial persistence. */
+export function parseCentavos(value: unknown, label = 'Amount', allowZero = false): number {
+  const raw = String(value ?? '').trim().replace(/,/g, '');
+  if (!/^\d+(?:\.\d{1,2})?$/.test(raw)) throw new Error(`${label} must be a valid PHP amount.`);
+  const [whole, fraction = ''] = raw.split('.');
+  const cents = Number(whole) * 100 + Number((fraction + '00').slice(0, 2));
+  if (!Number.isSafeInteger(cents) || (!allowZero && cents <= 0) || (allowZero && cents < 0)) throw new Error(`${label} must be ${allowZero ? 'non-negative' : 'greater than zero'}.`);
+  return cents;
+}
+
+export function centavosToPhp(value: unknown): number { return Number(value || 0) / 100; }
+
 export function toBoolean(value: unknown): boolean {
   return value === true || String(value).toUpperCase() === 'TRUE' || value === 1 || value === '1';
 }

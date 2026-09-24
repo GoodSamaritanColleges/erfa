@@ -23,3 +23,6 @@ Return requires remarks, records the returning stage, clears the active assignme
 ## Disapproval
 
 Disapproval requires remarks, records the final decision, clears the current assignment, and emails the requester. It does not erase prior approval or audit history.
+# Financial RFA lifecycle
+
+For a financial RFA, final approval creates a single budget commitment. Recording an actual expense releases that commitment and writes an actual-expense ledger row. Pending and returned RFAs do not affect budget availability. See [Budget Management](BUDGET_MANAGEMENT.md).

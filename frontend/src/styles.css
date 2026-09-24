@@ -459,3 +459,20 @@ tbody td small { display: block; color: var(--muted); font-size: var(--text-xs);
   .rfa-document { break-inside: auto; }
   .document-section, .workflow-section, .approval-signatures { break-inside: avoid; }
 }
+/* Phase 9 financial screens keep the existing document-first visual language. */
+.financial-card { border-left: 3px solid #e87622; }
+.toggle-field { display: flex; align-items: center; gap: .55rem; font-weight: 700; color: #18365f; }
+.budget-context { display: flex; flex-wrap: wrap; gap: .65rem 1.25rem; margin-top: 1rem; padding: .8rem 1rem; border: 1px solid #dce4ee; background: #f8fafc; color: #52657c; font-size: .82rem; }
+.budget-context span { display: grid; gap: .15rem; }
+.budget-context b { color: #17345d; font-size: .95rem; }
+.metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .8rem; margin: 1rem 0; }
+.metric-card { padding: .9rem 1rem; border: 1px solid #dfe5ed; background: #fff; border-radius: .45rem; }
+.metric-card span { display: block; color: #63748a; font-size: .74rem; text-transform: uppercase; letter-spacing: .05em; }
+.metric-card b { display: block; margin-top: .3rem; color: #17345d; font-size: 1.05rem; }
+.table-panel { border: 1px solid #dfe5ed; background: #fff; border-radius: .45rem; margin: 1rem 0; overflow: hidden; }
+.table-panel > header { display: flex; justify-content: space-between; align-items: center; padding: .8rem 1rem; border-bottom: 1px solid #e7ebf0; }
+.table-panel h2 { margin: 0; font-size: 1rem; }
+.compact { max-width: 9rem; }
+.report-filters { display: flex; flex-wrap: wrap; align-items: end; gap: .8rem; }
+.report-filters .field { min-width: 12rem; flex: 1; }
+@media (max-width: 760px) { .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .budget-context { display: grid; grid-template-columns: 1fr 1fr; } }

@@ -61,6 +61,29 @@ export interface RfaRecord extends SheetRecord {
   SUBMITTED_AT: string;
   COMPLETED_AT: string;
   VERSION: number;
+  IS_BUDGET_REQUEST: boolean;
+  EXPENSE_CATEGORY_ID: string;
+  REQUESTED_AMOUNT: number;
+  APPROVED_AMOUNT: number;
+  ACTUAL_AMOUNT: number;
+  FISCAL_YEAR: string;
+  ACTUAL_EXPENSE_RECORDED_AT: string;
+}
+
+export interface DepartmentBudgetRecord extends SheetRecord {
+  BUDGET_ID: string; DEPARTMENT_ID: string; FISCAL_YEAR: string; ORIGINAL_ALLOCATED_AMOUNT: number;
+  ALLOW_OVER_BUDGET: boolean; STATUS: string; CREATED_BY: string; CREATED_AT: string; UPDATED_BY: string; UPDATED_AT: string;
+}
+
+export interface ExpenseCategoryRecord extends SheetRecord {
+  CATEGORY_ID: string; CATEGORY_NAME: string; DESCRIPTION: string; ACTIVE: boolean;
+  CREATED_BY: string; CREATED_AT: string; UPDATED_BY: string; UPDATED_AT: string;
+}
+
+export interface BudgetTransactionRecord extends SheetRecord {
+  TRANSACTION_ID: string; BUDGET_ID: string; DEPARTMENT_ID: string; FISCAL_YEAR: string; RFA_ID: string;
+  CATEGORY_ID: string; TRANSACTION_TYPE: string; AMOUNT: number; DESCRIPTION: string; REFERENCE: string;
+  STATUS: string; CREATED_BY: string; CREATED_AT: string; UPDATED_BY: string; UPDATED_AT: string;
 }
 
 export type ApprovalStep =

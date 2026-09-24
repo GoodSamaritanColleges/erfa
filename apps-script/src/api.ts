@@ -1,9 +1,10 @@
 import { APP_VERSION } from './constants';
 import { authenticate, requireCapability } from './auth';
 import { adminData, saveDepartment, saveMatrix, saveUser } from './admin';
+import { adjustBudget, adminBudgetOverview, budgetReport, departmentFinancialDetail, requesterBudgetContext, saveBudget, saveCategory, setOverBudget } from './budget';
 import { getDatabase, resetPerRequestCache } from './store';
 import { resetWorkflowCache } from './workflow';
-import { createRfa, decideRfa, detailRfa, downloadAttachment, eligibleApprovers, listForApproval, listRfas, submitRfa, transitionCloseout, updateRfa, uploadAttachment } from './workflow';
+import { createRfa, decideRfa, detailRfa, downloadAttachment, eligibleApprovers, listForApproval, listRfas, saveActualExpense, submitRfa, transitionCloseout, updateRfa, uploadAttachment } from './workflow';
 
 export interface ApiRequest { action: string; idToken?: string; payload?: Record<string, unknown> }
 
@@ -19,6 +20,7 @@ export function dispatch(request: ApiRequest): unknown {
     case 'rfa.forApproval': return listForApproval(user);
     case 'rfa.detail': return detailRfa(user, String(payload.rfaId ?? ''));
     case 'rfa.eligibleApprovers': return eligibleApprovers(user);
+    case 'budget.context': return requesterBudgetContext(user, payload.fiscalYear);
     case 'rfa.create': return withLock(() => createRfa(user, payload));
     case 'rfa.update': return withLock(() => updateRfa(user, payload));
     case 'rfa.submit': return withLock(() => submitRfa(user, String(payload.rfaId ?? ''), false));
@@ -29,12 +31,20 @@ export function dispatch(request: ApiRequest): unknown {
     case 'rfa.implementation': return withLock(() => transitionCloseout(user, String(payload.rfaId ?? ''), 'IMPLEMENTATION'));
     case 'rfa.close': return withLock(() => transitionCloseout(user, String(payload.rfaId ?? ''), 'CLOSED'));
     case 'rfa.cancel': return withLock(() => transitionCloseout(user, String(payload.rfaId ?? ''), 'CANCELLED'));
+    case 'rfa.actualExpense': return withLock(() => saveActualExpense(user, String(payload.rfaId ?? ''), payload));
     case 'attachment.upload': return withLock(() => uploadAttachment(user, payload));
     case 'attachment.download': return downloadAttachment(user, String(payload.attachmentId ?? ''));
     case 'admin.data': return adminData(user);
     case 'admin.user.save': return withLock(() => saveUser(user, payload));
     case 'admin.department.save': return withLock(() => saveDepartment(user, payload));
     case 'admin.matrix.save': return withLock(() => saveMatrix(user, payload));
+    case 'admin.budget.overview': return adminBudgetOverview(user, payload.fiscalYear);
+    case 'admin.budget.save': return withLock(() => saveBudget(user, payload));
+    case 'admin.budget.adjust': return withLock(() => adjustBudget(user, payload));
+    case 'admin.budget.overBudget': return withLock(() => setOverBudget(user, payload));
+    case 'admin.category.save': return withLock(() => saveCategory(user, payload));
+    case 'admin.budget.report': return budgetReport(user, payload);
+    case 'admin.budget.detail': return departmentFinancialDetail(user, payload);
     case 'admin.database': requireCapability(user, 'IS_ADMIN'); return { spreadsheetId: getDatabase().getId(), spreadsheetUrl: getDatabase().getUrl() };
     default: throw Object.assign(new Error('Unknown API action.'), { code: 'NOT_FOUND' });
   }

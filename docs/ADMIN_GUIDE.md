@@ -17,3 +17,6 @@ Requester and approver are not exclusive roles. The server rejects a requester w
 Deactivate obsolete users, departments, or matrix routes instead of deleting spreadsheet rows. Historical RFAs continue to show the identities copied at the time of action.
 
 The **System Logs** tab shows recent audit events and notification delivery results. `FAILED` contains the MailApp error; `PENDING` indicates email was disabled in settings. Correct the cause before manually retriggering a workflow event—do not edit a notification record to claim delivery.
+# Budget management
+
+Administrators can configure department budgets, over-budget policy, and expense categories under **Budget Management**, and filter/export financial RFAs from **Expense Reports**. Budget changes must use a reasoned adjustment rather than overwriting history. See [Budget Management](BUDGET_MANAGEMENT.md).

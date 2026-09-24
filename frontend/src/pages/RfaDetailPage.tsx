@@ -16,8 +16,10 @@ export function RfaDetailPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(true);
-  const [dialog, setDialog] = useState<'approve'|'return'|'disapprove'|null>(null);
+  const [dialog, setDialog] = useState<'approve'|'return'|'disapprove'|'actual'|null>(null);
   const [remarks, setRemarks] = useState('');
+  const [actualAmount, setActualAmount] = useState('');
+  const [reference, setReference] = useState('');
   const [working, setWorking] = useState(false);
 
   const load = useCallback(() => {
@@ -51,6 +53,12 @@ export function RfaDetailPage() {
     finally { setWorking(false); }
   }
 
+  async function recordActual() {
+    setWorking(true); setError('');
+    try { await api('rfa.actualExpense', { rfaId: id, actualAmount, reference, note: remarks }); setDialog(null); setActualAmount(''); setReference(''); setRemarks(''); setSuccess('Actual expense recorded and the commitment released.'); load(); }
+    catch (caught) { setError(caught instanceof Error ? caught.message : 'Actual expense could not be recorded.'); } finally { setWorking(false); }
+  }
+
   async function download(attachment: Attachment) {
     try {
       const file = await api<{ fileName: string; mimeType: string; base64: string }>('attachment.download', { attachmentId: attachment.ATTACHMENT_ID });
@@ -67,7 +75,7 @@ export function RfaDetailPage() {
   if (loading && !detail) return <Spinner label="Loading RFA" />;
   if (!detail) return <><ErrorNotice message={error || 'RFA was not found.'} /><button className="button secondary" onClick={() => navigate('/rfas')}>Back to My RFAs</button></>;
 
-  const { rfa, approvals, attachments, audit, permissions } = detail;
+  const { rfa, approvals, attachments, audit, permissions, financial } = detail;
   const usesAssignmentWorkflow = rfa.CURRENT_MATRIX_ID === 'RFA_ASSIGNMENTS_V1' || approvals.some((approval) => approval.STEP === 'REVIEWED_BY' || approval.STEP === 'NOTED_BY') || rfa.CURRENT_STEP === 'REVIEWED_BY' || rfa.CURRENT_STEP === 'NOTED_BY';
   const steps = usesAssignmentWorkflow ? assignmentSteps : legacySteps;
 
@@ -127,6 +135,11 @@ export function RfaDetailPage() {
         <Fact label="Budget Allocation" value={money(rfa.BUDGET_ALLOCATION)} />
         <Fact label="Target Date" value={date(rfa.TARGET_DATE)} />
       </section>
+
+      {financial && <DocumentSection title="Budget / Financial Information">
+        <section className="request-grid two"><Fact label="Fiscal Year" value={financial.fiscalYear} /><Fact label="Expense Category" value={financial.categoryName} /><Fact label="Requested Amount" value={money(financial.requestedAmount)} /><Fact label="Approved Amount" value={money(financial.approvedAmount)} /><Fact label="Actual Amount" value={money(financial.actualAmount)} /><Fact label="Projected Available Balance" value={financial.projectedAvailable === null ? 'Budget not configured' : money(financial.projectedAvailable)} /></section>
+        {financial.budget && <div className="budget-context"><span>Allocated <b>{money(financial.budget.allocated)}</b></span><span>Committed <b>{money(financial.budget.committed)}</b></span><span>Actual Spent <b>{money(financial.budget.actualSpent)}</b></span><span>Available <b>{money(financial.budget.available)}</b></span></div>}
+      </DocumentSection>}
 
       <DocumentSection title="Justification"><p>{rfa.JUSTIFICATION || '—'}</p></DocumentSection>
 
@@ -198,6 +211,7 @@ export function RfaDetailPage() {
         </div>
         <button className="button primary" disabled={working} onClick={() => void transition('implementation')}><Send size={15} /> Start Implementation</button>
       </>}
+      {!permissions.canDecide && permissions.canRecordActualExpense && Number(rfa.ACTUAL_AMOUNT || 0) === 0 && <button className="button secondary" disabled={working} onClick={() => setDialog('actual')}>Record actual expense</button>}
       {!permissions.canDecide && permissions.canClose && rfa.STATUS === 'IMPLEMENTATION' && <>
         <div>
           <span className="eyebrow orange">IMPLEMENTATION</span>
@@ -211,10 +225,16 @@ export function RfaDetailPage() {
     </section>
 
     {dialog && <Dialog
-      title={dialog === 'approve' ? 'Confirm electronic approval' : dialog === 'return' ? 'Return RFA for revision' : 'Disapprove RFA'}
+      title={dialog === 'approve' ? 'Confirm electronic approval' : dialog === 'return' ? 'Return RFA for revision' : dialog === 'actual' ? 'Record actual expense' : 'Disapprove RFA'}
       onClose={() => setDialog(null)}>
       <div className="dialog-body">
-        <p>{dialog === 'approve'
+        {dialog === 'actual' ? <>
+          <p>This finalizes the actual expense, releases the approved commitment, and preserves both ledger entries.</p>
+          <label className="field"><span>Actual Amount (PHP) <b>*</b></span><input autoFocus min="0" step="0.01" type="number" value={actualAmount} onChange={(e) => setActualAmount(e.target.value)} /></label>
+          <label className="field"><span>Reference</span><input value={reference} onChange={(e) => setReference(e.target.value)} /></label>
+          <label className="field"><span>Financial Note</span><textarea rows={3} value={remarks} onChange={(e) => setRemarks(e.target.value)} /></label>
+          <div className="dialog-actions"><button className="button ghost" onClick={() => setDialog(null)}>Cancel</button><button className="button primary" disabled={working || !actualAmount} onClick={() => void recordActual()}>Record Expense</button></div>
+        </> : <div><p>{dialog === 'approve'
           ? 'Your identity, approval step, timestamp, and remarks will be recorded permanently.'
           : 'Provide a clear reason so the requester understands what is required.'}</p>
         <label className="field">
@@ -229,7 +249,7 @@ export function RfaDetailPage() {
             {dialog === 'approve' ? 'Confirm Approval' : dialog === 'return' ? 'Return to Requester' : 'Confirm Disapproval'}
           </button>
         </div>
-      </div>
+      </div>}</div>
     </Dialog>}
   </>;
 }
