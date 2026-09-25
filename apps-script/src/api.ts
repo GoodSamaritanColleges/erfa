@@ -1,7 +1,7 @@
 import { APP_VERSION } from './constants';
 import { authenticate, requireCapability } from './auth';
 import { adminData, saveDepartment, saveMatrix, saveUser } from './admin';
-import { adjustBudget, adminBudgetOverview, adminBudgetSummary, budgetReport, departmentFinancialDetail, requesterBudgetContext, saveBudget, saveCategory, setOverBudget } from './budget';
+import { adjustBudget, adminBudgetManagement, adminBudgetOverview, adminBudgetSummary, adminExpenseCategories, budgetReport, departmentFinancialDetail, requesterBudgetContext, saveBudget, saveCategory, setOverBudget } from './budget';
 import { getDatabase, resetPerRequestCache } from './store';
 import { resetWorkflowCache } from './workflow';
 import { createRfa, dashboardRfas, decideRfa, detailRfa, downloadAttachment, eligibleApprovers, listForApproval, listRfas, saveActualExpense, submitRfa, transitionCloseout, updateRfa, uploadAttachment } from './workflow';
@@ -40,11 +40,13 @@ export function dispatch(request: ApiRequest): unknown {
     case 'admin.department.save': return withLock(() => saveDepartment(user, payload));
     case 'admin.matrix.save': return withLock(() => saveMatrix(user, payload));
     case 'admin.budget.overview': return adminBudgetOverview(user, payload.fiscalYear);
+    case 'admin.budget.management': return adminBudgetManagement(user, payload.fiscalYear);
     case 'admin.budget.summary': return adminBudgetSummary(user, payload.fiscalYear);
     case 'admin.budget.save': return withLock(() => saveBudget(user, payload));
     case 'admin.budget.adjust': return withLock(() => adjustBudget(user, payload));
     case 'admin.budget.overBudget': return withLock(() => setOverBudget(user, payload));
     case 'admin.category.save': return withLock(() => saveCategory(user, payload));
+    case 'admin.category.list': return adminExpenseCategories(user);
     case 'admin.budget.report': return budgetReport(user, payload);
     case 'admin.budget.detail': return departmentFinancialDetail(user, payload);
     case 'admin.database': requireCapability(user, 'IS_ADMIN'); return { spreadsheetId: getDatabase().getId(), spreadsheetUrl: getDatabase().getUrl() };

@@ -1,5 +1,5 @@
 import { Search } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { ErrorNotice, Spinner } from '../components';
 import type { Rfa } from '../types';
@@ -11,16 +11,20 @@ export function RfaListPage({ approvalsOnly = false }: { approvalsOnly?: boolean
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const previousQuery = useRef(query);
 
   useEffect(() => {
+    let current = true;
+    const delay = query === previousQuery.current ? 0 : 250;
+    previousQuery.current = query;
+    setLoading(true);
     const timer = setTimeout(() => {
-      setLoading(true);
       void api<Rfa[]>(approvalsOnly ? 'rfa.forApproval' : 'rfa.list', approvalsOnly ? {} : { query, status })
-        .then(setRfas)
-        .catch((e: Error) => setError(e.message))
-        .finally(() => setLoading(false));
-    }, 200);
-    return () => clearTimeout(timer);
+        .then((next) => { if (current) setRfas(next); })
+        .catch((caught: Error) => { if (current) setError(caught.message); })
+        .finally(() => { if (current) setLoading(false); });
+    }, delay);
+    return () => { current = false; clearTimeout(timer); };
   }, [query, status, approvalsOnly]);
 
   return <>

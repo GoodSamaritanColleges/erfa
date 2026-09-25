@@ -475,4 +475,20 @@ tbody td small { display: block; color: var(--muted); font-size: var(--text-xs);
 .compact { max-width: 9rem; }
 .report-filters { display: flex; flex-wrap: wrap; align-items: end; gap: .8rem; }
 .report-filters .field { min-width: 12rem; flex: 1; }
+.budget-toolbar, .budget-detail-actions { display: flex; flex-wrap: wrap; align-items: end; gap: .65rem; }
+.budget-toolbar { margin-bottom: 1rem; }
+.budget-toolbar .field { min-width: 150px; margin-right: .3rem; }
+.budget-panel { margin: 1rem 0; }
+.budget-panel h2 { margin: 0 0 .5rem; font-size: 1.05rem; }
+.budget-panel > .field { max-width: 430px; }
+.budget-fields { margin: 1rem 0; }
+.budget-detail-metrics { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.budget-detail-metrics .metric-card b { overflow-wrap: anywhere; }
+.budget-policy { max-width: 220px; margin-top: 1.25rem; }
+.budget-adjustment { border-top: 1px solid var(--line); margin-top: 1.25rem; padding-top: 1.25rem; }
+.budget-adjustment h3 { margin: 0 0 .35rem; font-size: 1rem; }
+.budget-adjustment .form-grid, .budget-adjustment > .field { margin: .9rem 0; }
+.budget-categories-link { margin-top: 1rem; }
+@media (max-width: 1200px) and (min-width: 761px) { .budget-detail-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 760px) { .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .budget-context { display: grid; grid-template-columns: 1fr 1fr; } }
+@media (max-width: 760px) { .budget-detail-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .budget-toolbar > .button { flex: 1 1 180px; } }

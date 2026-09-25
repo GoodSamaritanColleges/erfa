@@ -134,6 +134,16 @@ export function adminBudgetSummary(user: SessionUser, fiscalYearValue: unknown):
   return { fiscalYear, rows, totals };
 }
 
+export function adminBudgetManagement(user: SessionUser, fiscalYearValue: unknown): Record<string, unknown> {
+  requireCapability(user, 'IS_ADMIN');
+  return budgetOverview(year(fiscalYearValue));
+}
+
+export function adminExpenseCategories(user: SessionUser): ExpenseCategoryRecord[] {
+  requireCapability(user, 'IS_ADMIN');
+  return all<ExpenseCategoryRecord>('EXPENSE_CATEGORIES');
+}
+
 export function adminBudgetOverview(user: SessionUser, fiscalYearValue: unknown): Record<string, unknown> {
   requireCapability(user, 'IS_ADMIN');
   return { ...budgetOverview(year(fiscalYearValue)), categories: all<ExpenseCategoryRecord>('EXPENSE_CATEGORIES') };

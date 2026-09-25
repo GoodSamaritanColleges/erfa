@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { adminBudgetOverview, adminBudgetSummary, budgetReport } from '../src/budget';
+import { adminBudgetManagement, adminBudgetOverview, adminBudgetSummary, adminExpenseCategories, budgetReport } from '../src/budget';
 import { dashboardRfas, detailRfa, listForApproval } from '../src/workflow';
 import { all } from '../src/store';
 import type { BudgetTransactionRecord, DepartmentBudgetRecord, DepartmentRecord, ExpenseCategoryRecord, RfaRecord, SessionUser, SheetRecord } from '../src/types';
@@ -8,6 +8,7 @@ vi.mock('../src/store', async (importOriginal) => {
   const original = await importOriginal<typeof import('../src/store')>();
   return { ...original, all: vi.fn(), findBy: vi.fn((name: string, key: string, value: string) => sheets.get(name)?.find((row) => String(row[key]) === value)) };
 });
+vi.mock('../src/audit', () => ({ audit: vi.fn() }));
 
 const sheets = new Map<string, SheetRecord[]>();
 const admin = { USER_ID: 'admin', EMAIL: 'admin@example.edu', IS_ADMIN: true, CAN_APPROVE_RFA: false } as SessionUser;
@@ -42,6 +43,24 @@ describe('read-only request performance', () => {
     expect(summary.rows).toEqual([]);
     expect(summary.totals.allocated).toBe(0);
     expect(vi.mocked(all).mock.calls.some(([name]) => name === 'BUDGET_TRANSACTIONS')).toBe(false);
+  });
+
+  it('loads budget management without categories and reads categories only when opened', () => {
+    const management = adminBudgetManagement(admin, '2026') as { departments: DepartmentRecord[]; rows: unknown[] };
+    expect(management.departments).toHaveLength(2);
+    expect(management.rows).toHaveLength(2);
+    expect(vi.mocked(all).mock.calls.map(([name]) => name)).toEqual(['DEPARTMENTS', 'DEPARTMENT_BUDGETS', 'BUDGET_TRANSACTIONS']);
+
+    vi.mocked(all).mockClear();
+    expect(adminExpenseCategories(admin)).toHaveLength(1);
+    expect(vi.mocked(all).mock.calls.map(([name]) => name)).toEqual(['EXPENSE_CATEGORIES']);
+  });
+
+  it('keeps both budget-management reads restricted to administrators', () => {
+    const requester = { USER_ID: 'requester', EMAIL: 'requester@example.edu', IS_ADMIN: false } as SessionUser;
+    expect(() => adminBudgetManagement(requester, '2026')).toThrow('You do not have permission');
+    expect(() => adminExpenseCategories(requester)).toThrow('You do not have permission');
+    expect(vi.mocked(all)).not.toHaveBeenCalled();
   });
 
   it('indexes report transactions once while retaining filtered totals and RFA links', () => {
