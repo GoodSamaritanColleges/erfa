@@ -59,7 +59,14 @@ export function RfaFormPage() {
 
   useEffect(() => {
     if (!form.isBudgetRequest) { setBudgetContext(null); return; }
-    void api<BudgetContext>('budget.context', { fiscalYear: form.fiscalYear }).then(setBudgetContext).catch((e: Error) => setError(e.message));
+    if (!/^\d{4}$/.test(form.fiscalYear)) return;
+    let current = true;
+    const timer = setTimeout(() => {
+      void api<BudgetContext>('budget.context', { fiscalYear: form.fiscalYear })
+        .then((context) => { if (current) setBudgetContext(context); })
+        .catch((e: Error) => { if (current) setError(e.message); });
+    }, budgetContext ? 300 : 0);
+    return () => { current = false; clearTimeout(timer); };
   }, [form.isBudgetRequest, form.fiscalYear]);
 
   const set = (key: keyof FormState, value: string) => setForm((current) => ({ ...current, [key]: value }));

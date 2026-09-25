@@ -1,10 +1,10 @@
 import { APP_VERSION } from './constants';
 import { authenticate, requireCapability } from './auth';
 import { adminData, saveDepartment, saveMatrix, saveUser } from './admin';
-import { adjustBudget, adminBudgetOverview, budgetReport, departmentFinancialDetail, requesterBudgetContext, saveBudget, saveCategory, setOverBudget } from './budget';
+import { adjustBudget, adminBudgetOverview, adminBudgetSummary, budgetReport, departmentFinancialDetail, requesterBudgetContext, saveBudget, saveCategory, setOverBudget } from './budget';
 import { getDatabase, resetPerRequestCache } from './store';
 import { resetWorkflowCache } from './workflow';
-import { createRfa, decideRfa, detailRfa, downloadAttachment, eligibleApprovers, listForApproval, listRfas, saveActualExpense, submitRfa, transitionCloseout, updateRfa, uploadAttachment } from './workflow';
+import { createRfa, dashboardRfas, decideRfa, detailRfa, downloadAttachment, eligibleApprovers, listForApproval, listRfas, saveActualExpense, submitRfa, transitionCloseout, updateRfa, uploadAttachment } from './workflow';
 
 export interface ApiRequest { action: string; idToken?: string; payload?: Record<string, unknown> }
 
@@ -16,6 +16,7 @@ export function dispatch(request: ApiRequest): unknown {
   const payload = request.payload ?? {};
   switch (request.action) {
     case 'session': return { user, version: APP_VERSION };
+    case 'dashboard.rfas': return dashboardRfas(user);
     case 'rfa.list': return listRfas(user, payload);
     case 'rfa.forApproval': return listForApproval(user);
     case 'rfa.detail': return detailRfa(user, String(payload.rfaId ?? ''));
@@ -39,6 +40,7 @@ export function dispatch(request: ApiRequest): unknown {
     case 'admin.department.save': return withLock(() => saveDepartment(user, payload));
     case 'admin.matrix.save': return withLock(() => saveMatrix(user, payload));
     case 'admin.budget.overview': return adminBudgetOverview(user, payload.fiscalYear);
+    case 'admin.budget.summary': return adminBudgetSummary(user, payload.fiscalYear);
     case 'admin.budget.save': return withLock(() => saveBudget(user, payload));
     case 'admin.budget.adjust': return withLock(() => adjustBudget(user, payload));
     case 'admin.budget.overBudget': return withLock(() => setOverBudget(user, payload));

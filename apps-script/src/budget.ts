@@ -5,6 +5,7 @@ import { all, findBy, insert, newId, nowIso, resetPerRequestCache, updateBy } fr
 import type { BudgetTransactionRecord, DepartmentBudgetRecord, DepartmentRecord, ExpenseCategoryRecord, RfaRecord, SessionUser } from './types';
 
 type Summary = { allocated: number; committed: number; actualSpent: number; available: number; utilization: number };
+type PublicSummary = Summary & { budgetId: string; departmentId: string; fiscalYear: string; allowOverBudget: boolean; status: string };
 const active = (transaction: BudgetTransactionRecord) => transaction.STATUS !== 'VOID';
 
 function failure(message: string, code = 'INVALID_OPERATION'): never { const error = new Error(message) as Error & { code?: string }; error.code = code; throw error; }
@@ -26,7 +27,7 @@ export function summarizeBudget(budget: DepartmentBudgetRecord, transactions = l
   return { allocated, committed, actualSpent, available: allocated - committed - actualSpent, utilization: allocated > 0 ? (committed + actualSpent) / allocated : 0 };
 }
 
-function publicSummary(budget: DepartmentBudgetRecord, summary = summarizeBudget(budget)): Record<string, unknown> {
+function publicSummary(budget: DepartmentBudgetRecord, summary = summarizeBudget(budget)): PublicSummary {
   return { budgetId: budget.BUDGET_ID, departmentId: budget.DEPARTMENT_ID, fiscalYear: budget.FISCAL_YEAR, allowOverBudget: toBoolean(budget.ALLOW_OVER_BUDGET), status: budget.STATUS,
     allocated: centavosToPhp(summary.allocated), committed: centavosToPhp(summary.committed), actualSpent: centavosToPhp(summary.actualSpent), available: centavosToPhp(summary.available), utilization: summary.utilization };
 }
@@ -106,12 +107,36 @@ export function financialDetail(rfa: RfaRecord): Record<string, unknown> | null 
   return { fiscalYear: rfa.FISCAL_YEAR, categoryName: category?.CATEGORY_NAME || 'Historical category', requestedAmount: centavosToPhp(rfa.REQUESTED_AMOUNT), approvedAmount: centavosToPhp(rfa.APPROVED_AMOUNT || rfa.REQUESTED_AMOUNT), actualAmount: centavosToPhp(rfa.ACTUAL_AMOUNT), budget: summary, projectedAvailable: summary ? Number(summary.available) - centavosToPhp(rfa.APPROVED_AMOUNT || rfa.REQUESTED_AMOUNT) : null };
 }
 
+function budgetOverview(fiscalYear: string): { fiscalYear: string; departments: DepartmentRecord[]; rows: Array<Record<string, unknown>>; totals: { allocated: number; committed: number; actualSpent: number; available: number } } {
+  const departments = all<DepartmentRecord>('DEPARTMENTS');
+  const departmentById = new Map(departments.map((department) => [department.DEPARTMENT_ID, department]));
+  const budgets = all<DepartmentBudgetRecord>('DEPARTMENT_BUDGETS').filter((budget) => String(budget.FISCAL_YEAR) === fiscalYear);
+  const transactionsByBudget = new Map(budgets.map((budget) => [budget.BUDGET_ID, [] as BudgetTransactionRecord[]]));
+  if (budgets.length) {
+    for (const transaction of all<BudgetTransactionRecord>('BUDGET_TRANSACTIONS')) {
+      if (active(transaction)) transactionsByBudget.get(transaction.BUDGET_ID)?.push(transaction);
+    }
+  }
+  const rows = budgets.map((budget) => ({
+    departmentName: departmentById.get(budget.DEPARTMENT_ID)?.DEPARTMENT_NAME || budget.DEPARTMENT_ID,
+    ...publicSummary(budget, summarizeBudget(budget, transactionsByBudget.get(budget.BUDGET_ID) || []))
+  }));
+  const totals = rows.reduce((sum, row) => ({
+    allocated: sum.allocated + Number(row.allocated), committed: sum.committed + Number(row.committed),
+    actualSpent: sum.actualSpent + Number(row.actualSpent), available: sum.available + Number(row.available)
+  }), { allocated: 0, committed: 0, actualSpent: 0, available: 0 });
+  return { fiscalYear, departments: departments.filter((department) => toBoolean(department.ACTIVE)), rows, totals };
+}
+
+export function adminBudgetSummary(user: SessionUser, fiscalYearValue: unknown): Record<string, unknown> {
+  requireCapability(user, 'IS_ADMIN');
+  const { fiscalYear, rows, totals } = budgetOverview(year(fiscalYearValue));
+  return { fiscalYear, rows, totals };
+}
+
 export function adminBudgetOverview(user: SessionUser, fiscalYearValue: unknown): Record<string, unknown> {
-  requireCapability(user, 'IS_ADMIN'); const fiscalYear = year(fiscalYearValue);
-  const departments = new Map(all<DepartmentRecord>('DEPARTMENTS').map((department) => [department.DEPARTMENT_ID, department]));
-  const rows: Array<{ departmentName: string; allocated: number; committed: number; actualSpent: number; available: number; utilization: number; budgetId: string; departmentId: string; fiscalYear: string; allowOverBudget: boolean; status: string }> = all<DepartmentBudgetRecord>('DEPARTMENT_BUDGETS').filter((budget) => String(budget.FISCAL_YEAR) === fiscalYear).map((budget) => ({ departmentName: departments.get(budget.DEPARTMENT_ID)?.DEPARTMENT_NAME || budget.DEPARTMENT_ID, ...(publicSummary(budget) as Omit<{ departmentName: string; allocated: number; committed: number; actualSpent: number; available: number; utilization: number; budgetId: string; departmentId: string; fiscalYear: string; allowOverBudget: boolean; status: string }, 'departmentName'>) }));
-  const totals = rows.reduce((sum, row) => ({ allocated: sum.allocated + Number(row.allocated), committed: sum.committed + Number(row.committed), actualSpent: sum.actualSpent + Number(row.actualSpent), available: sum.available + Number(row.available) }), { allocated: 0, committed: 0, actualSpent: 0, available: 0 });
-  return { fiscalYear, departments: all<DepartmentRecord>('DEPARTMENTS').filter((department) => toBoolean(department.ACTIVE)), categories: all<ExpenseCategoryRecord>('EXPENSE_CATEGORIES'), rows, totals };
+  requireCapability(user, 'IS_ADMIN');
+  return { ...budgetOverview(year(fiscalYearValue)), categories: all<ExpenseCategoryRecord>('EXPENSE_CATEGORIES') };
 }
 
 export function saveBudget(user: SessionUser, payload: Record<string, unknown>): Record<string, unknown> {
@@ -136,22 +161,35 @@ export function setOverBudget(user: SessionUser, payload: Record<string, unknown
 
 export function saveCategory(user: SessionUser, payload: Record<string, unknown>): Record<string, unknown> { requireCapability(user, 'IS_ADMIN'); const id = String(payload.categoryId || ''); const name = String(payload.name || '').trim(); if (name.length < 2) failure('Category name is required.'); const description = String(payload.description || '').trim(); const activeValue = payload.active === undefined ? true : toBoolean(payload.active); const timestamp = nowIso(); if (id) { const existing = findBy<ExpenseCategoryRecord>('EXPENSE_CATEGORIES', 'CATEGORY_ID', id); if (!existing) failure('Category was not found.', 'NOT_FOUND'); updateBy('EXPENSE_CATEGORIES', 'CATEGORY_ID', id, { CATEGORY_NAME: name, DESCRIPTION: description, ACTIVE: activeValue, UPDATED_BY: user.EMAIL, UPDATED_AT: timestamp }); audit('EXPENSE_CATEGORY_CHANGED', user, '', '', '', name, { categoryId: id, active: activeValue }); return { id, name, description, active: activeValue }; } const categoryId = newId('cat'); insert('EXPENSE_CATEGORIES', { CATEGORY_ID: categoryId, CATEGORY_NAME: name, DESCRIPTION: description, ACTIVE: activeValue, CREATED_BY: user.EMAIL, CREATED_AT: timestamp, UPDATED_BY: user.EMAIL, UPDATED_AT: timestamp }); audit('EXPENSE_CATEGORY_CREATED', user, '', '', '', name, { categoryId }); return { id: categoryId, name, description, active: activeValue }; }
 
-function reportData(payload: Record<string, unknown>): Record<string, unknown> {
+function reportData(payload: Record<string, unknown>, loadedTransactions?: BudgetTransactionRecord[]): Record<string, unknown> {
   const fiscalYear = String(payload.fiscalYear || '').trim(); const departmentId = String(payload.departmentId || '').trim(); const categoryId = String(payload.categoryId || '').trim(); const query = String(payload.query || '').trim().toLowerCase(); const status = String(payload.status || '').trim(); const financialStatus = String(payload.financialStatus || '').trim(); const fromDate = String(payload.fromDate || '').trim(); const toDate = String(payload.toDate || '').trim();
-  const categories = new Map(all<ExpenseCategoryRecord>('EXPENSE_CATEGORIES').map((item) => [item.CATEGORY_ID, item])); const departments = new Map(all<DepartmentRecord>('DEPARTMENTS').map((item) => [item.DEPARTMENT_ID, item])); const transactions = all<BudgetTransactionRecord>('BUDGET_TRANSACTIONS').filter(active); const transactionByRfa = new Map<string, BudgetTransactionRecord[]>(); transactions.forEach((item) => { if (item.RFA_ID) transactionByRfa.set(item.RFA_ID, [...(transactionByRfa.get(item.RFA_ID) || []), item]); });
+  const categories = new Map(all<ExpenseCategoryRecord>('EXPENSE_CATEGORIES').map((item) => [item.CATEGORY_ID, item]));
+  const departments = new Map(all<DepartmentRecord>('DEPARTMENTS').map((item) => [item.DEPARTMENT_ID, item]));
+  const transactions = loadedTransactions ?? all<BudgetTransactionRecord>('BUDGET_TRANSACTIONS').filter(active);
+  const transactionByRfa = new Map<string, { committed: number; hasCommitment: boolean; hasRelease: boolean }>();
+  for (const item of transactions) {
+    if (!item.RFA_ID) continue;
+    const state = transactionByRfa.get(item.RFA_ID) || { committed: 0, hasCommitment: false, hasRelease: false };
+    if (item.TRANSACTION_TYPE === 'COMMITMENT') { state.committed += Number(item.AMOUNT); state.hasCommitment = true; }
+    if (item.TRANSACTION_TYPE === 'COMMITMENT_RELEASE') { state.committed -= Number(item.AMOUNT); state.hasRelease = true; }
+    transactionByRfa.set(item.RFA_ID, state);
+  }
   const rows = all<RfaRecord>('RFA').filter((rfa) => {
     if (!toBoolean(rfa.IS_BUDGET_REQUEST) || (fiscalYear && String(rfa.FISCAL_YEAR) !== fiscalYear) || (departmentId && rfa.DEPARTMENT_ID !== departmentId) || (categoryId && rfa.EXPENSE_CATEGORY_ID !== categoryId) || (status && rfa.STATUS !== status) || (fromDate && String(rfa.DATE_FILED) < fromDate) || (toDate && String(rfa.DATE_FILED) > toDate) || (query && ![rfa.RFA_NUMBER, rfa.PURPOSE, rfa.REQUEST_TITLE].join(' ').toLowerCase().includes(query))) return false;
-    const rfaTransactions = transactionByRfa.get(rfa.RFA_ID) || []; const committed = rfaTransactions.some((item) => item.TRANSACTION_TYPE === 'COMMITMENT') && !rfaTransactions.some((item) => item.TRANSACTION_TYPE === 'COMMITMENT_RELEASE'); const financial = Number(rfa.ACTUAL_AMOUNT) > 0 ? 'ACTUAL_RECORDED' : committed ? 'COMMITTED' : 'UNCOMMITTED'; return !financialStatus || financial === financialStatus;
-  }).map((rfa) => { const rfaTransactions = transactionByRfa.get(rfa.RFA_ID) || []; const commitmentCents = rfaTransactions.filter((item) => item.TRANSACTION_TYPE === 'COMMITMENT').reduce((sum, item) => sum + Number(item.AMOUNT), 0) - rfaTransactions.filter((item) => item.TRANSACTION_TYPE === 'COMMITMENT_RELEASE').reduce((sum, item) => sum + Number(item.AMOUNT), 0); return { rfaId: rfa.RFA_ID, rfaNumber: rfa.RFA_NUMBER, dateFiled: rfa.DATE_FILED, departmentId: rfa.DEPARTMENT_ID, department: rfa.DEPARTMENT_NAME, categoryId: rfa.EXPENSE_CATEGORY_ID, category: categories.get(rfa.EXPENSE_CATEGORY_ID)?.CATEGORY_NAME || 'Historical category', purpose: rfa.PURPOSE, requestedAmount: centavosToPhp(rfa.REQUESTED_AMOUNT), approvedAmount: centavosToPhp(rfa.APPROVED_AMOUNT || rfa.REQUESTED_AMOUNT), committedAmount: centavosToPhp(commitmentCents), actualAmount: centavosToPhp(rfa.ACTUAL_AMOUNT), financialStatus: Number(rfa.ACTUAL_AMOUNT) > 0 ? 'ACTUAL_RECORDED' : commitmentCents > 0 ? 'COMMITTED' : 'UNCOMMITTED', rfaStatus: rfa.STATUS }; });
+    const state = transactionByRfa.get(rfa.RFA_ID);
+    const financial = Number(rfa.ACTUAL_AMOUNT) > 0 ? 'ACTUAL_RECORDED' : state?.hasCommitment && !state.hasRelease ? 'COMMITTED' : 'UNCOMMITTED';
+    return !financialStatus || financial === financialStatus;
+  }).map((rfa) => { const commitmentCents = transactionByRfa.get(rfa.RFA_ID)?.committed || 0; return { rfaId: rfa.RFA_ID, rfaNumber: rfa.RFA_NUMBER, dateFiled: rfa.DATE_FILED, departmentId: rfa.DEPARTMENT_ID, department: rfa.DEPARTMENT_NAME, categoryId: rfa.EXPENSE_CATEGORY_ID, category: categories.get(rfa.EXPENSE_CATEGORY_ID)?.CATEGORY_NAME || 'Historical category', purpose: rfa.PURPOSE, requestedAmount: centavosToPhp(rfa.REQUESTED_AMOUNT), approvedAmount: centavosToPhp(rfa.APPROVED_AMOUNT || rfa.REQUESTED_AMOUNT), committedAmount: centavosToPhp(commitmentCents), actualAmount: centavosToPhp(rfa.ACTUAL_AMOUNT), financialStatus: Number(rfa.ACTUAL_AMOUNT) > 0 ? 'ACTUAL_RECORDED' : commitmentCents > 0 ? 'COMMITTED' : 'UNCOMMITTED', rfaStatus: rfa.STATUS }; });
   const matchingRfaIds = new Set(rows.map((row) => row.rfaId)); const totals = rows.reduce((sum, row) => ({ requested: sum.requested + row.requestedAmount, approved: sum.approved + row.approvedAmount, committed: sum.committed + row.committedAmount, actual: sum.actual + row.actualAmount }), { requested: 0, approved: 0, committed: 0, actual: 0 });
   const categorySummary = Array.from(rows.reduce((map, row) => { const current = map.get(row.categoryId) || { categoryId: row.categoryId, category: row.category, rfaCount: 0, committed: 0, actual: 0 }; current.rfaCount += 1; current.committed += row.committedAmount; current.actual += row.actualAmount; map.set(row.categoryId, current); return map; }, new Map<string, { categoryId: string; category: string; rfaCount: number; committed: number; actual: number }>()).values()).map((item) => ({ ...item, totalFinancialActivity: item.committed + item.actual }));
-  const history = transactions.filter((item) => (!departmentId || item.DEPARTMENT_ID === departmentId) && (!fiscalYear || String(item.FISCAL_YEAR) === fiscalYear) && (!categoryId || item.CATEGORY_ID === categoryId) && (!item.RFA_ID || matchingRfaIds.has(item.RFA_ID))).map((item) => ({ transactionId: item.TRANSACTION_ID, timestamp: item.CREATED_AT, department: departments.get(item.DEPARTMENT_ID)?.DEPARTMENT_NAME || item.DEPARTMENT_ID, fiscalYear: item.FISCAL_YEAR, type: item.TRANSACTION_TYPE, rfaId: item.RFA_ID, rfaNumber: rows.find((row) => row.rfaId === item.RFA_ID)?.rfaNumber || '', category: categories.get(item.CATEGORY_ID)?.CATEGORY_NAME || '', amount: centavosToPhp(item.AMOUNT), description: item.DESCRIPTION, reference: item.REFERENCE, actor: item.CREATED_BY }));
+  const rfaNumberById = new Map(rows.map((row) => [row.rfaId, row.rfaNumber]));
+  const history = transactions.filter((item) => (!departmentId || item.DEPARTMENT_ID === departmentId) && (!fiscalYear || String(item.FISCAL_YEAR) === fiscalYear) && (!categoryId || item.CATEGORY_ID === categoryId) && (!item.RFA_ID || matchingRfaIds.has(item.RFA_ID))).map((item) => ({ transactionId: item.TRANSACTION_ID, timestamp: item.CREATED_AT, department: departments.get(item.DEPARTMENT_ID)?.DEPARTMENT_NAME || item.DEPARTMENT_ID, fiscalYear: item.FISCAL_YEAR, type: item.TRANSACTION_TYPE, rfaId: item.RFA_ID, rfaNumber: rfaNumberById.get(item.RFA_ID) || '', category: categories.get(item.CATEGORY_ID)?.CATEGORY_NAME || '', amount: centavosToPhp(item.AMOUNT), description: item.DESCRIPTION, reference: item.REFERENCE, actor: item.CREATED_BY }));
   return { filters: { fiscalYear, departmentId, categoryId, fromDate, toDate, status, financialStatus, query }, rows, totals, categorySummary, transactions: history, departments: Array.from(departments.values()).filter((item) => toBoolean(item.ACTIVE)), categories: Array.from(categories.values()) };
 }
 
 export function budgetReport(user: SessionUser, payload: Record<string, unknown>): Record<string, unknown> { requireCapability(user, 'IS_ADMIN'); return reportData(payload); }
 
 export function departmentFinancialDetail(user: SessionUser, payload: Record<string, unknown>): Record<string, unknown> {
-  requireCapability(user, 'IS_ADMIN'); const departmentId = String(payload.departmentId || ''); const fiscalYear = year(payload.fiscalYear); if (!departmentId) failure('Select a department.'); const budget = budgetFor(departmentId, fiscalYear); const result = reportData({ ...payload, departmentId, fiscalYear }); const adjustments = (result.transactions as Array<Record<string, unknown>>).filter((item) => String(item.type).startsWith('ADJUSTMENT_')); const budgetTransactions = ledger(budget?.BUDGET_ID || ''); const summary = budget ? summarizeBudget(budget, budgetTransactions) : null;
+  requireCapability(user, 'IS_ADMIN'); const departmentId = String(payload.departmentId || ''); const fiscalYear = year(payload.fiscalYear); if (!departmentId) failure('Select a department.'); const budget = budgetFor(departmentId, fiscalYear); const transactions = all<BudgetTransactionRecord>('BUDGET_TRANSACTIONS').filter(active); const result = reportData({ ...payload, departmentId, fiscalYear }, transactions); const adjustments = (result.transactions as Array<Record<string, unknown>>).filter((item) => String(item.type).startsWith('ADJUSTMENT_')); const budgetTransactions = transactions.filter((item) => item.BUDGET_ID === budget?.BUDGET_ID); const summary = budget ? summarizeBudget(budget, budgetTransactions) : null;
   return { ...result, budget: budget ? { ...publicSummary(budget, summary || undefined), originalAllocated: centavosToPhp(budget.ORIGINAL_ALLOCATED_AMOUNT), adjustments: centavosToPhp((summary?.allocated || 0) - Number(budget.ORIGINAL_ALLOCATED_AMOUNT)), effectiveBudget: centavosToPhp(summary?.allocated || 0) } : null, adjustments };
 }

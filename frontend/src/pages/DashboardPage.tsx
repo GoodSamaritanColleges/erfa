@@ -40,10 +40,7 @@ export function DashboardPage() {
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([
-      api<Rfa[]>('rfa.list'),
-      user?.CAN_APPROVE_RFA ? api<Rfa[]>('rfa.forApproval') : Promise.resolve([] as Rfa[])
-    ]).then(([mine, action]) => {
+    void api<{ rfas: Rfa[]; approvals: Rfa[] }>('dashboard.rfas').then(({ rfas: mine, approvals: action }) => {
       if (cancelled) return;
       setRfas(Array.isArray(mine) ? mine : []);
       setApprovals(Array.isArray(action) ? action : []);
@@ -55,7 +52,7 @@ export function DashboardPage() {
 
   useEffect(() => {
     if (!user?.IS_ADMIN) return;
-    void api<{ totals: { allocated: number; committed: number; actualSpent: number; available: number }; rows: Array<{ departmentName: string; utilization: number }> }>('admin.budget.overview', { fiscalYear: String(new Date().getFullYear()) }).then(setBudget).catch(() => undefined);
+    void api<{ totals: { allocated: number; committed: number; actualSpent: number; available: number }; rows: Array<{ departmentName: string; utilization: number }> }>('admin.budget.summary', { fiscalYear: String(new Date().getFullYear()) }).then(setBudget).catch(() => undefined);
   }, [user?.IS_ADMIN]);
 
   const counts = useMemo(() => ({

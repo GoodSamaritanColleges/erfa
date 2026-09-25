@@ -47,11 +47,11 @@ function auditRows(rfaId: string): SheetRecord[] {
 const folderCache = new Map<string, GoogleAppsScript.Drive.Folder>();
 export function resetWorkflowCache(): void { folderCache.clear(); }
 
-function canView(user: SessionUser, rfa: RfaRecord): boolean {
+function canView(user: SessionUser, rfa: RfaRecord, approvals?: SheetRecord[]): boolean {
   if (toBoolean(user.IS_ADMIN) || normalizeEmail(rfa.REQUESTER_EMAIL) === normalizeEmail(user.EMAIL)) return true;
   if (toBoolean(user.CAN_IMPLEMENT_RFA) && ['APPROVED', 'IMPLEMENTATION'].includes(rfa.STATUS)) return true;
   if (normalizeEmail(rfa.CURRENT_APPROVER_EMAIL) === normalizeEmail(user.EMAIL)) return true;
-  return approvalRows(rfa.RFA_ID).some((row) => normalizeEmail(row.APPROVER_EMAIL) === normalizeEmail(user.EMAIL));
+  return (approvals ?? approvalRows(rfa.RFA_ID)).some((row) => normalizeEmail(row.APPROVER_EMAIL) === normalizeEmail(user.EMAIL));
 }
 
 /** Optimized canView that reuses preloaded approval index (avoids N+1). */
@@ -62,8 +62,8 @@ function canViewWithApproverSet(user: SessionUser, rfa: RfaRecord, approverRfaSe
   return approverRfaSet.has(String(rfa.RFA_ID));
 }
 
-function assertView(user: SessionUser, rfa: RfaRecord): void {
-  if (!canView(user, rfa)) {
+function assertView(user: SessionUser, rfa: RfaRecord, approvals?: SheetRecord[]): void {
+  if (!canView(user, rfa, approvals)) {
     audit('ACCESS_DENIED', user, rfa.RFA_ID, rfa.STATUS, rfa.STATUS, 'Attempted to access an unauthorized RFA.');
     businessError('You do not have access to this RFA.', 'FORBIDDEN');
   }
@@ -363,19 +363,20 @@ export function saveActualExpense(user: SessionUser, rfaId: string, payload: Rec
   return recordActualExpense(user, rfa, payload);
 }
 
-export function listRfas(user: SessionUser, filters: Record<string, unknown>): RfaRecord[] {
+export function listRfas(user: SessionUser, filters: Record<string, unknown>, approvals?: SheetRecord[], records?: RfaRecord[]): RfaRecord[] {
   const query = String(filters.query ?? '').trim().toLowerCase();
   const status = String(filters.status ?? '');
   const departmentId = String(filters.departmentId ?? '');
   const currentStep = String(filters.currentStep ?? '');
   // Load once per request — eliminates N+1 approval scans inside canView
-  const allApprovals = all<SheetRecord>('RFA_APPROVALS');
   const normalizedUserEmail = normalizeEmail(user.EMAIL);
   const approverRfaSet = new Set<string>();
-  for (const row of allApprovals) {
-    if (normalizeEmail(row.APPROVER_EMAIL) === normalizedUserEmail) approverRfaSet.add(String(row.RFA_ID));
+  if (!toBoolean(user.IS_ADMIN)) {
+    for (const row of approvals ?? all<SheetRecord>('RFA_APPROVALS')) {
+      if (normalizeEmail(row.APPROVER_EMAIL) === normalizedUserEmail) approverRfaSet.add(String(row.RFA_ID));
+    }
   }
-  return all<RfaRecord>('RFA').filter((rfa) => {
+  return (records ?? all<RfaRecord>('RFA')).filter((rfa) => {
     if (!canViewWithApproverSet(user, rfa, approverRfaSet)) return false;
     if (status && rfa.STATUS !== status) return false;
     if (departmentId && rfa.DEPARTMENT_ID !== departmentId) return false;
@@ -385,23 +386,48 @@ export function listRfas(user: SessionUser, filters: Record<string, unknown>): R
   }).sort((a, b) => String(b.UPDATED_AT).localeCompare(String(a.UPDATED_AT)));
 }
 
-export function listForApproval(user: SessionUser): RfaRecord[] {
+export function listForApproval(user: SessionUser, approvals?: SheetRecord[], records?: RfaRecord[]): RfaRecord[] {
   if (!toBoolean(user.CAN_APPROVE_RFA)) return [];
-  return all<RfaRecord>('RFA').filter((rfa) => {
+  const assigned = new Set<string>();
+  const approvedAt = new Map<string, string[]>();
+  for (const row of approvals ?? all<SheetRecord>('RFA_APPROVALS')) {
+    if (String(row.APPROVER_USER_ID) !== user.USER_ID) continue;
+    const key = `${row.RFA_ID}:${row.STEP}`;
+    if (row.ACTION === '') assigned.add(key);
+    if (row.ACTION === 'APPROVED') {
+      const timestamps = approvedAt.get(key) || [];
+      timestamps.push(String(row.TIMESTAMP || ''));
+      approvedAt.set(key, timestamps);
+    }
+  }
+  return (records ?? all<RfaRecord>('RFA')).filter((rfa) => {
     if (isAssignmentWorkflow(rfa)) {
       const section = currentAssignmentSection(rfa);
-      return Boolean(section && getAssignmentsBySection(rfa.RFA_ID, section).some((row) => String(row.APPROVER_USER_ID) === user.USER_ID) && !getApprovedAssignments(rfa, section).some((row) => String(row.APPROVER_USER_ID) === user.USER_ID));
+      if (!section) return false;
+      const key = `${rfa.RFA_ID}:${section}`;
+      if (!assigned.has(key)) return false;
+      const submittedAt = Date.parse(String(rfa.SUBMITTED_AT || ''));
+      return !(approvedAt.get(key) || []).some((timestamp) => !Number.isFinite(submittedAt) || Date.parse(timestamp) >= submittedAt);
     }
-    return toBoolean(user.CAN_APPROVE_RFA) && normalizeEmail(rfa.CURRENT_APPROVER_EMAIL) === normalizeEmail(user.EMAIL);
+    return normalizeEmail(rfa.CURRENT_APPROVER_EMAIL) === normalizeEmail(user.EMAIL);
   });
+}
+
+export function dashboardRfas(user: SessionUser): { rfas: RfaRecord[]; approvals: RfaRecord[] } {
+  const approvals = toBoolean(user.IS_ADMIN) && !toBoolean(user.CAN_APPROVE_RFA) ? [] : all<SheetRecord>('RFA_APPROVALS');
+  const records = all<RfaRecord>('RFA');
+  return { rfas: listRfas(user, {}, approvals, records), approvals: listForApproval(user, approvals, records) };
 }
 
 export function detailRfa(user: SessionUser, rfaId: string): Record<string, unknown> {
   const rfa = getRfa(rfaId);
-  assertView(user, rfa);
+  const approvals = approvalRows(rfaId);
+  assertView(user, rfa, approvals);
   const section = currentAssignmentSection(rfa);
+  const submittedAt = Date.parse(String(rfa.SUBMITTED_AT || ''));
   const isCurrentSectionHead = isAssignmentWorkflow(rfa) && section
-    ? getAssignmentsBySection(rfa.RFA_ID, section).some((row) => String(row.APPROVER_USER_ID) === user.USER_ID) && !getApprovedAssignments(rfa, section).some((row) => String(row.APPROVER_USER_ID) === user.USER_ID)
+    ? approvals.some((row) => row.STEP === section && row.ACTION === '' && String(row.APPROVER_USER_ID) === user.USER_ID)
+      && !approvals.some((row) => row.STEP === section && row.ACTION === 'APPROVED' && String(row.APPROVER_USER_ID) === user.USER_ID && (!Number.isFinite(submittedAt) || Date.parse(String(row.TIMESTAMP || '')) >= submittedAt))
     : normalizeEmail(rfa.CURRENT_APPROVER_EMAIL) === normalizeEmail(user.EMAIL);
   // canEdit: requester or admin, and RFA is in DRAFT or RETURNED status
   const canEdit = (normalizeEmail(rfa.REQUESTER_EMAIL) === normalizeEmail(user.EMAIL) || toBoolean(user.IS_ADMIN)) && ['DRAFT', 'RETURNED'].includes(rfa.STATUS);
@@ -413,7 +439,7 @@ export function detailRfa(user: SessionUser, rfaId: string): Record<string, unkn
 
   return {
     rfa,
-    approvals: approvalRows(rfaId),
+    approvals,
     attachments: attachmentRows(rfaId).map(({ DRIVE_FILE_ID: _hidden, ...attachment }) => attachment),
     audit: auditRows(rfaId).map(({ METADATA_JSON: _metadata, ...entry }) => entry),
     financial: financialDetail(rfa),
