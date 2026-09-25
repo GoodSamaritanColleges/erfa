@@ -1,6 +1,7 @@
 import { dispatch, type ApiRequest } from './api';
 import { bootstrapAdmin as bootstrap } from './auth';
 import { setupSchema } from './store';
+import { resetTestDataForProduction } from './maintenance';
 
 function json(value: unknown): GoogleAppsScript.Content.TextOutput {
   return ContentService.createTextOutput(JSON.stringify(value)).setMimeType(ContentService.MimeType.JSON);
@@ -33,4 +34,4 @@ function bootstrapAdmin(email: string, fullName: string): unknown {
 // The production bundle keeps implementation code inside an IIFE. Store only
 // intended Apps Script entry points here; build.mjs emits top-level forwarding
 // declarations so Apps Script can discover them in the editor and Web App.
-Object.assign(globalThis, { __erfaEntrypoints: { doGet, doPost, setupDatabase, bootstrapAdmin } });
+Object.assign(globalThis, { __erfaEntrypoints: { doGet, doPost, setupDatabase, bootstrapAdmin, resetTestDataForProduction } });
