@@ -1,4 +1,5 @@
 import { DEFAULT_SETTINGS, SHEETS } from './constants';
+import { timed } from './performance';
 import { toBoolean } from './core';
 import type { SheetRecord, ApprovalSection } from './types';
 
@@ -29,11 +30,15 @@ export function newId(prefix: string): string {
 }
 
 export function getDatabase(): GoogleAppsScript.Spreadsheet.Spreadsheet {
+  return timed('spreadsheetAccessMs', () => databaseHandle());
+}
+
+function databaseHandle(): GoogleAppsScript.Spreadsheet.Spreadsheet {
   if (cachedDb) return cachedDb;
   const properties = PropertiesService.getScriptProperties();
   const configured = properties.getProperty(PROPERTY_SPREADSHEET_ID);
   if (configured) {
-    cachedDb = SpreadsheetApp.openById(configured);
+    cachedDb = timed('spreadsheetOpenMs', () => SpreadsheetApp.openById(configured));
     return cachedDb;
   }
   const active = SpreadsheetApp.getActiveSpreadsheet();
@@ -49,7 +54,7 @@ export function getDatabase(): GoogleAppsScript.Spreadsheet.Spreadsheet {
 }
 
 function getSheet(name: keyof typeof SHEETS): GoogleAppsScript.Spreadsheet.Sheet {
-  const sheet = getDatabase().getSheetByName(name);
+  const sheet = timed('sheetLookupMs', () => getDatabase().getSheetByName(name));
   if (!sheet) throw new Error(`Database sheet ${name} is missing. Run setupDatabase().`);
   return sheet;
 }
@@ -93,6 +98,10 @@ function normalizeCell(value: unknown, header = ''): string | number | boolean {
 }
 
 export function all<T extends SheetRecord>(name: keyof typeof SHEETS): T[] {
+  return timed(`sheet.${name}.loadMs`, () => readAll<T>(name));
+}
+
+function readAll<T extends SheetRecord>(name: keyof typeof SHEETS): T[] {
   const key = name as string;
   if (sheetDataCache.has(key)) {
     // Return shallow copies to prevent caller mutation from polluting cache
@@ -104,7 +113,7 @@ export function all<T extends SheetRecord>(name: keyof typeof SHEETS): T[] {
     sheetDataCache.set(key, []);
     return [];
   }
-  const records = sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).getValues().map((row) => {
+  const records = timed(`sheet.${name}.getValuesMs`, () => sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).getValues()).map((row) => {
     const record: SheetRecord = {};
     headers.forEach((header, index) => { record[header] = normalizeCell(row[index], header); });
     return record as T;
@@ -118,6 +127,10 @@ export function all<T extends SheetRecord>(name: keyof typeof SHEETS): T[] {
  * Preserves column order and normalization identically to `all()`.
  */
 export function allTail<T extends SheetRecord>(name: keyof typeof SHEETS, limit: number): T[] {
+  return timed(`sheet.${name}.tailMs`, () => readTail<T>(name, limit));
+}
+
+function readTail<T extends SheetRecord>(name: keyof typeof SHEETS, limit: number): T[] {
   const sheet = getSheet(name);
   const headers = [...SHEETS[name]] as string[];
   const lastRow = sheet.getLastRow();

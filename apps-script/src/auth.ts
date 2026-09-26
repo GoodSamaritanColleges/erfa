@@ -1,6 +1,7 @@
 import { normalizeEmail, toBoolean } from './core';
 import { all, findBy, getSetting, insert, newId, nowIso } from './store';
 import { audit } from './audit';
+import { timed } from './performance';
 import type { DepartmentRecord, SessionUser, UserRecord } from './types';
 
 function fail(message: string, code = 'UNAUTHORIZED'): never {
@@ -15,9 +16,9 @@ export function authenticate(idToken: string): SessionUser {
   if (!clientId) fail('Google authentication is not configured. Ask an administrator to set GOOGLE_CLIENT_ID.', 'CONFIGURATION_REQUIRED');
   const cache = CacheService.getScriptCache();
   const digest = Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, idToken)).slice(0, 80);
-  let claimsText = cache.get(`idtoken:${digest}`);
+  let claimsText = timed('tokenCacheLookupMs', () => cache.get(`idtoken:${digest}`));
   if (!claimsText) {
-    const response = UrlFetchApp.fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`, { muteHttpExceptions: true });
+    const response = timed('googleTokenVerificationHttpMs', () => UrlFetchApp.fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`, { muteHttpExceptions: true }));
     if (response.getResponseCode() !== 200) fail('Google sign-in could not be verified. Please sign in again.');
     claimsText = response.getContentText();
     cache.put(`idtoken:${digest}`, claimsText, 300);

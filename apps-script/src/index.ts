@@ -1,18 +1,29 @@
 import { dispatch, type ApiRequest } from './api';
 import { bootstrapAdmin as bootstrap } from './auth';
 import { setupSchema } from './store';
+import { beginPerformance, performanceSnapshot, timed } from './performance';
 
 function json(value: unknown): GoogleAppsScript.Content.TextOutput {
-  return ContentService.createTextOutput(JSON.stringify(value)).setMimeType(ContentService.MimeType.JSON);
+  const serialized = timed('serializationMs', () => JSON.stringify(value));
+  const performance = performanceSnapshot();
+  const output = timed('responsePreparationMs', () => ContentService.createTextOutput(performance
+    ? JSON.stringify({ ...(value as Record<string, unknown>), performance }) : serialized).setMimeType(ContentService.MimeType.JSON));
+  const final = performanceSnapshot();
+  if (final) console.log('[eRFA PERF]', JSON.stringify(final));
+  return output;
 }
 
-function doGet(): GoogleAppsScript.Content.TextOutput {
+function doGet(event?: GoogleAppsScript.Events.DoGet): GoogleAppsScript.Content.TextOutput {
+  beginPerformance(event?.parameter?.perf === '1');
   return json({ ok: true, data: dispatch({ action: 'health' }) });
 }
 
 function doPost(event: GoogleAppsScript.Events.DoPost): GoogleAppsScript.Content.TextOutput {
+  const requestStarted = Date.now();
+  beginPerformance(false);
   try {
     const request = JSON.parse(event?.postData?.contents || '{}') as ApiRequest;
+    beginPerformance(request.performance === true, requestStarted);
     return json({ ok: true, data: dispatch(request) });
   } catch (error) {
     console.error(error instanceof Error ? error : String(error));

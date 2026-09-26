@@ -1,4 +1,5 @@
 import { APP_VERSION } from './constants';
+import { timed } from './performance';
 import { authenticate, requireCapability } from './auth';
 import { adminData, saveDepartment, saveMatrix, saveUser } from './admin';
 import { adjustBudget, adminBudgetManagement, adminBudgetOverview, adminBudgetSummary, adminExpenseCategories, budgetReport, departmentFinancialDetail, requesterBudgetContext, saveBudget, saveCategory, setOverBudget } from './budget';
@@ -6,14 +7,19 @@ import { getDatabase, resetPerRequestCache } from './store';
 import { resetWorkflowCache } from './workflow';
 import { createRfa, dashboardRfas, decideRfa, detailRfa, downloadAttachment, eligibleApprovers, listForApproval, listRfas, saveActualExpense, submitRfa, transitionCloseout, updateRfa, uploadAttachment } from './workflow';
 
-export interface ApiRequest { action: string; idToken?: string; payload?: Record<string, unknown> }
+export interface ApiRequest { action: string; idToken?: string; payload?: Record<string, unknown>; performance?: boolean }
 
 export function dispatch(request: ApiRequest): unknown {
+  return timed('dispatchMs', () => dispatchRequest(request));
+}
+
+function dispatchRequest(request: ApiRequest): unknown {
   resetPerRequestCache();
   resetWorkflowCache();
   if (request.action === 'health') return { version: APP_VERSION, status: 'ok', timestamp: new Date().toISOString() };
-  const user = authenticate(String(request.idToken ?? ''));
+  const user = timed('authenticationMs', () => authenticate(String(request.idToken ?? '')));
   const payload = request.payload ?? {};
+  return timed('handlerMs', () => {
   switch (request.action) {
     case 'session': return { user, version: APP_VERSION };
     case 'dashboard.rfas': return dashboardRfas(user);
@@ -52,6 +58,7 @@ export function dispatch(request: ApiRequest): unknown {
     case 'admin.database': requireCapability(user, 'IS_ADMIN'); return { spreadsheetId: getDatabase().getId(), spreadsheetUrl: getDatabase().getUrl() };
     default: throw Object.assign(new Error('Unknown API action.'), { code: 'NOT_FOUND' });
   }
+  });
 }
 
 function withLock<T>(operation: () => T): T {
