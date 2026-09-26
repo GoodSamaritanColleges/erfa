@@ -1,6 +1,6 @@
 const API_URL = import.meta.env.VITE_API_URL as string | undefined;
 const TOKEN_KEY = 'erfa_google_id_token';
-const coalescedReads = new Set(['session', 'dashboard.rfas', 'rfa.list', 'rfa.forApproval', 'rfa.detail', 'rfa.eligibleApprovers', 'admin.data', 'admin.budget.summary', 'admin.budget.overview', 'admin.budget.management', 'admin.category.list', 'admin.budget.report', 'admin.budget.detail', 'budget.context']);
+const coalescedReads = new Set(['session', 'dashboard.home', 'dashboard.rfas', 'rfa.list', 'rfa.forApproval', 'rfa.detail', 'rfa.eligibleApprovers', 'admin.data', 'admin.budget.summary', 'admin.budget.overview', 'admin.budget.management', 'admin.category.list', 'admin.budget.report', 'admin.budget.detail', 'budget.context']);
 const pendingReads = new Map<string, Promise<unknown>>();
 
 export class ApiError extends Error {

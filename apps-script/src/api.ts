@@ -1,5 +1,6 @@
 import { APP_VERSION } from './constants';
 import { timed } from './performance';
+import { dashboardHome } from './dashboard';
 import { authenticate, requireCapability } from './auth';
 import { adminData, saveDepartment, saveMatrix, saveUser } from './admin';
 import { adjustBudget, adminBudgetManagement, adminBudgetOverview, adminBudgetSummary, adminExpenseCategories, budgetReport, departmentFinancialDetail, requesterBudgetContext, saveBudget, saveCategory, setOverBudget } from './budget';
@@ -23,6 +24,7 @@ function dispatchRequest(request: ApiRequest): unknown {
   switch (request.action) {
     case 'session': return { user, version: APP_VERSION };
     case 'dashboard.rfas': return dashboardRfas(user);
+    case 'dashboard.home': return dashboardHome(user);
     case 'rfa.list': return listRfas(user, payload);
     case 'rfa.forApproval': return listForApproval(user);
     case 'rfa.detail': return detailRfa(user, String(payload.rfaId ?? ''));

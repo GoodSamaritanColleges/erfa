@@ -7,6 +7,8 @@ import { ErrorNotice, StatusBadge } from '../components';
 import { date, money, stepLabel } from '../format';
 import type { Rfa } from '../types';
 
+type DashboardBudget = { totals: { allocated: number; committed: number; actualSpent: number; available: number }; rows: Array<{ departmentName: string; utilization: number }> };
+
 function DashboardSkeleton() {
   return <>
     <div className="dashboard-greeting">
@@ -40,20 +42,16 @@ export function DashboardPage() {
 
   useEffect(() => {
     let cancelled = false;
-    void api<{ rfas: Rfa[]; approvals: Rfa[] }>('dashboard.rfas').then(({ rfas: mine, approvals: action }) => {
+    void api<{ rfas: Rfa[]; approvals: Rfa[]; budget: DashboardBudget | null }>('dashboard.home').then(({ rfas: mine, approvals: action, budget: summary }) => {
       if (cancelled) return;
       setRfas(Array.isArray(mine) ? mine : []);
       setApprovals(Array.isArray(action) ? action : []);
+      setBudget(summary);
     })
       .catch((e: Error) => { if (!cancelled) setError(e.message); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [user?.CAN_APPROVE_RFA]);
-
-  useEffect(() => {
-    if (!user?.IS_ADMIN) return;
-    void api<{ totals: { allocated: number; committed: number; actualSpent: number; available: number }; rows: Array<{ departmentName: string; utilization: number }> }>('admin.budget.summary', { fiscalYear: String(new Date().getFullYear()) }).then(setBudget).catch(() => undefined);
-  }, [user?.IS_ADMIN]);
+  }, [user?.CAN_APPROVE_RFA, user?.IS_ADMIN]);
 
   const counts = useMemo(() => ({
     draft: rfas.filter((r) => (r.STATUS ?? '') === 'DRAFT').length,

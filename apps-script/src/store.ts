@@ -1,5 +1,6 @@
 import { DEFAULT_SETTINGS, SHEETS } from './constants';
 import { timed } from './performance';
+import { mutateMasterData, readMasterData } from './masterCache';
 import { toBoolean } from './core';
 import type { SheetRecord, ApprovalSection } from './types';
 
@@ -107,10 +108,15 @@ function readAll<T extends SheetRecord>(name: keyof typeof SHEETS): T[] {
     // Return shallow copies to prevent caller mutation from polluting cache
     return (sheetDataCache.get(key)! as T[]).map((r) => ({ ...r }));
   }
+  const records = readMasterData<T>(name, () => readSheetRecords<T>(name));
+  sheetDataCache.set(key, records as SheetRecord[]);
+  return records.map((record) => ({ ...record }));
+}
+
+function readSheetRecords<T extends SheetRecord>(name: keyof typeof SHEETS): T[] {
   const sheet = getSheet(name);
   const headers = [...SHEETS[name]] as string[];
   if (sheet.getLastRow() < 2) {
-    sheetDataCache.set(key, []);
     return [];
   }
   const records = timed(`sheet.${name}.getValuesMs`, () => sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).getValues()).map((row) => {
@@ -118,8 +124,7 @@ function readAll<T extends SheetRecord>(name: keyof typeof SHEETS): T[] {
     headers.forEach((header, index) => { record[header] = normalizeCell(row[index], header); });
     return record as T;
   });
-  sheetDataCache.set(key, records as SheetRecord[]);
-  return records.map((r) => ({ ...r }));
+  return records;
 }
 
 /**
@@ -146,11 +151,16 @@ function readTail<T extends SheetRecord>(name: keyof typeof SHEETS, limit: numbe
 
 export function insert(name: keyof typeof SHEETS, record: SheetRecord): void {
   const headers = [...SHEETS[name]] as string[];
-  getSheet(name).appendRow(headers.map((header) => record[header] ?? ''));
-  invalidateSheetCache(name);
+  try { mutateMasterData(name, () => getSheet(name).appendRow(headers.map((header) => record[header] ?? ''))); }
+  finally { invalidateSheetCache(name); }
 }
 
 export function updateBy(name: keyof typeof SHEETS, key: string, value: string, updates: SheetRecord): void {
+  try { mutateMasterData(name, () => updateSheetRecord(name, key, value, updates)); }
+  finally { invalidateSheetCache(name); }
+}
+
+function updateSheetRecord(name: keyof typeof SHEETS, key: string, value: string, updates: SheetRecord): void {
   const sheet = getSheet(name);
   const headers = [...SHEETS[name]] as string[];
   const keyIndex = headers.indexOf(key);
