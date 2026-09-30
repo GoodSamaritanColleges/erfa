@@ -92,7 +92,7 @@ describe('read-only request performance', () => {
     sheets.set('RFA_AUDIT', []);
     const detail = detailRfa({ USER_ID: 'requester', EMAIL: 'requester@example.edu', IS_ADMIN: false } as SessionUser, 'legacy');
     expect(detail.financial).toBeNull();
-    expect(vi.mocked(all).mock.calls.map(([name]) => name)).toEqual(['RFA_APPROVALS', 'RFA_ATTACHMENTS', 'RFA_AUDIT']);
+    expect(vi.mocked(all).mock.calls.map(([name]) => name)).toEqual(['RFA_APPROVALS', 'RFA_AUDIT', 'RFA_ATTACHMENTS']);
   });
 
   it('indexes assigned approvals without scanning approval rows per RFA', () => {

@@ -89,7 +89,7 @@ export function DashboardPage() {
 
     {user?.IS_ADMIN && budget && <section className="panel budget-dashboard">
       <header className="panel-header"><div><span className="eyebrow orange">BUDGET OVERVIEW</span><h2>Current fiscal year</h2></div><Link to="/admin/budgets">Manage budgets <ArrowRight size={14} /></Link></header>
-      <div className="metric-grid"><MetricValue label="Institutional budget" value={money(budget.totals.allocated)} /><MetricValue label="Committed" value={money(budget.totals.committed)} /><MetricValue label="Actual spent" value={money(budget.totals.actualSpent)} /><MetricValue label="Available" value={money(budget.totals.available)} /></div>
+      <div className="metric-grid"><MetricValue label="Annual Budget" value={money(budget.totals.allocated)} /><MetricValue label="Used" value={money(budget.totals.committed + budget.totals.actualSpent)} /><MetricValue label="Remaining" value={money(budget.totals.available)} /></div>
       {budget.rows.length > 0 && <p className="muted">{budget.rows.slice(0, 4).map((row) => `${row.departmentName}: ${(row.utilization * 100).toFixed(0)}% utilized`).join(' · ')}</p>}
     </section>}
 

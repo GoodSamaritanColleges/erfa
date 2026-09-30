@@ -13,7 +13,7 @@ type Report = { rows: Array<{ rfaId: string; rfaNumber: string; dateFiled: strin
 export function BudgetManagementPage() {
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [data, setData] = useState<ManagementData | null>(null);
-  const [mode, setMode] = useState<'list' | 'set' | 'detail' | 'categories'>('list');
+  const [mode, setMode] = useState<'list' | 'set' | 'detail'>('list');
   const [departmentId, setDepartmentId] = useState('');
   const [amount, setAmount] = useState('');
   const [overBudget, setOverBudget] = useState(false);
@@ -22,11 +22,6 @@ export function BudgetManagementPage() {
   const [direction, setDirection] = useState<'INCREASE' | 'DECREASE'>('INCREASE');
   const [reason, setReason] = useState('');
   const [confirmAdjustment, setConfirmAdjustment] = useState(false);
-  const [categories, setCategories] = useState<Category[] | null>(null);
-  const [categoryName, setCategoryName] = useState('');
-  const [categoryDescription, setCategoryDescription] = useState('');
-  const [categoryLoading, setCategoryLoading] = useState(false);
-  const [categoryWorking, setCategoryWorking] = useState(false);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
@@ -77,27 +72,6 @@ export function BudgetManagementPage() {
     await changeBudget('admin.budget.adjust', { budgetId: selectedBudget.budgetId, changeAmount: adjustment, direction, reason }, 'Budget adjustment saved with its audit history.', () => { setAdjusting(false); setAdjustment(''); setReason(''); });
   }
 
-  async function openCategories() {
-    setMode('categories');
-    if (categories) return;
-    setCategoryLoading(true);
-    try { setCategories(await api<Category[]>('admin.category.list')); }
-    catch (caught) { setError(caught instanceof Error ? caught.message : 'Could not load categories.'); }
-    finally { setCategoryLoading(false); }
-  }
-
-  async function saveCategory() {
-    setCategoryWorking(true); setError(''); setSuccess('');
-    try {
-      await api('admin.category.save', { name: categoryName, description: categoryDescription, active: true });
-      setCategoryName(''); setCategoryDescription(''); setSuccess('Expense category saved.');
-      setCategories(null);
-      try { setCategories(await api<Category[]>('admin.category.list')); }
-      catch { setError('Category saved, but the list could not be refreshed. Reopen Expense Categories to try again.'); }
-    } catch (caught) { setError(caught instanceof Error ? caught.message : 'Could not save category.'); }
-    finally { setCategoryWorking(false); }
-  }
-
   return <>
     <header className="page-header"><div><span className="eyebrow orange">ADMINISTRATION</span><h1>Budget Management</h1><p>Set and review department budgets by fiscal year.</p></div></header>
     <ErrorNotice message={error} /><SuccessNotice message={success} />
@@ -106,12 +80,11 @@ export function BudgetManagementPage() {
       <datalist id="budget-fiscal-years">{Array.from({ length: 9 }, (_, index) => new Date().getFullYear() + 3 - index).map((option) => <option key={option} value={option} />)}</datalist>
       <button className="button primary" disabled={!yearValid || working} onClick={() => { setMode('set'); setDepartmentId(''); setAdjusting(false); setConfirmAdjustment(false); }}>Set Department Budget</button>
       <Link className="button secondary" to={reportUrl}>Expense Reports</Link>
-      <Link className="button secondary" to={`${reportUrl}#transaction-history`}>Transaction History</Link>
     </div>
     {!yearValid && <p className="muted">Enter a four-digit fiscal year.</p>}
     <section className="table-panel"><header><h2>Department Budgets · FY {year}</h2></header>
-      {loading || working ? <Spinner label="Loading current budgets" /> : shown ? <div className="table-wrap"><table><thead><tr><th>Department</th><th>Budget</th><th>Committed</th><th>Spent</th><th>Available</th><th>Utilization</th><th>Action</th></tr></thead><tbody>
-        {shown.rows.length ? shown.rows.map((row) => <tr key={row.budgetId}><td>{row.departmentName}</td><td>{money(row.allocated)}</td><td>{money(row.committed)}</td><td>{money(row.actualSpent)}</td><td>{money(row.available)}</td><td>{(row.utilization * 100).toFixed(1)}%</td><td><button className="button secondary" onClick={() => { setDepartmentId(row.departmentId); setMode('detail'); setAdjusting(false); setConfirmAdjustment(false); }}>View</button></td></tr>) : <tr><td colSpan={7}>No department budgets are configured for FY {year}.</td></tr>}
+      {loading || working ? <Spinner label="Loading current budgets" /> : shown ? <div className="table-wrap"><table><thead><tr><th>Department</th><th>Annual Budget</th><th>Used</th><th>Remaining</th><th>Action</th></tr></thead><tbody>
+        {shown.rows.length ? shown.rows.map((row) => <tr key={row.budgetId}><td>{row.departmentName}</td><td>{money(row.allocated)}</td><td>{money(row.committed + row.actualSpent)}</td><td>{money(row.available)}</td><td><button className="button secondary" onClick={() => { setDepartmentId(row.departmentId); setMode('detail'); setAdjusting(false); setConfirmAdjustment(false); }}>View</button></td></tr>) : <tr><td colSpan={5}>No department budgets are configured for FY {year}.</td></tr>}
       </tbody></table></div> : null}
     </section>
     {mode === 'set' && shown && <section className="form-card budget-panel"><h2>Set Department Budget</h2><p className="muted">Fiscal Year: {year}</p>
@@ -120,13 +93,11 @@ export function BudgetManagementPage() {
       {selectedBudget && <p className="muted">A budget already exists for this department and year. Use Adjust Budget below to change it without overwriting its history.</p>}
     </section>}
     {detailVisible && selectedBudget && <section className="form-card budget-panel"><h2>{selectedBudget.departmentName} · FY {year}</h2><p className="muted">Current / effective budget</p>
-      <div className="metric-grid budget-detail-metrics"><Metric label="Allocated Budget" value={money(selectedBudget.allocated)} /><Metric label="Committed" value={money(selectedBudget.committed)} /><Metric label="Actual Spent" value={money(selectedBudget.actualSpent)} /><Metric label="Available" value={money(selectedBudget.available)} /><Metric label="Utilization" value={`${(selectedBudget.utilization * 100).toFixed(1)}%`} /></div>
-      <div className="budget-detail-actions"><button className="button primary" disabled={working} onClick={() => setAdjusting((value) => !value)}>Adjust Budget</button><Link className="button secondary" to={departmentReportUrl}>Department Detail</Link><Link className="button secondary" to={`${departmentReportUrl}#transaction-history`}>Transaction History</Link></div>
+      <div className="metric-grid budget-detail-metrics"><Metric label="Annual Budget" value={money(selectedBudget.allocated)} /><Metric label="Used" value={money(selectedBudget.committed + selectedBudget.actualSpent)} /><Metric label="Remaining" value={money(selectedBudget.available)} /></div>
+      <div className="budget-detail-actions"><button className="button primary" disabled={working} onClick={() => setAdjusting((value) => !value)}>Adjust Budget</button><Link className="button secondary" to={departmentReportUrl}>Department Expense Report</Link></div>
       <label className="field budget-policy"><span>Allow Over Budget</span><select value={selectedBudget.allowOverBudget ? 'yes' : 'no'} disabled={working} onChange={(event) => void changeBudget('admin.budget.overBudget', { budgetId: selectedBudget.budgetId, allowOverBudget: event.target.value === 'yes' }, 'Over-budget policy updated.')}><option value="no">No</option><option value="yes">Yes</option></select></label>
       {adjusting && <div className="budget-adjustment"><h3>Adjust Budget</h3><p className="muted">Changes are recorded as an adjustment; prior allocations and transactions remain in the audit trail.</p><div className="form-grid"><label className="field"><span>Change</span><select value={direction} onChange={(event) => setDirection(event.target.value as 'INCREASE' | 'DECREASE')}><option value="INCREASE">Increase</option><option value="DECREASE">Decrease</option></select></label><label className="field"><span>Adjustment Amount (PHP)</span><input type="number" min="0.01" step="0.01" value={adjustment} onChange={(event) => setAdjustment(event.target.value)} /></label></div><label className="field"><span>Reason</span><input value={reason} onChange={(event) => setReason(event.target.value)} /></label><button className="button primary" disabled={!Number.isFinite(Number(adjustment)) || Number(adjustment) <= 0 || reason.trim().length < 3 || working} onClick={() => setConfirmAdjustment(true)}>Review Adjustment</button></div>}
     </section>}
-    <div className="budget-categories-link"><button className="button secondary" onClick={() => void openCategories()}>Expense Categories</button></div>
-    {mode === 'categories' && <section className="form-card budget-panel"><h2>Expense Categories</h2>{categoryLoading ? <Spinner label="Loading categories" /> : <><p className="muted">{categories?.length ? categories.map((category) => category.CATEGORY_NAME).join(' · ') : 'No categories configured.'}</p><div className="form-grid"><label className="field"><span>Name</span><input value={categoryName} onChange={(event) => setCategoryName(event.target.value)} /></label><label className="field"><span>Description</span><input value={categoryDescription} onChange={(event) => setCategoryDescription(event.target.value)} /></label></div><button className="button secondary" disabled={categoryName.trim().length < 2 || categoryWorking} onClick={() => void saveCategory()}>{categoryWorking ? 'Saving Category...' : 'Add Category'}</button></>}</section>}
     {confirmAdjustment && selectedBudget && <Dialog title="Confirm Budget Adjustment" onClose={() => setConfirmAdjustment(false)}><div className="dialog-body"><p>{selectedBudget.departmentName} · FY {year}</p><p>Current budget: {money(selectedBudget.allocated)}<br />{direction === 'INCREASE' ? 'Increase' : 'Decrease'}: {money(Number(adjustment))}<br />New effective budget: {money(selectedBudget.allocated + (direction === 'INCREASE' ? 1 : -1) * Number(adjustment))}</p><p>Reason: {reason.trim()}</p><div className="dialog-actions"><button className="button secondary" onClick={() => setConfirmAdjustment(false)}>Cancel</button><button className="button primary" onClick={() => void applyAdjustment()}>Confirm Adjustment</button></div></div></Dialog>}
   </>;
 }

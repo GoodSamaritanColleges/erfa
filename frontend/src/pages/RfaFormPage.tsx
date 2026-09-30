@@ -8,8 +8,8 @@ import { dateInputValue, money } from '../format';
 import type { ApprovalAssignments, ApprovalSection, EligibleApprover, EmployeeDirectory, Rfa, RfaDetail } from '../types';
 
 interface FormState { requestTitle: string; purpose: string; budgetAllocation: string; targetDate: string; justification: string; isBudgetRequest: boolean; fiscalYear: string; expenseCategoryId: string; requestedAmount: string }
-type BudgetContext = { fiscalYear: string; budget: { allocated: number; committed: number; actualSpent: number; available: number } | null; categories: Array<{ id: string; name: string }> };
-const blank: FormState = { requestTitle: '', purpose: '', budgetAllocation: '', targetDate: '', justification: '', isBudgetRequest: false, fiscalYear: String(new Date().getFullYear()), expenseCategoryId: '', requestedAmount: '' };
+type BudgetContext = { fiscalYear: string; budget: { allocated: number; used: number; available: number } | null };
+const blank: FormState = { requestTitle: '', purpose: '', budgetAllocation: '', targetDate: '', justification: '', isBudgetRequest: true, fiscalYear: String(new Date().getFullYear()), expenseCategoryId: '', requestedAmount: '' };
 const sections: Array<{ key: ApprovalSection; label: string }> = [
   { key: 'RECOMMENDING_APPROVAL', label: 'Recommending Approval' },
   { key: 'REVIEWED_BY', label: 'Reviewed By' },
@@ -28,6 +28,7 @@ export function RfaFormPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [employees, setEmployees] = useState<EmployeeDirectory>([]);
   const [assignments, setAssignments] = useState<ApprovalAssignments>(emptyAssignments);
+  const [notedByNa, setNotedByNa] = useState(false);
   const [usesAssignmentWorkflow, setUsesAssignmentWorkflow] = useState(!id);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -36,7 +37,7 @@ export function RfaFormPage() {
 
   useEffect(() => {
     if (!id) return;
-    void api<RfaDetail>('rfa.detail', { rfaId: id }).then(({ rfa, permissions, approvals }) => {
+    void api<RfaDetail>('rfa.detail', { rfaId: id }).then(({ rfa, permissions, approvals, notedByNotApplicable }) => {
       if (!permissions.canEdit) throw new Error('This RFA is not editable.');
       setExisting(rfa);
       setForm({ requestTitle: rfa.REQUEST_TITLE, purpose: rfa.PURPOSE, budgetAllocation: String(rfa.BUDGET_ALLOCATION), targetDate: dateInputValue(rfa.TARGET_DATE), justification: rfa.JUSTIFICATION, isBudgetRequest: rfa.IS_BUDGET_REQUEST, fiscalYear: rfa.FISCAL_YEAR || String(new Date().getFullYear()), expenseCategoryId: rfa.EXPENSE_CATEGORY_ID || '', requestedAmount: rfa.REQUESTED_AMOUNT ? String(rfa.REQUESTED_AMOUNT / 100) : '' });
@@ -45,6 +46,7 @@ export function RfaFormPage() {
       setAssignments(usesAssignments
         ? sections.reduce((current, section) => ({ ...current, [section.key]: approvals.filter((row) => row.STEP === section.key && !row.ACTION).map((row) => row.APPROVER_USER_ID) }), emptyAssignments())
         : emptyAssignments());
+      setNotedByNa(Boolean(notedByNotApplicable));
     }).catch((e: Error) => setError(e.message)).finally(() => setLoading(false));
   }, [id]);
 
@@ -75,7 +77,7 @@ export function RfaFormPage() {
     setSaving(true);
     setError('');
     try {
-      const payload = { ...form, budgetAllocation: Number(form.budgetAllocation || 0), ...(usesAssignmentWorkflow ? { approvalAssignments: assignments } : {}) };
+      const payload = { ...form, budgetAllocation: Number(form.isBudgetRequest ? form.requestedAmount : form.budgetAllocation || 0), ...(usesAssignmentWorkflow ? { approvalAssignments: assignments, notedByNotApplicable: notedByNa } : {}) };
       const rfa = existing ? await api<Rfa>('rfa.update', { rfaId: existing.RFA_ID, ...payload }) : await api<Rfa>('rfa.create', payload);
       for (const file of files) await api('attachment.upload', { rfaId: rfa.RFA_ID, fileName: file.name, mimeType: file.type, base64: await fileToBase64(file) });
       if (submit) await api(existing?.STATUS === 'RETURNED' ? 'rfa.resubmit' : 'rfa.submit', { rfaId: rfa.RFA_ID });
@@ -117,15 +119,13 @@ export function RfaFormPage() {
       </section>
 
       <section className="form-card financial-card">
-        <div className="section-title"><span>03</span><div><h2>Budget / Financial Information</h2><p>Use this only when the RFA will reserve department funds after final approval.</p></div></div>
-        <label className="toggle-field"><input type="checkbox" checked={form.isBudgetRequest} onChange={(e) => setForm((current) => ({ ...current, isBudgetRequest: e.target.checked }))} /> Financial request</label>
+        <div className="section-title"><span>03</span><div><h2>Department Budget</h2><p>The approved request amount will use this department’s annual budget once final approval is complete.</p></div></div>
         {form.isBudgetRequest && <>
           <div className="form-grid">
             <label className="field"><span>Fiscal Year <b>*</b></span><input required pattern="\\d{4}" value={form.fiscalYear} onChange={(e) => set('fiscalYear', e.target.value)} /></label>
-            <label className="field"><span>Expense Category <b>*</b></span><select required value={form.expenseCategoryId} onChange={(e) => set('expenseCategoryId', e.target.value)}><option value="">Select category</option>{budgetContext?.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
             <label className="field"><span>Requested Amount (PHP) <b>*</b></span><input required min="0.01" step="0.01" type="number" value={form.requestedAmount} onChange={(e) => set('requestedAmount', e.target.value)} placeholder="0.00" /></label>
           </div>
-          {budgetContext?.budget ? <div className="budget-context"><span>Allocated <b>{money(budgetContext.budget.allocated)}</b></span><span>Committed <b>{money(budgetContext.budget.committed)}</b></span><span>Actual Spent <b>{money(budgetContext.budget.actualSpent)}</b></span><span>Available <b>{money(budgetContext.budget.available)}</b></span><span>Projected <b>{money(budgetContext.budget.available - Number(form.requestedAmount || 0))}</b></span></div> : <p className="muted">No FY {form.fiscalYear} budget has been configured for your department. A financial RFA cannot be submitted until an administrator configures it.</p>}
+          {budgetContext?.budget ? <div className="budget-context"><span>Annual Budget <b>{money(budgetContext.budget.allocated)}</b></span><span>Used <b>{money(budgetContext.budget.used)}</b></span><span>Remaining <b>{money(budgetContext.budget.available)}</b></span><span>After approval <b>{money(budgetContext.budget.available - Number(form.requestedAmount || 0))}</b></span></div> : <p className="muted">No FY {form.fiscalYear} budget has been configured for your department. This RFA cannot be submitted until an administrator configures it.</p>}
         </>}
       </section>
 
@@ -139,10 +139,10 @@ export function RfaFormPage() {
           <textarea required minLength={10} rows={5} value={form.purpose} onChange={(e) => set('purpose', e.target.value)} placeholder="Describe the intended purpose and expected outcome" />
         </label>
         <div className="form-grid">
-          <label className="field">
+          {!form.isBudgetRequest && <label className="field">
             <span>Budget Allocation (PHP) <b>*</b></span>
             <input required min="0" step="0.01" type="number" value={form.budgetAllocation} onChange={(e) => set('budgetAllocation', e.target.value)} placeholder="0.00" />
-          </label>
+          </label>}
           <label className="field">
             <span>Target Date <b>*</b></span>
             <input required type="date" value={form.targetDate} onChange={(e) => set('targetDate', e.target.value)} />
@@ -177,7 +177,10 @@ export function RfaFormPage() {
           <div><h2>Approval route</h2><p>Prepared By is automatic. Select active approvers for each remaining signature stage; empty stages are skipped automatically.</p></div>
         </div>
         <div className="approval-assignment-grid">
-          {sections.map((section) => <ApproverSelector key={section.key} section={section} employees={employees} selectedIds={assignments[section.key]} onChange={(ids) => setAssignments((current) => ({ ...current, [section.key]: ids }))} />)}
+          {sections.map((section) => <div key={section.key}>
+            {section.key === 'NOTED_BY' && <label className="toggle-field"><input type="checkbox" checked={notedByNa} onChange={(event) => { setNotedByNa(event.target.checked); if (event.target.checked) setAssignments((current) => ({ ...current, NOTED_BY: [] })); }} /> Not Applicable (N/A) — skip Noted By</label>}
+            {section.key === 'NOTED_BY' && notedByNa ? <p className="muted">Noted By: N/A. No approver or email will be assigned for this stage.</p> : <ApproverSelector section={section} employees={employees} selectedIds={assignments[section.key]} onChange={(ids) => setAssignments((current) => ({ ...current, [section.key]: ids }))} />}
+          </div>)}
         </div>
       </section>}
 

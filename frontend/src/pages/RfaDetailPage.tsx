@@ -16,10 +16,8 @@ export function RfaDetailPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(true);
-  const [dialog, setDialog] = useState<'approve'|'return'|'disapprove'|'actual'|null>(null);
+  const [dialog, setDialog] = useState<'approve'|'return'|'disapprove'|null>(null);
   const [remarks, setRemarks] = useState('');
-  const [actualAmount, setActualAmount] = useState('');
-  const [reference, setReference] = useState('');
   const [working, setWorking] = useState(false);
 
   const load = useCallback(() => {
@@ -53,12 +51,6 @@ export function RfaDetailPage() {
     finally { setWorking(false); }
   }
 
-  async function recordActual() {
-    setWorking(true); setError('');
-    try { await api('rfa.actualExpense', { rfaId: id, actualAmount, reference, note: remarks }); setDialog(null); setActualAmount(''); setReference(''); setRemarks(''); setSuccess('Actual expense recorded and the commitment released.'); load(); }
-    catch (caught) { setError(caught instanceof Error ? caught.message : 'Actual expense could not be recorded.'); } finally { setWorking(false); }
-  }
-
   async function download(attachment: Attachment) {
     try {
       const file = await api<{ fileName: string; mimeType: string; base64: string }>('attachment.download', { attachmentId: attachment.ATTACHMENT_ID });
@@ -75,7 +67,7 @@ export function RfaDetailPage() {
   if (loading && !detail) return <Spinner label="Loading RFA" />;
   if (!detail) return <><ErrorNotice message={error || 'RFA was not found.'} /><button className="button secondary" onClick={() => navigate('/rfas')}>Back to My RFAs</button></>;
 
-  const { rfa, approvals, attachments, audit, permissions, financial } = detail;
+  const { rfa, approvals, attachments, audit, permissions, financial, notedByNotApplicable } = detail;
   const usesAssignmentWorkflow = rfa.CURRENT_MATRIX_ID === 'RFA_ASSIGNMENTS_V1' || approvals.some((approval) => approval.STEP === 'REVIEWED_BY' || approval.STEP === 'NOTED_BY') || rfa.CURRENT_STEP === 'REVIEWED_BY' || rfa.CURRENT_STEP === 'NOTED_BY';
   const steps = usesAssignmentWorkflow ? assignmentSteps : legacySteps;
 
@@ -137,8 +129,8 @@ export function RfaDetailPage() {
       </section>
 
       {financial && <DocumentSection title="Budget / Financial Information">
-        <section className="request-grid two"><Fact label="Fiscal Year" value={financial.fiscalYear} /><Fact label="Expense Category" value={financial.categoryName} /><Fact label="Requested Amount" value={money(financial.requestedAmount)} /><Fact label="Approved Amount" value={money(financial.approvedAmount)} /><Fact label="Actual Amount" value={money(financial.actualAmount)} /><Fact label="Projected Available Balance" value={financial.projectedAvailable === null ? 'Budget not configured' : money(financial.projectedAvailable)} /></section>
-        {financial.budget && <div className="budget-context"><span>Allocated <b>{money(financial.budget.allocated)}</b></span><span>Committed <b>{money(financial.budget.committed)}</b></span><span>Actual Spent <b>{money(financial.budget.actualSpent)}</b></span><span>Available <b>{money(financial.budget.available)}</b></span></div>}
+        <section className="request-grid two"><Fact label="Fiscal Year" value={financial.fiscalYear} /><Fact label="Requested Amount" value={money(financial.requestedAmount)} /><Fact label="Approved Amount" value={money(financial.approvedAmount)} />{financial.categoryName && <Fact label="Historical Expense Category" value={financial.categoryName} />}</section>
+        {financial.budget && <div className="budget-context"><span>Annual Budget <b>{money(financial.budget.allocated)}</b></span><span>Used <b>{money(financial.budget.committed + financial.budget.actualSpent)}</b></span><span>Remaining <b>{money(financial.budget.available)}</b></span></div>}
       </DocumentSection>}
 
       <DocumentSection title="Justification"><p>{rfa.JUSTIFICATION || '—'}</p></DocumentSection>
@@ -162,13 +154,13 @@ export function RfaDetailPage() {
           <StatusBadge status={rfa.STATUS} />
         </header>
         <div className="workflow-steps">
-          {steps.map((step, index) => <WorkflowStep key={step} step={step} index={index} rfa={rfa} approvals={approvals} current={rfa.CURRENT_STEP === step && rfa.STATUS.startsWith('PENDING_')} />)}
+          {steps.map((step, index) => <WorkflowStep key={step} step={step} index={index} rfa={rfa} approvals={approvals} current={rfa.CURRENT_STEP === step && rfa.STATUS.startsWith('PENDING_')} notApplicable={step === 'NOTED_BY' && notedByNotApplicable} />)}
         </div>
       </section>
 
       <section className="approval-signatures">
         <h2>Approval Signatures</h2>
-        <div>{steps.map((step) => <ApprovalSignature key={step} step={step} rfa={rfa} approvals={approvals} current={rfa.CURRENT_STEP === step} />)}</div>
+        <div>{steps.map((step) => <ApprovalSignature key={step} step={step} rfa={rfa} approvals={approvals} current={rfa.CURRENT_STEP === step} notApplicable={step === 'NOTED_BY' && notedByNotApplicable} />)}</div>
       </section>
 
       <DocumentSection title="Approval History">
@@ -211,7 +203,6 @@ export function RfaDetailPage() {
         </div>
         <button className="button primary" disabled={working} onClick={() => void transition('implementation')}><Send size={15} /> Start Implementation</button>
       </>}
-      {!permissions.canDecide && permissions.canRecordActualExpense && Number(rfa.ACTUAL_AMOUNT || 0) === 0 && <button className="button secondary" disabled={working} onClick={() => setDialog('actual')}>Record actual expense</button>}
       {!permissions.canDecide && permissions.canClose && rfa.STATUS === 'IMPLEMENTATION' && <>
         <div>
           <span className="eyebrow orange">IMPLEMENTATION</span>
@@ -225,16 +216,10 @@ export function RfaDetailPage() {
     </section>
 
     {dialog && <Dialog
-      title={dialog === 'approve' ? 'Confirm electronic approval' : dialog === 'return' ? 'Return RFA for revision' : dialog === 'actual' ? 'Record actual expense' : 'Disapprove RFA'}
+      title={dialog === 'approve' ? 'Confirm electronic approval' : dialog === 'return' ? 'Return RFA for revision' : 'Disapprove RFA'}
       onClose={() => setDialog(null)}>
       <div className="dialog-body">
-        {dialog === 'actual' ? <>
-          <p>This finalizes the actual expense, releases the approved commitment, and preserves both ledger entries.</p>
-          <label className="field"><span>Actual Amount (PHP) <b>*</b></span><input autoFocus min="0" step="0.01" type="number" value={actualAmount} onChange={(e) => setActualAmount(e.target.value)} /></label>
-          <label className="field"><span>Reference</span><input value={reference} onChange={(e) => setReference(e.target.value)} /></label>
-          <label className="field"><span>Financial Note</span><textarea rows={3} value={remarks} onChange={(e) => setRemarks(e.target.value)} /></label>
-          <div className="dialog-actions"><button className="button ghost" onClick={() => setDialog(null)}>Cancel</button><button className="button primary" disabled={working || !actualAmount} onClick={() => void recordActual()}>Record Expense</button></div>
-        </> : <div><p>{dialog === 'approve'
+        <div><p>{dialog === 'approve'
           ? 'Your identity, approval step, timestamp, and remarks will be recorded permanently.'
           : 'Provide a clear reason so the requester understands what is required.'}</p>
         <label className="field">
@@ -249,7 +234,7 @@ export function RfaDetailPage() {
             {dialog === 'approve' ? 'Confirm Approval' : dialog === 'return' ? 'Return to Requester' : 'Confirm Disapproval'}
           </button>
         </div>
-      </div>}</div>
+      </div></div>
     </Dialog>}
   </>;
 }
@@ -271,7 +256,7 @@ function assignmentRows(step: ApprovalStep, approvals: Approval[]): Approval[] {
   return approvals.filter((item) => item.STEP === step && !item.ACTION);
 }
 
-function WorkflowStep({ step, index, rfa, approvals, current }: { step: ApprovalStep; index: number; rfa: Rfa; approvals: Approval[]; current: boolean }) {
+function WorkflowStep({ step, index, rfa, approvals, current, notApplicable }: { step: ApprovalStep; index: number; rfa: Rfa; approvals: Approval[]; current: boolean; notApplicable: boolean }) {
   const assigned = assignmentRows(step, approvals);
   const approvedUsers = new Set(currentSubmissionActions(rfa, step, approvals).filter((item) => item.ACTION === 'APPROVED').map((item) => item.APPROVER_USER_ID));
   const completed = assigned.length ? assigned.every((item) => approvedUsers.has(item.APPROVER_USER_ID)) : approvedUsers.size > 0;
@@ -279,17 +264,17 @@ function WorkflowStep({ step, index, rfa, approvals, current }: { step: Approval
   return <div className={`${completed ? 'completed' : ''} ${current ? 'current' : ''} ${exception ? 'exception' : ''}`}>
     <span>{completed ? <Check size={14} /> : index + 1}</span>
     <b>{stepLabel(step)}</b>
-    <small>{completed ? 'Complete' : current ? 'Awaiting action' : exception ? 'Action recorded' : 'Pending'}</small>
+    <small>{notApplicable ? 'N/A' : completed ? 'Complete' : current ? 'Awaiting action' : exception ? 'Action recorded' : 'Pending'}</small>
   </div>;
 }
 
-function ApprovalSignature({ step, rfa, approvals, current }: { step: ApprovalStep; rfa: Rfa; approvals: Approval[]; current: boolean }) {
+function ApprovalSignature({ step, rfa, approvals, current, notApplicable }: { step: ApprovalStep; rfa: Rfa; approvals: Approval[]; current: boolean; notApplicable: boolean }) {
   const assigned = assignmentRows(step, approvals);
   const actions = new Map(currentSubmissionActions(rfa, step, approvals).map((item) => [item.APPROVER_USER_ID, item]));
   const fallback = [...currentSubmissionActions(rfa, step, approvals)].reverse()[0];
   return <div>
     <b>{stepLabel(step).toUpperCase()}</b>
-    {assigned.length > 0 ? <ul className="signature-assignees">
+    {notApplicable ? <strong>N/A</strong> : assigned.length > 0 ? <ul className="signature-assignees">
       {assigned.map((employee) => {
         const action = actions.get(employee.APPROVER_USER_ID);
         return <li key={employee.APPROVAL_ID}><strong>{employee.APPROVER_NAME}</strong><span>{action ? `${action.ACTION} · ${dateTime(action.TIMESTAMP)}` : current ? 'Awaiting action' : 'Waiting for prior stage'}</span></li>;

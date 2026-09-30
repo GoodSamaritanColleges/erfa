@@ -3,7 +3,7 @@ import { timed } from './performance';
 import { dashboardHome } from './dashboard';
 import { authenticate, requireCapability } from './auth';
 import { adminData, saveDepartment, saveMatrix, saveUser } from './admin';
-import { adjustBudget, adminBudgetManagement, adminBudgetOverview, adminBudgetSummary, adminExpenseCategories, budgetReport, departmentFinancialDetail, requesterBudgetContext, saveBudget, saveCategory, setOverBudget } from './budget';
+import { adjustBudget, adminBudgetManagement, adminBudgetOverview, adminBudgetSummary, adminExpenseCategories, budgetReport, departmentExpenseReport, departmentFinancialDetail, requesterBudgetContext, saveBudget, saveCategory, setOverBudget } from './budget';
 import { getDatabase, resetPerRequestCache } from './store';
 import { resetWorkflowCache } from './workflow';
 import { createRfa, dashboardRfas, decideRfa, detailRfa, downloadAttachment, eligibleApprovers, listForApproval, listRfas, saveActualExpense, submitRfa, transitionCloseout, updateRfa, uploadAttachment } from './workflow';
@@ -56,6 +56,7 @@ function dispatchRequest(request: ApiRequest): unknown {
     case 'admin.category.save': return withLock(() => saveCategory(user, payload));
     case 'admin.category.list': return adminExpenseCategories(user);
     case 'admin.budget.report': return budgetReport(user, payload);
+    case 'admin.budget.expenses': return departmentExpenseReport(user, payload);
     case 'admin.budget.detail': return departmentFinancialDetail(user, payload);
     case 'admin.database': requireCapability(user, 'IS_ADMIN'); return { spreadsheetId: getDatabase().getId(), spreadsheetUrl: getDatabase().getUrl() };
     default: throw Object.assign(new Error('Unknown API action.'), { code: 'NOT_FOUND' });

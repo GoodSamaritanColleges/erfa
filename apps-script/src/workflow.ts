@@ -43,6 +43,11 @@ function auditRows(rfaId: string): SheetRecord[] {
   return all<SheetRecord>('RFA_AUDIT').filter((row) => row.RFA_ID === rfaId);
 }
 
+export function notedByNotApplicable(auditEntries: SheetRecord[]): boolean {
+  const latest = [...auditEntries].reverse().find((row) => row.ACTION === 'NOTED_BY_SELECTION');
+  return latest?.REMARKS === 'N/A';
+}
+
 // Execution-local Drive folder memoization
 const folderCache = new Map<string, GoogleAppsScript.Drive.Folder>();
 export function resetWorkflowCache(): void { folderCache.clear(); }
@@ -200,6 +205,12 @@ function parseAssignments(user: SessionUser, value: unknown): RfaSectionAssignme
   return assignments;
 }
 
+function validateNotedByChoice(payload: Record<string, unknown>, assignments: RfaSectionAssignments): boolean {
+  const notApplicable = payload.notedByNotApplicable === true;
+  if (notApplicable && assignments.NOTED_BY.length) businessError('Noted By cannot contain approvers when N/A is selected.');
+  return notApplicable;
+}
+
 function saveAssignments(rfa: RfaRecord, assignments: RfaSectionAssignments): void {
   clearPendingRfaAssignments(rfa.RFA_ID);
   APPROVAL_SECTIONS.forEach((section) => saveRfaSectionAssignments(rfa.RFA_ID, rfa.RFA_NUMBER, section, assignments[section]));
@@ -219,8 +230,9 @@ export function createRfa(user: SessionUser, payload: Record<string, unknown>): 
   const department = findBy<DepartmentRecord>('DEPARTMENTS', 'DEPARTMENT_ID', user.DEPARTMENT_ID);
   if (!department || !toBoolean(department.ACTIVE)) businessError('Your configured department is missing or inactive.', 'CONFIGURATION_REQUIRED');
   const clean = validateRfaInput(payload, false);
-  const financial = financialRfaFields(user, payload, false) as Pick<RfaRecord, 'IS_BUDGET_REQUEST' | 'EXPENSE_CATEGORY_ID' | 'REQUESTED_AMOUNT' | 'APPROVED_AMOUNT' | 'ACTUAL_AMOUNT' | 'FISCAL_YEAR' | 'ACTUAL_EXPENSE_RECORDED_AT'>;
+  const financial = financialRfaFields(user, { ...payload, isBudgetRequest: true }, false) as Pick<RfaRecord, 'IS_BUDGET_REQUEST' | 'EXPENSE_CATEGORY_ID' | 'REQUESTED_AMOUNT' | 'APPROVED_AMOUNT' | 'ACTUAL_AMOUNT' | 'FISCAL_YEAR' | 'ACTUAL_EXPENSE_RECORDED_AT'>;
   const assignments = parseAssignments(user, payload.approvalAssignments);
+  const notedByNa = validateNotedByChoice(payload, assignments);
   const timestamp = nowIso();
   const record: RfaRecord = {
     RFA_ID: newId('rfa'), RFA_NUMBER: nextNumber(), DATE_FILED: timestamp.slice(0, 10),
@@ -233,6 +245,7 @@ export function createRfa(user: SessionUser, payload: Record<string, unknown>): 
   };
   insert('RFA', record);
   saveAssignments(record, assignments);
+  audit('NOTED_BY_SELECTION', user, record.RFA_ID, '', '', notedByNa ? 'N/A' : 'Approvers / empty');
   audit('RFA_CREATED', user, record.RFA_ID, '', 'DRAFT', '', { rfaNumber: record.RFA_NUMBER });
   return record;
 }
@@ -245,6 +258,7 @@ export function updateRfa(user: SessionUser, payload: Record<string, unknown>): 
   const usesAssignments = Object.prototype.hasOwnProperty.call(payload, 'approvalAssignments');
   if (usesAssignments && !isAssignmentWorkflow(rfa)) businessError('Legacy RFAs retain their original Approval Matrix route and cannot be converted.', 'FORBIDDEN');
   const assignments = usesAssignments ? parseAssignments(user, payload.approvalAssignments) : null;
+  const notedByNa = assignments ? validateNotedByChoice(payload, assignments) : false;
   const updates = {
     REQUEST_TITLE: clean.requestTitle, PURPOSE: clean.purpose, BUDGET_ALLOCATION: clean.budgetAllocation,
     TARGET_DATE: clean.targetDate, JUSTIFICATION: clean.justification, CURRENT_MATRIX_ID: usesAssignments ? ASSIGNMENT_WORKFLOW_MARKER : rfa.CURRENT_MATRIX_ID, UPDATED_AT: nowIso(), VERSION: Number(rfa.VERSION) + 1, ...financial
@@ -252,6 +266,7 @@ export function updateRfa(user: SessionUser, payload: Record<string, unknown>): 
   updateBy('RFA', 'RFA_ID', rfa.RFA_ID, updates);
   const updated = { ...rfa, ...updates } as RfaRecord;
   if (assignments) saveAssignments(updated, assignments);
+  if (assignments) audit('NOTED_BY_SELECTION', user, rfa.RFA_ID, '', '', notedByNa ? 'N/A' : 'Approvers / empty');
   audit('RFA_UPDATED', user, rfa.RFA_ID, rfa.STATUS, rfa.STATUS);
   return updated;
 }
@@ -422,6 +437,7 @@ export function dashboardRfas(user: SessionUser): { rfas: RfaRecord[]; approvals
 export function detailRfa(user: SessionUser, rfaId: string): Record<string, unknown> {
   const rfa = getRfa(rfaId);
   const approvals = approvalRows(rfaId);
+  const history = auditRows(rfaId);
   assertView(user, rfa, approvals);
   const section = currentAssignmentSection(rfa);
   const submittedAt = Date.parse(String(rfa.SUBMITTED_AT || ''));
@@ -434,21 +450,21 @@ export function detailRfa(user: SessionUser, rfaId: string): Record<string, unkn
   // An administrator may view any RFA but can decide only when explicitly assigned.
   const canDecide = isCurrentSectionHead && normalizeEmail(rfa.REQUESTER_EMAIL) !== normalizeEmail(user.EMAIL) && toBoolean(user.CAN_APPROVE_RFA);
   const canImplement = (toBoolean(user.CAN_IMPLEMENT_RFA) || toBoolean(user.IS_ADMIN)) && rfa.STATUS === 'APPROVED';
-  const canRecordActualExpense = (toBoolean(user.CAN_IMPLEMENT_RFA) || toBoolean(user.IS_ADMIN)) && toBoolean(rfa.IS_BUDGET_REQUEST) && ['APPROVED', 'IMPLEMENTATION', 'CLOSED'].includes(rfa.STATUS);
   const canClose = (toBoolean(user.CAN_IMPLEMENT_RFA) || toBoolean(user.IS_ADMIN)) && ['APPROVED', 'IMPLEMENTATION'].includes(rfa.STATUS);
 
   return {
     rfa,
     approvals,
     attachments: attachmentRows(rfaId).map(({ DRIVE_FILE_ID: _hidden, ...attachment }) => attachment),
-    audit: auditRows(rfaId).map(({ METADATA_JSON: _metadata, ...entry }) => entry),
+    audit: history.map(({ METADATA_JSON: _metadata, ...entry }) => entry),
+    notedByNotApplicable: notedByNotApplicable(history),
     financial: financialDetail(rfa),
     permissions: {
       canEdit,
       canDecide,
       canImplement,
       canClose,
-      canRecordActualExpense
+      canRecordActualExpense: false
     }
   };
 }

@@ -7,7 +7,8 @@ import { LoginPage } from './pages/LoginPage';
 import { RfaDetailPage } from './pages/RfaDetailPage';
 import { RfaFormPage } from './pages/RfaFormPage';
 import { RfaListPage } from './pages/RfaListPage';
-import { BudgetManagementPage, BudgetReportsPage } from './pages/BudgetPages';
+import { BudgetManagementPage } from './pages/BudgetPages';
+import { DepartmentExpenseReportPage } from './pages/DepartmentExpenseReportPage';
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -23,7 +24,7 @@ export default function App() {
       <Route path="rfa/:id" element={<RfaDetailPage />} />
       <Route path="admin" element={user?.IS_ADMIN ? <AdminPage /> : <Navigate to="/" replace />} />
       <Route path="admin/budgets" element={user?.IS_ADMIN ? <BudgetManagementPage /> : <Navigate to="/" replace />} />
-      <Route path="admin/budget-reports" element={user?.IS_ADMIN ? <BudgetReportsPage /> : <Navigate to="/" replace />} />
+      <Route path="admin/budget-reports" element={user?.IS_ADMIN ? <DepartmentExpenseReportPage /> : <Navigate to="/" replace />} />
     </Route>
     <Route path="*" element={<Navigate to={user ? '/' : '/login'} replace />} />
   </Routes>;
