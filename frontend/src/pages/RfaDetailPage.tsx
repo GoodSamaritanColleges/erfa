@@ -261,7 +261,7 @@ function WorkflowStep({ step, index, rfa, approvals, current, notApplicable }: {
   const approvedUsers = new Set(currentSubmissionActions(rfa, step, approvals).filter((item) => item.ACTION === 'APPROVED').map((item) => item.APPROVER_USER_ID));
   const completed = assigned.length ? assigned.every((item) => approvedUsers.has(item.APPROVER_USER_ID)) : approvedUsers.size > 0;
   const exception = approvals.some((item) => item.STEP === step && ['RETURNED','DISAPPROVED','EXCEPTION'].includes(item.ACTION));
-  return <div className={`${completed ? 'completed' : ''} ${current ? 'current' : ''} ${exception ? 'exception' : ''}`}>
+  return <div className={`${completed ? 'completed' : ''} ${current ? 'current' : ''} ${exception ? 'exception' : ''} ${notApplicable ? 'skipped' : ''}`}>
     <span>{completed ? <Check size={14} /> : index + 1}</span>
     <b>{stepLabel(step)}</b>
     <small>{notApplicable ? 'N/A' : completed ? 'Complete' : current ? 'Awaiting action' : exception ? 'Action recorded' : 'Pending'}</small>

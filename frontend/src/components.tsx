@@ -1,6 +1,6 @@
 import { AlertTriangle, CheckCircle2, FileText, Home, LayoutGrid, ListTodo, LoaderCircle, Send, ShieldCheck, X } from 'lucide-react';
 import { type ReactNode } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from './auth';
 import { statusLabel } from './format';
 import type { RfaStatus } from './types';
@@ -32,7 +32,9 @@ export function Dialog({ title, children, onClose }: { title: string; children: 
 
 export function Layout() {
   const { user, signOut } = useAuth();
+  const { pathname } = useLocation();
   if (!user) return null;
+  const pageTitle = pathname === '/' ? 'Dashboard' : pathname === '/rfas' ? 'My RFAs' : pathname === '/rfa/new' ? 'Create RFA' : pathname === '/approvals' ? 'For My Action' : pathname === '/admin' ? 'Administration' : pathname.startsWith('/admin/budgets') ? 'Budget Management' : pathname.startsWith('/admin/budget-reports') ? 'Expense Reports' : pathname.startsWith('/rfa/') ? 'RFA Detail' : 'Electronic Request for Approval';
 
   return <div className="app-shell">
     <aside className="sidebar">
@@ -64,8 +66,9 @@ export function Layout() {
       <header className="content-header">
         <div className="content-header-left">
           <FileText size={15} />
-          <span>Electronic Request for Approval</span>
+          <div><span className="content-header-context">Electronic Request for Approval</span><b>{pageTitle}</b></div>
         </div>
+        <span className="content-header-user" title={user.FULL_NAME}>{user.FULL_NAME}</span>
       </header>
 
       <main className="page"><Outlet /></main>
@@ -84,6 +87,7 @@ export function Layout() {
       {user.CAN_APPROVE_RFA && <NavLink to="/approvals">For My Action</NavLink>}
       {user.IS_ADMIN && <NavLink to="/admin" end>Admin</NavLink>}
       {user.IS_ADMIN && <NavLink to="/admin/budgets">Budgets</NavLink>}
+      {user.IS_ADMIN && <NavLink to="/admin/budget-reports">Reports</NavLink>}
     </nav>
   </div>;
 }

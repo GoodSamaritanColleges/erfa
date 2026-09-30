@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
-import { ErrorNotice, Spinner } from '../components';
+import { ErrorNotice, Spinner, StatusBadge } from '../components';
 import { money } from '../format';
 
 type ExpenseRow = { rfaId: string; rfaNumber: string; dateApproved: string; requester: string; department: string; title: string; purpose: string; amount: number; status: string };
@@ -60,7 +60,7 @@ export function DepartmentExpenseReportPage() {
       <section className="metric-grid"><Metric label="Annual Budget" value={money(report.annualBudget)} /><Metric label="Used" value={money(report.used)} /><Metric label="Remaining" value={money(report.remaining)} /></section>
       <section className="table-panel"><header><h2>Approved RFA expenses</h2><span className="muted">Used is based on all valid approved RFA expenses; search and date filters affect the rows only.</span></header>
         <div className="table-wrap"><table><thead><tr><th>RFA</th><th>Approved</th><th>Requester</th><th>Department</th><th>Title / Purpose</th><th>Expense</th><th>Status</th></tr></thead><tbody>
-          {report.rows.length ? report.rows.map((row) => <tr key={row.rfaId}><td><Link to={`/rfa/${row.rfaId}`}>{row.rfaNumber}</Link></td><td>{row.dateApproved}</td><td>{row.requester}</td><td>{row.department}</td><td>{row.title}<small>{row.purpose}</small></td><td>{money(row.amount)}</td><td>{row.status}</td></tr>) : <tr><td colSpan={7}>No approved RFA expenses match these filters.</td></tr>}
+          {report.rows.length ? report.rows.map((row) => <tr key={row.rfaId}><td data-label="RFA"><Link className="rfa-number" to={`/rfa/${row.rfaId}`}>{row.rfaNumber}</Link></td><td data-label="Approved">{row.dateApproved}</td><td data-label="Requester">{row.requester}</td><td data-label="Department">{row.department}</td><td data-label="Title / Purpose"><span className="cell-primary">{row.title}</span><small>{row.purpose}</small></td><td data-label="Expense" className="amount-cell">{money(row.amount)}</td><td data-label="Status"><StatusBadge status={row.status} /></td></tr>) : <tr><td colSpan={7}>No approved RFA expenses match these filters.</td></tr>}
         </tbody></table></div>
       </section>
     </>}

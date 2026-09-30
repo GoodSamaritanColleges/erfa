@@ -21,10 +21,16 @@ describe('sidebar active navigation', () => {
     ['/admin/budget-reports', '/admin/budget-reports']
   ])('marks only %s as active', (route, expectedHref) => {
     const html = renderToStaticMarkup(<MemoryRouter initialEntries={[route]}><Layout /></MemoryRouter>);
-    for (const navClass of route === '/admin/budget-reports' ? ['sidebar-nav'] : ['sidebar-nav', 'mobile-nav']) {
+    for (const navClass of ['sidebar-nav', 'mobile-nav']) {
       const nav = html.match(new RegExp(`<nav class="${navClass}"[^>]*>(.*?)</nav>`))?.[1] || '';
       const activeHrefs = [...nav.matchAll(/<a(?=[^>]*class="active")(?=[^>]*href="([^"]+)")[^>]*>/g)].map((match) => match[1]);
       expect(activeHrefs).toEqual([expectedHref]);
     }
+  });
+
+  it('shows a contextual page label without changing navigation', () => {
+    const html = renderToStaticMarkup(<MemoryRouter initialEntries={['/admin/budget-reports']}><Layout /></MemoryRouter>);
+    expect(html).toContain('<b>Expense Reports</b>');
+    expect(html).toContain('Electronic Request for Approval');
   });
 });

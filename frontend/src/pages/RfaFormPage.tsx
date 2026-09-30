@@ -119,19 +119,19 @@ export function RfaFormPage() {
       </section>
 
       <section className="form-card financial-card">
-        <div className="section-title"><span>03</span><div><h2>Department Budget</h2><p>The approved request amount will use this department’s annual budget once final approval is complete.</p></div></div>
+        <div className="section-title"><span>02</span><div><h2>Department Budget</h2><p>The approved request amount will use this department’s annual budget once final approval is complete.</p></div></div>
         {form.isBudgetRequest && <>
           <div className="form-grid">
             <label className="field"><span>Fiscal Year <b>*</b></span><input required pattern="\\d{4}" value={form.fiscalYear} onChange={(e) => set('fiscalYear', e.target.value)} /></label>
             <label className="field"><span>Requested Amount (PHP) <b>*</b></span><input required min="0.01" step="0.01" type="number" value={form.requestedAmount} onChange={(e) => set('requestedAmount', e.target.value)} placeholder="0.00" /></label>
           </div>
-          {budgetContext?.budget ? <div className="budget-context"><span>Annual Budget <b>{money(budgetContext.budget.allocated)}</b></span><span>Used <b>{money(budgetContext.budget.used)}</b></span><span>Remaining <b>{money(budgetContext.budget.available)}</b></span><span>After approval <b>{money(budgetContext.budget.available - Number(form.requestedAmount || 0))}</b></span></div> : <p className="muted">No FY {form.fiscalYear} budget has been configured for your department. This RFA cannot be submitted until an administrator configures it.</p>}
+          {budgetContext?.budget ? <div className="budget-context"><span>Annual Budget <b>{money(budgetContext.budget.allocated)}</b></span><span>Used <b>{money(budgetContext.budget.used)}</b></span><span>Remaining <b>{money(budgetContext.budget.available)}</b></span><span>After approval <b>{money(budgetContext.budget.available - Number(form.requestedAmount || 0))}</b></span></div> : <p className="budget-note">No FY {form.fiscalYear} budget has been configured for your department. This RFA cannot be submitted until an administrator configures it.</p>}
         </>}
       </section>
 
       <section className="form-card">
         <div className="section-title">
-          <span>02</span>
+          <span>03</span>
           <div><h2>Purpose and allocation</h2><p>Explain what is requested, why it is needed, and when it is targeted.</p></div>
         </div>
         <label className="field full">
