@@ -9,7 +9,12 @@ type PublicSummary = Summary & { budgetId: string; departmentId: string; fiscalY
 const active = (transaction: BudgetTransactionRecord) => transaction.STATUS !== 'VOID';
 
 function failure(message: string, code = 'INVALID_OPERATION'): never { const error = new Error(message) as Error & { code?: string }; error.code = code; throw error; }
-function year(value: unknown): string { const result = String(value || new Date().getFullYear()).trim(); if (!/^\d{4}$/.test(result)) failure('Fiscal year must be a four-digit year.'); return result; }
+function year(value: unknown, defaultToCurrentYear = true): string {
+  const supplied = String(value ?? '').trim();
+  const result = supplied || (defaultToCurrentYear ? String(new Date().getFullYear()) : '');
+  if (!/^\d{4}$/.test(result)) failure('Fiscal year must be a four-digit year.');
+  return result;
+}
 function budgetFor(departmentId: string, fiscalYear: string): DepartmentBudgetRecord | undefined { return all<DepartmentBudgetRecord>('DEPARTMENT_BUDGETS').find((item) => item.DEPARTMENT_ID === departmentId && String(item.FISCAL_YEAR) === fiscalYear && item.STATUS !== 'INACTIVE'); }
 function ledger(budgetId: string): BudgetTransactionRecord[] { return all<BudgetTransactionRecord>('BUDGET_TRANSACTIONS').filter((item) => item.BUDGET_ID === budgetId && active(item)); }
 
@@ -49,7 +54,8 @@ export function requesterBudgetContext(user: SessionUser, fiscalYearValue: unkno
 export function financialRfaFields(user: SessionUser, payload: Record<string, unknown>, required: boolean): Record<string, string | number | boolean> {
   const isFinancial = toBoolean(payload.isBudgetRequest);
   if (!isFinancial) return { IS_BUDGET_REQUEST: false, EXPENSE_CATEGORY_ID: '', REQUESTED_AMOUNT: 0, APPROVED_AMOUNT: 0, ACTUAL_AMOUNT: 0, FISCAL_YEAR: '', ACTUAL_EXPENSE_RECORDED_AT: '' };
-  const fiscalYear = year(payload.fiscalYear);
+  // An RFA must explicitly select the FY associated with its department budget.
+  const fiscalYear = year(payload.fiscalYear, false);
   const categoryId = String(payload.expenseCategoryId || '').trim();
   const amount = parseCentavos(payload.requestedAmount, 'Requested amount');
   if (categoryId && !findBy<ExpenseCategoryRecord>('EXPENSE_CATEGORIES', 'CATEGORY_ID', categoryId)) failure('The historical expense category was not found.', 'INVALID_CATEGORY');

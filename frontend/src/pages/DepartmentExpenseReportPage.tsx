@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { ErrorNotice, Spinner, StatusBadge } from '../components';
-import { money } from '../format';
+import { fiscalYearPattern, isFiscalYear, money } from '../format';
 
 type ExpenseRow = { rfaId: string; rfaNumber: string; dateApproved: string; requester: string; department: string; title: string; purpose: string; amount: number; status: string };
 type Report = { fiscalYear: string; departments: Array<{ DEPARTMENT_ID: string; DEPARTMENT_NAME: string }>; annualBudget: number; used: number; remaining: number; rows: ExpenseRow[] };
@@ -19,7 +19,7 @@ export function DepartmentExpenseReportPage() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!/^\d{4}$/.test(fiscalYear)) { setLoading(false); return; }
+    if (!isFiscalYear(fiscalYear)) { setLoading(false); return; }
     let current = true;
     setLoading(true);
     void api<Report>('admin.budget.expenses', { fiscalYear, departmentId, query, fromDate, toDate })
@@ -49,7 +49,7 @@ export function DepartmentExpenseReportPage() {
     <header className="page-header"><div><span className="eyebrow orange">ADMINISTRATION</span><h1>Department Expense Report</h1><p>Approved RFAs are the department’s budget expenses.</p></div></header>
     <ErrorNotice message={error} />
     <section className="form-card report-filters">
-      <label className="field"><span>Fiscal Year</span><input inputMode="numeric" maxLength={4} value={fiscalYear} onChange={(event) => setFiscalYear(event.target.value)} /></label>
+      <label className="field"><span>Fiscal Year</span><input inputMode="numeric" maxLength={4} pattern={fiscalYearPattern} title="Enter a four-digit fiscal year, for example 2026." value={fiscalYear} onChange={(event) => setFiscalYear(event.target.value)} /></label>
       <label className="field"><span>Department</span><select value={departmentId} onChange={(event) => setDepartmentId(event.target.value)}><option value="">All departments</option>{report?.departments.map((item) => <option key={item.DEPARTMENT_ID} value={item.DEPARTMENT_ID}>{item.DEPARTMENT_NAME}</option>)}</select></label>
       <label className="field"><span>Search RFA / title</span><input value={query} onChange={(event) => setQuery(event.target.value)} /></label>
       <label className="field"><span>Approved from</span><input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} /></label>

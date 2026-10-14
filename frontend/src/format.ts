@@ -13,6 +13,10 @@ export const stepLabel = (step: ApprovalStep | string): string => ({
 /** Produces the only value accepted by an HTML input[type="date"]. */
 export const dateInputValue = (value: string): string => /^(\d{4}-\d{2}-\d{2})(?:T.*)?$/.exec(value.trim())?.[1] ?? '';
 
+/** Canonical FY representation used by the backend and all budget-facing UI. */
+export const fiscalYearPattern = '[0-9]{4}';
+export const isFiscalYear = (value: string): boolean => /^[0-9]{4}$/.test(value);
+
 export const money = (value: number | string): string => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(value || 0));
 export const date = (value: string): string => value ? new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium' }).format(new Date(value.length === 10 ? `${value}T00:00:00` : value)) : '—';
 export const dateTime = (value: string): string => value ? new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '—';

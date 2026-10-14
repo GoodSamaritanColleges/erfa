@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { Dialog, ErrorNotice, Spinner, SuccessNotice } from '../components';
-import { money } from '../format';
+import { fiscalYearPattern, isFiscalYear, money } from '../format';
 
 type Department = { DEPARTMENT_ID: string; DEPARTMENT_NAME: string };
 type Category = { CATEGORY_ID: string; CATEGORY_NAME: string; DESCRIPTION: string; ACTIVE: boolean };
@@ -26,7 +26,7 @@ export function BudgetManagementPage() {
   const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const yearValid = /^\d{4}$/.test(year);
+  const yearValid = isFiscalYear(year);
   const shown = !working && !loading && data?.fiscalYear === year ? data : null;
   const selectedBudget = shown?.rows.find((row) => row.departmentId === departmentId);
   const detailVisible = mode === 'detail' || (mode === 'set' && Boolean(selectedBudget));
@@ -34,7 +34,7 @@ export function BudgetManagementPage() {
   const departmentReportUrl = `${reportUrl}&departmentId=${encodeURIComponent(departmentId)}`;
 
   useEffect(() => {
-    if (!/^\d{4}$/.test(year)) { setLoading(false); return; }
+    if (!isFiscalYear(year)) { setLoading(false); return; }
     let current = true;
     setLoading(true);
     const timer = setTimeout(() => {
@@ -76,7 +76,7 @@ export function BudgetManagementPage() {
     <header className="page-header"><div><span className="eyebrow orange">ADMINISTRATION</span><h1>Budget Management</h1><p>Set and review department budgets by fiscal year.</p></div></header>
     <ErrorNotice message={error} /><SuccessNotice message={success} />
     <div className="budget-toolbar">
-      <label className="field compact"><span>Fiscal Year</span><input list="budget-fiscal-years" value={year} inputMode="numeric" maxLength={4} disabled={working} onChange={(event) => { setYear(event.target.value); setData(null); setDepartmentId(''); setMode('list'); setConfirmAdjustment(false); setError(''); }} /></label>
+      <label className="field compact"><span>Fiscal Year</span><input list="budget-fiscal-years" value={year} inputMode="numeric" maxLength={4} pattern={fiscalYearPattern} title="Enter a four-digit fiscal year, for example 2026." disabled={working} onChange={(event) => { setYear(event.target.value); setData(null); setDepartmentId(''); setMode('list'); setConfirmAdjustment(false); setError(''); }} /></label>
       <datalist id="budget-fiscal-years">{Array.from({ length: 9 }, (_, index) => new Date().getFullYear() + 3 - index).map((option) => <option key={option} value={option} />)}</datalist>
       <button className="button primary" disabled={!yearValid || working} onClick={() => { setMode('set'); setDepartmentId(''); setAdjusting(false); setConfirmAdjustment(false); }}>Set Department Budget</button>
       <Link className="button secondary" to={reportUrl}>Expense Reports</Link>
@@ -106,7 +106,7 @@ export function BudgetReportsPage() {
   const { hash } = useLocation();
   const [params] = useSearchParams(); const [filters, setFilters] = useState({ fiscalYear: params.get('fiscalYear') || String(new Date().getFullYear()), departmentId: params.get('departmentId') || '', categoryId: '', fromDate: '', toDate: '', status: '', financialStatus: '', query: '' }); const filtersRef = useRef(filters); filtersRef.current = filters; const [report, setReport] = useState<Report | null>(null); const [error, setError] = useState(''); const [loading, setLoading] = useState(true);
   const load = () => { setLoading(true); void api<Report>('admin.budget.report', filtersRef.current).then(setReport).catch((e: Error) => setError(e.message)).finally(() => setLoading(false)); };
-  useEffect(() => { if (filters.fiscalYear && !/^\d{4}$/.test(filters.fiscalYear)) return; const timer = setTimeout(load, report ? 300 : 0); return () => clearTimeout(timer); }, [filters.fiscalYear]);
+  useEffect(() => { if (filters.fiscalYear && !isFiscalYear(filters.fiscalYear)) return; const timer = setTimeout(load, report ? 300 : 0); return () => clearTimeout(timer); }, [filters.fiscalYear]);
   useEffect(() => { if (report && hash === '#transaction-history') document.getElementById('transaction-history')?.scrollIntoView({ block: 'start' }); }, [report, hash]);
   const set = (key: keyof typeof filters, value: string) => setFilters((current) => ({ ...current, [key]: value }));
   function exportCsv() { if (!report) return; const filterText = `Department: ${report.departments.find((item) => item.DEPARTMENT_ID === filters.departmentId)?.DEPARTMENT_NAME || 'All'} | FY: ${filters.fiscalYear || 'All'} | Dates: ${filters.fromDate || 'Any'} to ${filters.toDate || 'Any'} | Category: ${report.categories.find((item) => item.CATEGORY_ID === filters.categoryId)?.CATEGORY_NAME || 'All'} | RFA: ${filters.status || 'All'} | Financial: ${filters.financialStatus || 'All'}`; const rows = [['Good Samaritan Colleges'], ['Electronic Request for Approval'], ['Department Expense Report'], [filterText], [`Generated: ${new Date().toLocaleString('en-PH')}`], [], ['RFA Number','RFA Date','Department','Category','Purpose / Description','Requested Amount','Approved Amount','Committed Amount','Actual Amount','RFA Status','Financial Status'], ...report.rows.map((row) => [row.rfaNumber,row.dateFiled,row.department,row.category,row.purpose,row.requestedAmount,row.approvedAmount,row.committedAmount,row.actualAmount,row.rfaStatus,row.financialStatus]), [], ['TOTALS','','','','',report.totals.requested,report.totals.approved,report.totals.committed,report.totals.actual,'','']]; const csv = rows.map((row) => row.map((value) => `"${String(value).replaceAll('"','""')}"`).join(',')).join('\n'); const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); const anchor = document.createElement('a'); anchor.href = url; anchor.download = `erfa-department-expense-report-fy${filters.fiscalYear || 'all'}.csv`; anchor.click(); URL.revokeObjectURL(url); }

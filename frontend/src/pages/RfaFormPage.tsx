@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, fileToBase64 } from '../api';
 import { useAuth } from '../auth';
 import { ErrorNotice, Spinner } from '../components';
-import { dateInputValue, money } from '../format';
+import { dateInputValue, fiscalYearPattern, isFiscalYear, money } from '../format';
 import type { ApprovalAssignments, ApprovalSection, EligibleApprover, EmployeeDirectory, Rfa, RfaDetail } from '../types';
 
 interface FormState { requestTitle: string; purpose: string; budgetAllocation: string; targetDate: string; justification: string; isBudgetRequest: boolean; fiscalYear: string; expenseCategoryId: string; requestedAmount: string }
@@ -61,7 +61,7 @@ export function RfaFormPage() {
 
   useEffect(() => {
     if (!form.isBudgetRequest) { setBudgetContext(null); return; }
-    if (!/^\d{4}$/.test(form.fiscalYear)) return;
+    if (!isFiscalYear(form.fiscalYear)) return;
     let current = true;
     const timer = setTimeout(() => {
       void api<BudgetContext>('budget.context', { fiscalYear: form.fiscalYear })
@@ -122,7 +122,7 @@ export function RfaFormPage() {
         <div className="section-title"><span>02</span><div><h2>Department Budget</h2><p>The approved request amount will use this department’s annual budget once final approval is complete.</p></div></div>
         {form.isBudgetRequest && <>
           <div className="form-grid">
-            <label className="field"><span>Fiscal Year <b>*</b></span><input required pattern="\\d{4}" value={form.fiscalYear} onChange={(e) => set('fiscalYear', e.target.value)} /></label>
+            <label className="field"><span>Fiscal Year <b>*</b></span><input required inputMode="numeric" maxLength={4} pattern={fiscalYearPattern} title="Enter a four-digit fiscal year, for example 2026." value={form.fiscalYear} onChange={(e) => set('fiscalYear', e.target.value)} /></label>
             <label className="field"><span>Requested Amount (PHP) <b>*</b></span><input required min="0.01" step="0.01" type="number" value={form.requestedAmount} onChange={(e) => set('requestedAmount', e.target.value)} placeholder="0.00" /></label>
           </div>
           {budgetContext?.budget ? <div className="budget-context"><span>Annual Budget <b>{money(budgetContext.budget.allocated)}</b></span><span>Used <b>{money(budgetContext.budget.used)}</b></span><span>Remaining <b>{money(budgetContext.budget.available)}</b></span><span>After approval <b>{money(budgetContext.budget.available - Number(form.requestedAmount || 0))}</b></span></div> : <p className="budget-note">No FY {form.fiscalYear} budget has been configured for your department. This RFA cannot be submitted until an administrator configures it.</p>}

@@ -115,6 +115,11 @@ describe('approved RFA expenditure ledger', () => {
 
   it('keeps historical category/actual data readable without requiring a category for new RFAs', () => {
     expect(financialRfaFields(requester, { isBudgetRequest: true, fiscalYear: '2026', requestedAmount: '100' }, true)).toMatchObject({ EXPENSE_CATEGORY_ID: '', REQUESTED_AMOUNT: 10000 });
+    expect(() => financialRfaFields(requester, { isBudgetRequest: true, fiscalYear: '2028', requestedAmount: '100' }, true)).toThrow('No FY 2028 budget has been configured');
+    expect(() => financialRfaFields(requester, { isBudgetRequest: true, fiscalYear: '202', requestedAmount: '100' }, true)).toThrow('four-digit year');
+    expect(() => financialRfaFields(requester, { isBudgetRequest: true, fiscalYear: '20266', requestedAmount: '100' }, true)).toThrow('four-digit year');
+    expect(() => financialRfaFields(requester, { isBudgetRequest: true, fiscalYear: '20A6', requestedAmount: '100' }, true)).toThrow('four-digit year');
+    expect(() => financialRfaFields(requester, { isBudgetRequest: true, fiscalYear: '', requestedAmount: '100' }, true)).toThrow('four-digit year');
     sheets.set('EXPENSE_CATEGORIES', [{ CATEGORY_ID: 'historical', CATEGORY_NAME: 'Equipment', ACTIVE: false }]);
     const legacy = { IS_BUDGET_REQUEST: true, EXPENSE_CATEGORY_ID: 'historical', DEPARTMENT_ID: 'it', FISCAL_YEAR: '2026', REQUESTED_AMOUNT: 10000, APPROVED_AMOUNT: 10000, ACTUAL_AMOUNT: 9500 } as RfaRecord;
     expect(financialDetail(legacy)).toMatchObject({ categoryName: 'Equipment', actualAmount: 95 });
