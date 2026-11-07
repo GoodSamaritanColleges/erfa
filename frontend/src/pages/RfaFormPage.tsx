@@ -291,7 +291,12 @@ export function RfaFormPage() {
         </div>
         <div className="approval-preview">
           <span className="eyebrow">OFFICIAL STAGES</span>
-          <div><b>Prepared By</b><b>Recommending Approval</b><b>Reviewed and Noted By</b><b>Approved By</b></div>
+          <div className="route-names">
+            <div className="route-stage"><b>Prepared By</b><small>{existing?.REQUESTED_BY || user?.FULL_NAME || 'Requester'}</small><span>{existing?.POSITION || user?.POSITION || ''}</span></div>
+            <div className="route-stage"><b>Recommending Approval</b><small>{(fixedRoute?.assignments?.RECOMMENDING_APPROVAL ?? []).map((p) => p.FULL_NAME).join(', ') || 'Pending configuration'}</small></div>
+            <div className="route-stage"><b>Reviewed and Noted By</b><small>{(fixedRoute?.assignments?.REVIEWED_AND_NOTED ?? []).map((p) => p.FULL_NAME).join(', ') || 'Pending configuration'}</small></div>
+            <div className="route-stage"><b>Approved By</b><small>{(fixedRoute?.assignments?.APPROVED_BY ?? []).map((p) => p.FULL_NAME).join(', ') || 'Pending configuration'}</small></div>
+          </div>
           <p>{fixedRoute ? officialSummary(fixedRoute) : 'Loading fixed route…'}</p>
           <p className="muted">Mandatory: Ofelia Hocson (Reviewed and Noted), Ana Liza Tago and Raquel Baquiran (Approved). Conditional: VP Academic{isAcademic ? ' (required for this academic RFA)' : ' (not required)'}, President{needsPresident ? ` (required at ${money(threshold)})` : ''}.</p>
         </div>
@@ -312,11 +317,11 @@ export function RfaFormPage() {
 
       <section className="approval-preview">
         <span className="eyebrow">APPROVAL SIGNATURES</span>
-        <div>
-          <b>Prepared By</b>
-          <b>Recommending Approval</b>
-          <b>Reviewed and Noted By</b>
-          <b>Approved By</b>
+        <div className="route-names">
+          <div className="route-stage"><b>Prepared By</b><small>{existing?.REQUESTED_BY || user?.FULL_NAME || 'Requester'}</small></div>
+          <div className="route-stage"><b>Recommending Approval</b><small>{usesLegacyWorkflow ? '' : (fixedRoute?.assignments?.RECOMMENDING_APPROVAL ?? []).map((p) => p.FULL_NAME).join(', ') || 'Pending configuration'}</small></div>
+          <div className="route-stage"><b>Reviewed and Noted By</b><small>{usesLegacyWorkflow ? '' : (fixedRoute?.assignments?.REVIEWED_AND_NOTED ?? []).map((p) => p.FULL_NAME).join(', ') || 'Pending configuration'}</small></div>
+          <div className="route-stage"><b>Approved By</b><small>{usesLegacyWorkflow ? '' : (fixedRoute?.assignments?.APPROVED_BY ?? []).map((p) => p.FULL_NAME).join(', ') || 'Pending configuration'}</small></div>
         </div>
         <p>{usesLegacyWorkflow ? 'This historical RFA preserves its original approval route.' : isOfficial ? 'Official matrix assignments apply. You cannot approve your own request.' : 'Fixed department assignments apply (historical workflow).'}</p>
       </section>
