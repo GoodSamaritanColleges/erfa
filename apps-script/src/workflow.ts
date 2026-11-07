@@ -596,6 +596,11 @@ function resolveOfficialAssignments(
     const raquel = findOfficialUser('APPROVED_MANDATORY_USER_IDS', 'Raquel Baquiran', usersById, requester, requesterUserId, 'VP_ADMIN_FINANCE_EMAIL');
     if (raquel) addDistinct(mandatoryApproved, [toEligible(raquel, deptNameMap)]);
   }
+  // Ana Liza Tago is always an approver (AVP for Finance) — fallback by name when matrix omits her.
+  if (!mandatoryApproved.some((e) => e.FULL_NAME.trim().toLowerCase() === 'ana liza tago')) {
+    const ana = findOfficialUser('APPROVED_MANDATORY_USER_IDS', 'Ana Liza Tago', usersById, requester, requesterUserId);
+    if (ana) addDistinct(mandatoryApproved, [toEligible(ana, deptNameMap)]);
+  }
   if (!mandatoryApproved.length) {
     // Name-based fallback only when neither matrix nor settings are configured, to give a clear config error in strict mode
     // Do not silently invent approvers; leave empty so strict fails.
