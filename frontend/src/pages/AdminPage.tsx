@@ -60,7 +60,10 @@ export function AdminPage() {
         </div>
         <button className="button primary" onClick={() => setEditing('new')}><Plus size={16}/> Add {tab === 'users' ? 'User' : tab === 'departments' ? 'Department' : 'Route'}</button>
       </header>}
-      {tab === 'users' && <UsersTable users={data.users} departments={data.departments} edit={setEditing} />}
+      {tab === 'users' && <>
+        <UsersImportPanel onSaved={() => { setSuccess('Import saved.'); load(); }} onError={setError} />
+        <UsersTable users={data.users} departments={data.departments} edit={setEditing} />
+      </>}
       {tab === 'departments' && <>
         <DepartmentsTable departments={data.departments} users={data.users} heads={data.heads} edit={setEditing} onSaved={load} onError={setError} />
         <ApprovalSettingsPanel data={data} onSaved={() => { setSuccess('Approval settings saved.'); load(); }} onError={setError} />
@@ -78,6 +81,30 @@ export function AdminPage() {
       <AdminForm tab={tab} editing={editing} data={data} onSaved={() => { setEditing(null); setSuccess('Configuration saved.'); load(); }} onError={setError} />
     </Dialog>}
   </>;
+}
+
+function UsersImportPanel({ onSaved, onError }: { onSaved: () => void; onError: (e: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [jsonText, setJsonText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState('');
+  async function runImport() {
+    setBusy(true); onError(''); setResult('');
+    try {
+      const payload = JSON.parse(jsonText) as Record<string, unknown>;
+      const res = await api<{ summary: string }>('admin.users.import', payload);
+      setResult(res.summary); onSaved();
+    } catch (e) { onError(e instanceof Error ? e.message : 'Import failed.'); }
+    finally { setBusy(false); }
+  }
+  if (!open) return <div className="form-card" style={{ marginBottom: '1rem' }}><button className="button secondary" onClick={() => setOpen(true)}>Import departments / users / heads from JSON</button><p className="muted">Safe insert-only: existing emails/departments are skipped, never overwritten. Use the generated `erfa-import-payload.json` from the Excel.</p></div>;
+  return <section className="form-card" style={{ marginBottom: '1rem' }}>
+    <h3>Import from Excel payload (JSON)</h3>
+    <p className="muted">Paste the contents of <code>import/erfa-import-payload.json</code>. Entries with missing emails are skipped.</p>
+    <label className="field"><span>Payload JSON</span><textarea rows={8} value={jsonText} onChange={(e) => setJsonText(e.target.value)} placeholder='{"departments":[],"users":[],"heads":[]}' /></label>
+    {result && <p>{result}</p>}
+    <div className="dialog-actions"><button className="button secondary" onClick={() => setOpen(false)}>Cancel</button><button className="button primary" disabled={busy || !jsonText} onClick={() => void runImport()}>Run import</button></div>
+  </section>;
 }
 
 function UsersTable({ users, departments, edit }: { users: User[]; departments: Department[]; edit: (item: User) => void }) {
