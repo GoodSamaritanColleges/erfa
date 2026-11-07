@@ -25,7 +25,9 @@ export function adminData(user: SessionUser): Record<string, unknown> {
       vpAcademicUserId: getSetting('VP_ACADEMIC_USER_ID') || '',
       presidentUserId: getSetting('PRESIDENT_USER_ID') || '',
       principalUserId: getSetting('PRINCIPAL_USER_ID') || '',
-      procurementUserId: getSetting('PROCUREMENT_USER_ID') || ''
+      procurementUserId: getSetting('PROCUREMENT_USER_ID') || '',
+      vpAdminFinanceEmail: getSetting('VP_ADMIN_FINANCE_EMAIL') || 'vp.finance@example.edu',
+      presidentEmail: getSetting('PRESIDENT_EMAIL') || 'president@example.edu'
     },
     audit: allTail<SheetRecord>('RFA_AUDIT', 500).reverse(), notifications: allTail<SheetRecord>('NOTIFICATIONS', 500).reverse()
   };
@@ -69,6 +71,15 @@ export function saveApprovalSettings(actor: SessionUser, payload: Record<string,
     parsePresidentThresholdCents(thresholdRaw);
     setSetting('PRESIDENT_THRESHOLD_PHP', String(Number(thresholdRaw.replace(/,/g, ''))), 'Presidential approval threshold in PHP (inclusive)');
   }
+  // Confirmed email accounts must stay distinct.
+  const raquelEmail = normalizeEmail(String(payload.vpAdminFinanceEmail || '').trim() || getSetting('VP_ADMIN_FINANCE_EMAIL') || 'vp.finance@example.edu');
+  const presidentEmail = normalizeEmail(String(payload.presidentEmail || '').trim() || getSetting('PRESIDENT_EMAIL') || 'president@example.edu');
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailPattern.test(raquelEmail)) throw new Error('Raquel Baquiran email is invalid.');
+  if (!emailPattern.test(presidentEmail)) throw new Error('President email is invalid.');
+  if (raquelEmail === presidentEmail) throw new Error('Raquel Baquiran and President emails are separate accounts and must not be interchanged.');
+  setSetting('VP_ADMIN_FINANCE_EMAIL', raquelEmail, 'Confirmed email for Raquel Baquiran - VP for Admin and Finance (separate account)');
+  setSetting('PRESIDENT_EMAIL', presidentEmail, 'Confirmed email for Alessandra De Guzman-Valino - President (separate account)');
   const setters: Array<[string, string, string]> = [
     ['REVIEWED_MANDATORY_USER_ID', String(payload.reviewedMandatoryUserId || ''), 'Reviewed and Noted By mandatory approver user ID (Ofelia Hocson)'],
     ['APPROVED_MANDATORY_USER_IDS', String(payload.approvedMandatoryUserIds || ''), 'Approved By mandatory approver user IDs, comma-separated'],

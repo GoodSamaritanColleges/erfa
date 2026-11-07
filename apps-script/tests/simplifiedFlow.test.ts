@@ -373,6 +373,36 @@ describe('department expense monitoring (preserved)', () => {
   });
 });
 
+describe('confirmed approver emails (preconfigured)', () => {
+  it('resolves Raquel and President by confirmed email without interchanging them', () => {
+    // Users use surname-first names but confirmed emails; name-only lookup would miss them.
+    const usersWithConfirmed = [
+      ...users,
+      { USER_ID: 'raquel2', FULL_NAME: 'BAQUIRAN, RAQUEL L.', EMAIL: 'vp.finance@example.edu', ACTIVE: true, CAN_APPROVE_RFA: true, DEPARTMENT_ID: 'it' },
+      { USER_ID: 'president2', FULL_NAME: 'DE GUZMAN-VALINO, ALESSANDRA L.', EMAIL: 'president@example.edu', ACTIVE: true, CAN_APPROVE_RFA: true, DEPARTMENT_ID: 'it' }
+    ];
+    sheets.set('USERS', usersWithConfirmed as SheetRecord[]);
+    seedOfficial({ requestingDeptId: 'it', isAcademic: false, heads: { it: ['itHead'] }, involvedHeads: { hr: ['hrHead'] } });
+    // Override the previously seeded official users with surname-first confirmed accounts and clear matrix so fallback must use email
+    sheets.set('USERS', usersWithConfirmed as SheetRecord[]);
+    sheets.set('APPROVAL_MATRIX', [matrixRow('it', 'REVIEWED_AND_NOTED', 'ofelia', 1), matrixRow('it', 'APPROVED_BY', 'ana', 1)]);
+    settings.set('VP_ADMIN_FINANCE_EMAIL', 'vp.finance@example.edu');
+    settings.set('PRESIDENT_EMAIL', 'president@example.edu');
+    settings.set('APPROVED_MANDATORY_USER_IDS', '');
+    settings.set('PRESIDENT_USER_ID', '');
+    const req = requesterFor('it');
+    const draft = createRfa(req, input({ requestedAmount: '60000', budgetAllocation: 60000, recommendingAlternateUserId: 'hrHead' }));
+    // Raquel should be included via confirmed email fallback, President via email
+    expect(assignmentsFor(draft.RFA_ID, 'APPROVED_BY')).toContain('raquel2');
+    expect(assignmentsFor(draft.RFA_ID, 'APPROVED_BY')).toContain('president2');
+    // Distinct accounts
+    const raquelAssignment = (sheets.get('RFA_APPROVALS') || []).find((r) => r.STEP === 'APPROVED_BY' && r.APPROVER_USER_ID === 'raquel2');
+    const presidentAssignment = (sheets.get('RFA_APPROVALS') || []).find((r) => r.STEP === 'APPROVED_BY' && r.APPROVER_USER_ID === 'president2');
+    expect(raquelAssignment?.APPROVER_EMAIL).toBe('vp.finance@example.edu');
+    expect(presidentAssignment?.APPROVER_EMAIL).toBe('president@example.edu');
+  });
+});
+
 describe('history, lifecycle, and backward compatibility (preserved)', () => {
   it('writes no commitment on implementation/close and keeps audit history', () => {
     const req = requesterFor('it');

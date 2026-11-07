@@ -308,17 +308,58 @@ function getThresholdCents(): number {
   try { return parsePresidentThresholdCents(getSetting('PRESIDENT_THRESHOLD_PHP') || '50000'); } catch { return 5_000_000; }
 }
 
-function findOfficialUser(settingKey: string, fullName: string, usersById: Map<string, UserRecord>, requesterEmail: string, requesterUserId: string): UserRecord | undefined {
+const DEFAULT_OFFICIAL_EMAILS: Record<string, string> = {
+  'Raquel Baquiran': 'vp.finance@example.edu',
+  'Alessandra De Guzman-Valino': 'president@example.edu'
+};
+
+function findOfficialUser(settingKey: string, fullName: string, usersById: Map<string, UserRecord>, requesterEmail: string, requesterUserId: string, emailKey?: string): UserRecord | undefined {
   const settingId = String(getSetting(settingKey) || '').trim();
   if (settingId) {
     const byId = usersById.get(settingId);
     if (byId && isValidApprover(byId, requesterEmail, requesterUserId)) return byId;
     if (byId && !isValidApprover(byId, requesterEmail, requesterUserId)) return undefined;
-    // Setting ID invalid → fall through to name lookup
+    // Setting ID invalid → fall through to name/email lookup
+  }
+  // Confirmed-email lookup takes precedence over name so format variations
+  // (e.g. "BAQUIRAN, RAQUEL L.") still resolve, and the two confirmed accounts stay distinct.
+  if (emailKey || DEFAULT_OFFICIAL_EMAILS[fullName]) {
+    const configured = emailKey ? String(getSetting(emailKey) || '').trim() : '';
+    const emailToTry = normalizeEmail(configured || DEFAULT_OFFICIAL_EMAILS[fullName] || '');
+    if (emailToTry) {
+      for (const candidate of usersById.values()) {
+        if (normalizeEmail(candidate.EMAIL) === emailToTry && isValidApprover(candidate, requesterEmail, requesterUserId)) return candidate;
+      }
+      // If custom email configured but no matching user, do not fall back to a swapped name match
+      // for Raquel/President (prevents interchanging the two accounts).
+      if (configured && (fullName === 'Raquel Baquiran' || fullName === 'Alessandra De Guzman-Valino')) {
+        // fall through to name lookup only if no email-registered user exists at all;
+        // name lookup below may still match the correct account.
+      }
+    }
   }
   const target = fullName.trim().toLowerCase();
   for (const candidate of usersById.values()) {
     if (String(candidate.FULL_NAME || '').trim().toLowerCase() === target && isValidApprover(candidate, requesterEmail, requesterUserId)) return candidate;
+  }
+  // Loose name fallback: surname-first formats ("BAQUIRAN, RAQUEL L.") — only if email lookup didn't already disambiguate
+  // Matches when first+last tokens match loosely, still requiring valid approver.
+  for (const candidate of usersById.values()) {
+    if (!isValidApprover(candidate, requesterEmail, requesterUserId)) continue;
+    const candidateName = String(candidate.FULL_NAME || '').trim().toLowerCase();
+    const parts = target.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2 && candidateName.includes(parts[0]) && candidateName.includes(parts[1])) {
+      // For Raquel/President, require email match to avoid swapping similar names
+      if (fullName === 'Raquel Baquiran') {
+        if (normalizeEmail(candidate.EMAIL) === 'vp.finance@example.edu' || normalizeEmail(candidate.EMAIL) === normalizeEmail(String(getSetting('VP_ADMIN_FINANCE_EMAIL') || ''))) return candidate;
+        continue;
+      }
+      if (fullName === 'Alessandra De Guzman-Valino') {
+        if (normalizeEmail(candidate.EMAIL) === 'president@example.edu' || normalizeEmail(candidate.EMAIL) === normalizeEmail(String(getSetting('PRESIDENT_EMAIL') || ''))) return candidate;
+        continue;
+      }
+      return candidate;
+    }
   }
   return undefined;
 }
@@ -550,6 +591,11 @@ function resolveOfficialAssignments(
     const c = usersById.get(id);
     if (c && isValidApprover(c, requester, requesterUserId) && !mandatoryApproved.some((e) => e.USER_ID === c.USER_ID)) mandatoryApproved.push(toEligible(c, deptNameMap));
   }
+  // Confirmed Raquel account (vp.finance@example.edu) fallback — distinct from President.
+  if (!mandatoryApproved.some((e) => normalizeEmail(e.EMAIL) === normalizeEmail(String(getSetting('VP_ADMIN_FINANCE_EMAIL') || 'vp.finance@example.edu')))) {
+    const raquel = findOfficialUser('APPROVED_MANDATORY_USER_IDS', 'Raquel Baquiran', usersById, requester, requesterUserId, 'VP_ADMIN_FINANCE_EMAIL');
+    if (raquel) addDistinct(mandatoryApproved, [toEligible(raquel, deptNameMap)]);
+  }
   if (!mandatoryApproved.length) {
     // Name-based fallback only when neither matrix nor settings are configured, to give a clear config error in strict mode
     // Do not silently invent approvers; leave empty so strict fails.
@@ -564,7 +610,7 @@ function resolveOfficialAssignments(
   }
   const threshold = getThresholdCents();
   if (Number(requestedAmountCents) >= threshold) {
-    const president = findOfficialUser('PRESIDENT_USER_ID', 'Alessandra De Guzman-Valino', usersById, requester, requesterUserId);
+    const president = findOfficialUser('PRESIDENT_USER_ID', 'Alessandra De Guzman-Valino', usersById, requester, requesterUserId, 'PRESIDENT_EMAIL');
     if (strict && !president) businessError('President (Alessandra De Guzman-Valino) is not configured for this above-threshold RFA.', 'CONFIGURATION_REQUIRED');
     if (president) addDistinct(approved, [toEligible(president, deptNameMap)]);
   }

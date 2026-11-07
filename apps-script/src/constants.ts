@@ -77,6 +77,11 @@ export const STEP_STATUS: Record<ApprovalStep, RfaStatus> = {
   APPROVED_BY: 'PENDING_AUTHORITY_APPROVAL'
 };
 
+export const CONFIRMED_APPROVER_EMAILS: Record<string, string> = {
+  'Raquel Baquiran': 'vp.finance@example.edu',
+  'Alessandra De Guzman-Valino': 'president@example.edu'
+};
+
 export const DEFAULT_SETTINGS = [
   ['APP_NAME', 'eRFA', 'Application display name'],
   ['GOOGLE_CLIENT_ID', '', 'OAuth web client ID used to verify Google ID tokens'],
@@ -93,7 +98,9 @@ export const DEFAULT_SETTINGS = [
   ['VP_ACADEMIC_USER_ID', '', 'VP for Academic Affairs user ID (Jennelyn De Guzman)'],
   ['PRESIDENT_USER_ID', '', 'President user ID (Alessandra De Guzman-Valino)'],
   ['PRINCIPAL_USER_ID', '', 'JHS/SHS Principal user ID (Noliver Garcia)'],
-  ['PROCUREMENT_USER_ID', '', 'Procurement Clerk user ID (Marjorie Valdez)']
+  ['PROCUREMENT_USER_ID', '', 'Procurement Clerk user ID (Marjorie Valdez)'],
+  ['VP_ADMIN_FINANCE_EMAIL', 'vp.finance@example.edu', 'Confirmed email for Raquel Baquiran - VP for Admin and Finance (separate account)'],
+  ['PRESIDENT_EMAIL', 'president@example.edu', 'Confirmed email for Alessandra De Guzman-Valino - President (separate account)']
 ] as const;
 
 export const ALLOWED_ATTACHMENT_TYPES = [
