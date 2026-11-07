@@ -177,29 +177,35 @@ function ApprovalSettingsPanel({ data, onSaved, onError }: { data: AdminData; on
     finally { setSaving(false); }
   }
   const approverOptions = data.users.filter((u) => u.ACTIVE && u.CAN_APPROVE_RFA);
-  const userSelect = (key: keyof typeof form, label: string, multi = false) => (
+  const userSelect = (key: keyof typeof form, label: string) => (
     <label className="field"><span>{label}</span>
       <select value={String(form[key] ?? '')} onChange={(e) => set(key, e.target.value)}>
         <option value="">Not configured (name lookup)</option>
         {approverOptions.map((u) => <option key={u.USER_ID} value={u.USER_ID}>{u.FULL_NAME} - {u.EMAIL}</option>)}
       </select>
-      {multi && <small>For multiple mandatory approvers, use Matrix; this setting supplements the matrix.</small>}
     </label>
   );
+  const approvedIds = String(form.approvedMandatoryUserIds ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  const setApprovedId = (slot: number, userId: string) => {
+    const next = [...approvedIds];
+    if (userId) next[slot] = userId; else next.splice(slot, 1);
+    set('approvedMandatoryUserIds', next.filter(Boolean).join(','));
+  };
   return <section className="form-card" style={{ marginTop: '1rem' }}>
     <h3>Official Approval Settings</h3>
     <p className="muted">Mandatory approvers remain fixed unless explicitly reconfigured here or in the Approval Matrix: Ofelia Hocson (Reviewed and Noted), Ana Liza Tago and Raquel Baquiran (Approved). Threshold is inclusive.</p>
     <div className="form-grid">
       <label className="field"><span>Presidential threshold (PHP)</span><input inputMode="decimal" value={form.presidentThresholdPhp} onChange={(e) => set('presidentThresholdPhp', e.target.value)} /></label>
       {userSelect('reviewedMandatoryUserId', 'Reviewed and Noted mandatory (Ofelia Hocson)')}
+      <label className="field"><span>Approved mandatory — Ma'am Tago (Ana Liza Tago)</span><select value={approvedIds[0] ?? ''} onChange={(e) => setApprovedId(0, e.target.value)}><option value="">Not configured (name lookup)</option>{approverOptions.map((u) => <option key={u.USER_ID} value={u.USER_ID}>{u.FULL_NAME} - {u.EMAIL}</option>)}</select><small>Always together with VP Raquel below.</small></label>
+      <label className="field"><span>Approved mandatory — VP Raquel (Raquel Baquiran)</span><select value={approvedIds[1] ?? ''} onChange={(e) => setApprovedId(1, e.target.value)}><option value="">Not configured (name lookup)</option>{approverOptions.map((u) => <option key={u.USER_ID} value={u.USER_ID}>{u.FULL_NAME} - {u.EMAIL}</option>)}</select><small>Always together with Ma'am Tago.</small></label>
       {userSelect('vpAcademicUserId', 'VP Academic (Jennelyn De Guzman)')}
       {userSelect('presidentUserId', 'President (Alessandra De Guzman-Valino)')}
       {userSelect('principalUserId', 'JHS/SHS Principal (Noliver Garcia)')}
       {userSelect('procurementUserId', 'Procurement Clerk (Marjorie Valdez)')}
-      <label className="field"><span>Approved mandatory IDs (comma-separated)</span><input value={form.approvedMandatoryUserIds} onChange={(e) => set('approvedMandatoryUserIds', e.target.value)} placeholder="userId1,userId2" /></label>
       <label className="field"><span>Raquel Baquiran email — VP Admin and Finance (separate account)</span><input type="email" value={form.vpAdminFinanceEmail ?? 'vp.finance@example.edu'} onChange={(e) => set('vpAdminFinanceEmail', e.target.value)} /></label>
       <label className="field"><span>President email — Alessandra De Guzman-Valino (separate account)</span><input type="email" value={form.presidentEmail ?? 'president@example.edu'} onChange={(e) => set('presidentEmail', e.target.value)} /></label>
-      <p className="muted">Confirmed emails are preconfigured. Do not interchange them. Other approver emails will be supplied later and remain unconfigured until set here or via Users.</p>
+      <p className="muted">Confirmed emails are preconfigured. Do not interchange them. Other approver emails will be supplied later and remain unconfigured until set here or via Users. Procurement shows “Not configured” until Marjorie Valdez has <b>Can Approve RFA</b> enabled in Users.</p>
     </div>
     <button className="button primary" disabled={saving} onClick={() => void save()}>Save approval settings</button>
   </section>;
