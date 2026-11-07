@@ -3,11 +3,13 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { Dialog, ErrorNotice, Spinner, StatusBadge, SuccessNotice } from '../components';
-import { date, dateTime, money, stepLabel } from '../format';
+import { date, dateTime, expenseClassificationLabel, money, stepLabel } from '../format';
 import type { Approval, ApprovalStep, Attachment, Rfa, RfaDetail } from '../types';
 
 const legacySteps: ApprovalStep[] = ['PREPARED_BY', 'RECOMMENDING_APPROVAL', 'REVIEWED_AND_NOTED', 'APPROVED_BY'];
-const assignmentSteps: ApprovalStep[] = ['PREPARED_BY', 'RECOMMENDING_APPROVAL', 'REVIEWED_BY', 'NOTED_BY', 'APPROVED_BY'];
+const legacyAssignmentSteps: ApprovalStep[] = ['PREPARED_BY', 'RECOMMENDING_APPROVAL', 'REVIEWED_BY', 'NOTED_BY', 'APPROVED_BY'];
+const standardSteps: ApprovalStep[] = ['PREPARED_BY', 'REVIEWED_BY', 'NOTED_BY', 'APPROVED_BY'];
+const officialSteps: ApprovalStep[] = ['PREPARED_BY', 'RECOMMENDING_APPROVAL', 'REVIEWED_AND_NOTED', 'APPROVED_BY'];
 
 export function RfaDetailPage() {
   const { id = '' } = useParams();
@@ -68,8 +70,15 @@ export function RfaDetailPage() {
   if (!detail) return <><ErrorNotice message={error || 'RFA was not found.'} /><button className="button secondary" onClick={() => navigate('/rfas')}>Back to My RFAs</button></>;
 
   const { rfa, approvals, attachments, audit, permissions, financial, notedByNotApplicable } = detail;
-  const usesAssignmentWorkflow = rfa.CURRENT_MATRIX_ID === 'RFA_ASSIGNMENTS_V1' || approvals.some((approval) => approval.STEP === 'REVIEWED_BY' || approval.STEP === 'NOTED_BY') || rfa.CURRENT_STEP === 'REVIEWED_BY' || rfa.CURRENT_STEP === 'NOTED_BY';
-  const steps = usesAssignmentWorkflow ? assignmentSteps : legacySteps;
+  const isLegacyAssignment = rfa.CURRENT_MATRIX_ID === 'RFA_ASSIGNMENTS_V1';
+  const isOfficialWorkflow = rfa.CURRENT_MATRIX_ID === 'RFA_FIXED_V3' || approvals.some((a) => a.STEP === 'REVIEWED_AND_NOTED');
+  const isFixedWorkflow = rfa.CURRENT_MATRIX_ID === 'RFA_FIXED_V2';
+  const hasInvolved = Boolean(rfa.INVOLVED_DEPARTMENT_ID) || Boolean(rfa.INVOLVED_DEPARTMENT_NAME) || approvals.some((a) => a.STEP === 'INVOLVED_DEPARTMENT_HEAD');
+  const standardStepsWithInvolved: ApprovalStep[] = hasInvolved
+    ? ['PREPARED_BY', 'REVIEWED_BY', 'NOTED_BY', 'INVOLVED_DEPARTMENT_HEAD', 'APPROVED_BY']
+    : standardSteps;
+  const usesAssignmentWorkflow = isLegacyAssignment || approvals.some((approval) => approval.STEP === 'RECOMMENDING_APPROVAL' && rfa.CURRENT_MATRIX_ID === 'RFA_ASSIGNMENTS_V1');
+  const steps: ApprovalStep[] = isOfficialWorkflow ? officialSteps : isFixedWorkflow ? standardStepsWithInvolved : usesAssignmentWorkflow ? legacyAssignmentSteps : legacySteps;
 
   return <>
     <div className="screen-only">
@@ -115,7 +124,7 @@ export function RfaDetailPage() {
 
       <section className="request-grid">
         <Fact label="Date Filed" value={date(rfa.DATE_FILED)} />
-        <Fact label="Department" value={rfa.DEPARTMENT_NAME} />
+        <Fact label="Requesting Department" value={rfa.DEPARTMENT_NAME} />
         <Fact label="Requested By" value={rfa.REQUESTED_BY} />
         <Fact label="Position" value={rfa.POSITION} />
         <Fact label="Project / Activity / Request Title" value={rfa.REQUEST_TITLE} wide />
@@ -123,15 +132,19 @@ export function RfaDetailPage() {
 
       <DocumentSection title="Purpose"><p>{rfa.PURPOSE || '—'}</p></DocumentSection>
 
-      <section className="request-grid two">
-        <Fact label="Budget Allocation" value={money(rfa.BUDGET_ALLOCATION)} />
-        <Fact label="Target Date" value={date(rfa.TARGET_DATE)} />
-      </section>
-
-      {financial && <DocumentSection title="Budget / Financial Information">
-        <section className="request-grid two"><Fact label="Fiscal Year" value={financial.fiscalYear} /><Fact label="Requested Amount" value={money(financial.requestedAmount)} /><Fact label="Approved Amount" value={money(financial.approvedAmount)} />{financial.categoryName && <Fact label="Historical Expense Category" value={financial.categoryName} />}</section>
-        {financial.budget && <div className="budget-context"><span>Annual Budget <b>{money(financial.budget.allocated)}</b></span><span>Used <b>{money(financial.budget.committed + financial.budget.actualSpent)}</b></span><span>Remaining <b>{money(financial.budget.available)}</b></span></div>}
-      </DocumentSection>}
+      <DocumentSection title="Expense Information">
+        <section className="request-grid two">
+          <Fact label="Fiscal Year" value={financial?.fiscalYear || rfa.FISCAL_YEAR || '—'} />
+          <Fact label="Expense Classification" value={expenseClassificationLabel(rfa.EXPENSE_CLASSIFICATION || financial?.expenseClassification)} />
+          <Fact label="Requested Amount" value={money(financial?.requestedAmount ?? (rfa.REQUESTED_AMOUNT ? rfa.REQUESTED_AMOUNT / 100 : rfa.BUDGET_ALLOCATION))} />
+          <Fact label="Purchase Request" value={rfa.PURCHASE_REQUEST || financial?.purchaseRequest ? 'Yes' : 'No'} />
+          <Fact label="Target Date" value={date(rfa.TARGET_DATE)} />
+          {(rfa.INVOLVED_DEPARTMENT_NAME || financial?.involvedDepartmentName) && <Fact label="Involved Department(s)" value={rfa.INVOLVED_DEPARTMENT_NAME || financial?.involvedDepartmentName || ''} />}
+          {financial?.approvedAmount ? <Fact label="Approved Amount" value={money(financial.approvedAmount)} /> : null}
+          {(rfa.RECOMMENDING_ALTERNATE_NAME || financial?.recommendingAlternateName) && <Fact label="Alternate Head" value={rfa.RECOMMENDING_ALTERNATE_NAME || financial?.recommendingAlternateName || ''} />}
+          {financial?.categoryName ? <Fact label="Historical Expense Category" value={financial.categoryName} /> : null}
+        </section>
+      </DocumentSection>
 
       <DocumentSection title="Justification"><p>{rfa.JUSTIFICATION || '—'}</p></DocumentSection>
 
@@ -198,7 +211,7 @@ export function RfaDetailPage() {
       </>}
       {!permissions.canDecide && permissions.canImplement && <>
         <div>
-          <span className="eyebrow orange">BUDGET ALLOCATION CONFIRMED</span>
+          <span className="eyebrow orange">FINAL APPROVAL CONFIRMED</span>
           <b>Final approval is complete. Begin implementation when ready.</b>
         </div>
         <button className="button primary" disabled={working} onClick={() => void transition('implementation')}><Send size={15} /> Start Implementation</button>
@@ -259,7 +272,8 @@ function assignmentRows(step: ApprovalStep, approvals: Approval[]): Approval[] {
 function WorkflowStep({ step, index, rfa, approvals, current, notApplicable }: { step: ApprovalStep; index: number; rfa: Rfa; approvals: Approval[]; current: boolean; notApplicable: boolean }) {
   const assigned = assignmentRows(step, approvals);
   const approvedUsers = new Set(currentSubmissionActions(rfa, step, approvals).filter((item) => item.ACTION === 'APPROVED').map((item) => item.APPROVER_USER_ID));
-  const completed = assigned.length ? assigned.every((item) => approvedUsers.has(item.APPROVER_USER_ID)) : approvedUsers.size > 0;
+  const isOrStage = step === 'RECOMMENDING_APPROVAL' && rfa.CURRENT_MATRIX_ID === 'RFA_FIXED_V3';
+  const completed = isOrStage ? approvedUsers.size > 0 : assigned.length ? assigned.every((item) => approvedUsers.has(item.APPROVER_USER_ID)) : approvedUsers.size > 0;
   const exception = approvals.some((item) => item.STEP === step && ['RETURNED','DISAPPROVED','EXCEPTION'].includes(item.ACTION));
   return <div className={`${completed ? 'completed' : ''} ${current ? 'current' : ''} ${exception ? 'exception' : ''} ${notApplicable ? 'skipped' : ''}`}>
     <span>{completed ? <Check size={14} /> : index + 1}</span>

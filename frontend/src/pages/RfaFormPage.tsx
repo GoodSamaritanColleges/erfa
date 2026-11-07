@@ -5,19 +5,49 @@ import { api, fileToBase64 } from '../api';
 import { useAuth } from '../auth';
 import { ErrorNotice, Spinner } from '../components';
 import { dateInputValue, fiscalYearPattern, isFiscalYear, money } from '../format';
-import type { ApprovalAssignments, ApprovalSection, EligibleApprover, EmployeeDirectory, Rfa, RfaDetail } from '../types';
+import type { ApprovalAssignments, ApprovalSection, Department, EligibleApprover, EmployeeDirectory, Rfa, RfaDetail } from '../types';
 
-interface FormState { requestTitle: string; purpose: string; budgetAllocation: string; targetDate: string; justification: string; isBudgetRequest: boolean; fiscalYear: string; expenseCategoryId: string; requestedAmount: string }
-type BudgetContext = { fiscalYear: string; budget: { allocated: number; used: number; available: number } | null };
-const blank: FormState = { requestTitle: '', purpose: '', budgetAllocation: '', targetDate: '', justification: '', isBudgetRequest: true, fiscalYear: String(new Date().getFullYear()), expenseCategoryId: '', requestedAmount: '' };
-const sections: Array<{ key: ApprovalSection; label: string }> = [
+interface FormState {
+  requestTitle: string;
+  purpose: string;
+  budgetAllocation: string;
+  targetDate: string;
+  justification: string;
+  fiscalYear: string;
+  requestedAmount: string;
+  expenseClassification: string;
+  purchaseRequest: boolean;
+  involvedDepartmentIds: string[];
+  recommendingAlternateUserId: string;
+  includePrincipal: boolean;
+  includeProcurement: boolean;
+}
+const blank: FormState = {
+  requestTitle: '', purpose: '', budgetAllocation: '', targetDate: '', justification: '',
+  fiscalYear: String(new Date().getFullYear()), requestedAmount: '', expenseClassification: '',
+  purchaseRequest: false, involvedDepartmentIds: [], recommendingAlternateUserId: '',
+  includePrincipal: false, includeProcurement: false
+};
+const legacySections: Array<{ key: ApprovalSection; label: string }> = [
   { key: 'RECOMMENDING_APPROVAL', label: 'Recommending Approval' },
   { key: 'REVIEWED_BY', label: 'Reviewed By' },
   { key: 'NOTED_BY', label: 'Noted By' },
   { key: 'APPROVED_BY', label: 'Approved By' }
 ];
-const emptyAssignments = (): ApprovalAssignments => ({ RECOMMENDING_APPROVAL: [], REVIEWED_BY: [], NOTED_BY: [], APPROVED_BY: [] });
+const emptyLegacyAssignments = (): ApprovalAssignments => ({ RECOMMENDING_APPROVAL: [], REVIEWED_AND_NOTED: [], REVIEWED_BY: [], NOTED_BY: [], INVOLVED_DEPARTMENT_HEAD: [], APPROVED_BY: [] } as unknown as ApprovalAssignments);
 const assignmentWorkflowMarker = 'RFA_ASSIGNMENTS_V1';
+const fixedV2Marker = 'RFA_FIXED_V2';
+
+type FixedRoutePreview = {
+  assignments?: Record<string, EligibleApprover[]>;
+  heads?: Array<{ departmentId: string; departmentName: string; headName: string; headCount?: number; heads?: Array<{ userId: string; fullName: string }> }>;
+  departments?: Department[];
+  requestingHeadCount?: number;
+  isAcademic?: boolean;
+  isJhsOrShs?: boolean;
+  presidentThresholdPhp?: number;
+  alternateCandidates?: EligibleApprover[];
+};
 
 export function RfaFormPage() {
   const { id } = useParams();
@@ -27,57 +57,96 @@ export function RfaFormPage() {
   const [existing, setExisting] = useState<Rfa | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [employees, setEmployees] = useState<EmployeeDirectory>([]);
-  const [assignments, setAssignments] = useState<ApprovalAssignments>(emptyAssignments);
+  const [assignments, setAssignments] = useState<ApprovalAssignments>(emptyLegacyAssignments);
   const [notedByNa, setNotedByNa] = useState(false);
-  const [usesAssignmentWorkflow, setUsesAssignmentWorkflow] = useState(!id);
+  const [usesLegacyWorkflow, setUsesLegacyWorkflow] = useState(false);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(Boolean(id));
-  const [budgetContext, setBudgetContext] = useState<BudgetContext | null>(null);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [fixedRoute, setFixedRoute] = useState<FixedRoutePreview | null>(null);
 
   useEffect(() => {
     if (!id) return;
-    void api<RfaDetail>('rfa.detail', { rfaId: id }).then(({ rfa, permissions, approvals, notedByNotApplicable }) => {
+    void api<RfaDetail>('rfa.detail', { rfaId: id }).then(({ rfa, permissions, approvals, notedByNotApplicable, financial }) => {
       if (!permissions.canEdit) throw new Error('This RFA is not editable.');
       setExisting(rfa);
-      setForm({ requestTitle: rfa.REQUEST_TITLE, purpose: rfa.PURPOSE, budgetAllocation: String(rfa.BUDGET_ALLOCATION), targetDate: dateInputValue(rfa.TARGET_DATE), justification: rfa.JUSTIFICATION, isBudgetRequest: rfa.IS_BUDGET_REQUEST, fiscalYear: rfa.FISCAL_YEAR || String(new Date().getFullYear()), expenseCategoryId: rfa.EXPENSE_CATEGORY_ID || '', requestedAmount: rfa.REQUESTED_AMOUNT ? String(rfa.REQUESTED_AMOUNT / 100) : '' });
-      const usesAssignments = rfa.CURRENT_MATRIX_ID === assignmentWorkflowMarker;
-      setUsesAssignmentWorkflow(usesAssignments);
-      setAssignments(usesAssignments
-        ? sections.reduce((current, section) => ({ ...current, [section.key]: approvals.filter((row) => row.STEP === section.key && !row.ACTION).map((row) => row.APPROVER_USER_ID) }), emptyAssignments())
-        : emptyAssignments());
+      const requested = rfa.REQUESTED_AMOUNT ? String(rfa.REQUESTED_AMOUNT / 100) : (rfa.BUDGET_ALLOCATION ? String(rfa.BUDGET_ALLOCATION) : '');
+      const involvedIds = (rfa.INVOLVED_DEPARTMENT_IDS || '').split(',').map((s) => s.trim()).filter(Boolean);
+      if (!involvedIds.length && rfa.INVOLVED_DEPARTMENT_ID) involvedIds.push(rfa.INVOLVED_DEPARTMENT_ID);
+      setForm({
+        requestTitle: rfa.REQUEST_TITLE, purpose: rfa.PURPOSE, budgetAllocation: String(rfa.BUDGET_ALLOCATION || ''),
+        targetDate: dateInputValue(rfa.TARGET_DATE), justification: rfa.JUSTIFICATION,
+        fiscalYear: rfa.FISCAL_YEAR || String(new Date().getFullYear()), requestedAmount: requested,
+        expenseClassification: rfa.EXPENSE_CLASSIFICATION || '',
+        purchaseRequest: Boolean(rfa.PURCHASE_REQUEST ?? financial?.purchaseRequest),
+        involvedDepartmentIds: involvedIds,
+        recommendingAlternateUserId: rfa.RECOMMENDING_ALTERNATE_USER_ID || '',
+        includePrincipal: Boolean(rfa.INCLUDE_PRINCIPAL ?? financial?.includePrincipal),
+        includeProcurement: Boolean(rfa.INCLUDE_PROCUREMENT ?? financial?.includeProcurement)
+      });
+      const usesLegacy = rfa.CURRENT_MATRIX_ID === assignmentWorkflowMarker;
+      setUsesLegacyWorkflow(usesLegacy);
+      setAssignments(usesLegacy
+        ? legacySections.reduce((current, section) => ({ ...current, [section.key]: approvals.filter((row) => row.STEP === section.key && !row.ACTION).map((row) => row.APPROVER_USER_ID) }), emptyLegacyAssignments())
+        : emptyLegacyAssignments());
       setNotedByNa(Boolean(notedByNotApplicable));
     }).catch((e: Error) => setError(e.message)).finally(() => setLoading(false));
   }, [id]);
 
   useEffect(() => {
+    if (usesLegacyWorkflow) {
+      let cancelled = false;
+      void api<{ employees: EmployeeDirectory }>('rfa.eligibleApprovers').then(({ employees: available }) => {
+        if (!cancelled) setEmployees(available ?? []);
+      }).catch((e: Error) => { if (!cancelled) setError(e.message); });
+      return () => { cancelled = true; };
+    }
     let cancelled = false;
-    if (!usesAssignmentWorkflow) return;
-    void api<{ employees: EmployeeDirectory }>('rfa.eligibleApprovers').then(({ employees: available }) => {
-      if (!cancelled) setEmployees(available ?? []);
-    }).catch((e: Error) => { if (!cancelled) setError(e.message); });
+    void api<Department[]>('rfa.departments').then((available) => { if (!cancelled) setDepartments(Array.isArray(available) ? available : []); }).catch(() => { if (!cancelled) setDepartments([]); });
+    void api<FixedRoutePreview>('rfa.fixedRoute').then((preview) => { if (!cancelled) setFixedRoute(preview); }).catch(() => { if (!cancelled) setFixedRoute(null); });
     return () => { cancelled = true; };
-  }, [usesAssignmentWorkflow]);
+  }, [usesLegacyWorkflow]);
 
-  useEffect(() => {
-    if (!form.isBudgetRequest) { setBudgetContext(null); return; }
-    if (!isFiscalYear(form.fiscalYear)) return;
-    let current = true;
-    const timer = setTimeout(() => {
-      void api<BudgetContext>('budget.context', { fiscalYear: form.fiscalYear })
-        .then((context) => { if (current) setBudgetContext(context); })
-        .catch((e: Error) => { if (current) setError(e.message); });
-    }, budgetContext ? 300 : 0);
-    return () => { current = false; clearTimeout(timer); };
-  }, [form.isBudgetRequest, form.fiscalYear]);
-
-  const set = (key: keyof FormState, value: string) => setForm((current) => ({ ...current, [key]: value }));
+  const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((current) => ({ ...current, [key]: value }));
 
   async function persist(submit: boolean) {
     setSaving(true);
     setError('');
     try {
-      const payload = { ...form, budgetAllocation: Number(form.isBudgetRequest ? form.requestedAmount : form.budgetAllocation || 0), ...(usesAssignmentWorkflow ? { approvalAssignments: assignments, notedByNotApplicable: notedByNa } : {}) };
+      const isV2Edit = existing?.CURRENT_MATRIX_ID === fixedV2Marker;
+      if (!usesLegacyWorkflow && !isV2Edit) {
+        if (!form.expenseClassification) throw new Error('Expense Classification is required: select OPEX or CAPEX.');
+        if (!['OPEX', 'CAPEX'].includes(form.expenseClassification)) throw new Error('Expense Classification must be OPEX or CAPEX.');
+        if (!isFiscalYear(form.fiscalYear)) throw new Error('Fiscal Year must be a four-digit year.');
+        if (!form.requestedAmount || Number(form.requestedAmount) <= 0) throw new Error('Requested Amount is required.');
+        if (form.includePrincipal && fixedRoute && !fixedRoute.isJhsOrShs) throw new Error('The JHS/SHS Principal is only available for Junior High School or Senior High School departments.');
+        if (form.includeProcurement && !form.purchaseRequest) throw new Error('The Procurement Clerk is only available for purchase requests.');
+        if ((fixedRoute?.requestingHeadCount ?? 0) === 1 && !form.recommendingAlternateUserId) {
+          // Server will enforce on submit; warn early on save Draft? Allow draft, but require on submit
+          if (submit) throw new Error('Your department has one Department Head. An alternate Department Head must be selected for Recommending Approval.');
+        }
+      }
+      if (isV2Edit && !form.expenseClassification) {
+        // V2 already has classification; keep it
+      }
+      const requestedNumber = Number(form.requestedAmount || 0);
+      const payload = usesLegacyWorkflow
+        ? { ...form, budgetAllocation: Number(form.budgetAllocation || 0), approvalAssignments: assignments, notedByNotApplicable: notedByNa, involvedDepartmentIds: form.involvedDepartmentIds, involvedDepartmentId: form.involvedDepartmentIds[0] || '', hasInvolvedDepartment: form.involvedDepartmentIds.length > 0 }
+        : {
+            requestTitle: form.requestTitle, purpose: form.purpose, budgetAllocation: requestedNumber,
+            targetDate: form.targetDate, justification: form.justification,
+            fiscalYear: form.fiscalYear, requestedAmount: form.requestedAmount,
+            expenseClassification: form.expenseClassification || existing?.EXPENSE_CLASSIFICATION || 'OPEX',
+            purchaseRequest: form.purchaseRequest,
+            involvedDepartmentIds: form.involvedDepartmentIds,
+            involvedDepartmentId: form.involvedDepartmentIds[0] || '',
+            hasInvolvedDepartment: form.involvedDepartmentIds.length > 0,
+            recommendingAlternateUserId: form.recommendingAlternateUserId,
+            includePrincipal: form.includePrincipal,
+            includeProcurement: form.includeProcurement,
+            notedByNotApplicable: notedByNa
+          };
       const rfa = existing ? await api<Rfa>('rfa.update', { rfaId: existing.RFA_ID, ...payload }) : await api<Rfa>('rfa.create', payload);
       for (const file of files) await api('attachment.upload', { rfaId: rfa.RFA_ID, fileName: file.name, mimeType: file.type, base64: await fileToBase64(file) });
       if (submit) await api(existing?.STATUS === 'RETURNED' ? 'rfa.resubmit' : 'rfa.submit', { rfaId: rfa.RFA_ID });
@@ -89,6 +158,17 @@ export function RfaFormPage() {
   const onSubmit = (event: FormEvent) => { event.preventDefault(); void persist(true); };
 
   if (loading) return <Spinner label="Loading RFA" />;
+
+  const requestingDeptId = (user as unknown as { DEPARTMENT_ID?: string } | undefined)?.DEPARTMENT_ID;
+  const involvedChoices = departments.filter((d) => d.DEPARTMENT_ID !== requestingDeptId);
+  const isOfficial = !usesLegacyWorkflow && existing?.CURRENT_MATRIX_ID !== fixedV2Marker;
+  const amount = Number(form.requestedAmount || 0);
+  const threshold = fixedRoute?.presidentThresholdPhp ?? 50000;
+  const needsPresident = amount >= threshold && amount > 0;
+  const isAcademic = Boolean(fixedRoute?.isAcademic);
+  const isJhsOrShs = Boolean(fixedRoute?.isJhsOrShs);
+  const headCount = fixedRoute?.requestingHeadCount ?? 0;
+  const needsAlternate = headCount === 1;
 
   return <>
     <Link className="back-link" to={existing ? `/rfa/${existing.RFA_ID}` : '/rfas'}><ArrowLeft size={16} /> Back</Link>
@@ -108,7 +188,7 @@ export function RfaFormPage() {
         </div>
         <div className="form-grid identity">
           <ReadOnly label="Date Filed" value={existing?.DATE_FILED ?? new Date().toISOString().slice(0,10)} />
-          <ReadOnly label="Department" value={user?.DEPARTMENT_NAME ?? ''} />
+          <ReadOnly label="Requesting Department" value={user?.DEPARTMENT_NAME ?? ''} />
           <ReadOnly label="Requested By" value={user?.FULL_NAME ?? ''} />
           <ReadOnly label="Position" value={user?.POSITION ?? 'Not configured'} />
         </div>
@@ -118,28 +198,35 @@ export function RfaFormPage() {
         </label>
       </section>
 
-      <section className="form-card financial-card">
-        <div className="section-title"><span>02</span><div><h2>Department Budget</h2><p>The approved request amount will use this department’s annual budget once final approval is complete.</p></div></div>
-        {form.isBudgetRequest && <>
-          <div className="form-grid">
-            <label className="field"><span>Fiscal Year <b>*</b></span><input required inputMode="numeric" maxLength={4} pattern={fiscalYearPattern} title="Enter a four-digit fiscal year, for example 2026." value={form.fiscalYear} onChange={(e) => set('fiscalYear', e.target.value)} /></label>
-            <label className="field"><span>Requested Amount (PHP) <b>*</b></span><input required min="0.01" step="0.01" type="number" value={form.requestedAmount} onChange={(e) => set('requestedAmount', e.target.value)} placeholder="0.00" /></label>
-          </div>
-          {budgetContext?.budget ? <div className="budget-context"><span>Annual Budget <b>{money(budgetContext.budget.allocated)}</b></span><span>Used <b>{money(budgetContext.budget.used)}</b></span><span>Remaining <b>{money(budgetContext.budget.available)}</b></span><span>After approval <b>{money(budgetContext.budget.available - Number(form.requestedAmount || 0))}</b></span></div> : <p className="budget-note">No FY {form.fiscalYear} budget has been configured for your department. This RFA cannot be submitted until an administrator configures it.</p>}
-        </>}
+      <section className="form-card">
+        <div className="section-title"><span>02</span><div><h2>Expense information</h2><p>Classify the requested expense. No department budget balance is required to submit.</p></div></div>
+        <div className="form-grid">
+          <label className="field"><span>Fiscal Year <b>*</b></span><input required inputMode="numeric" maxLength={4} pattern={fiscalYearPattern} title="Enter a four-digit fiscal year, for example 2026." value={form.fiscalYear} onChange={(e) => set('fiscalYear', e.target.value)} /></label>
+          <label className="field"><span>Requested Amount (PHP) <b>*</b></span><input required min="0.01" step="0.01" type="number" value={form.requestedAmount} onChange={(e) => set('requestedAmount', e.target.value)} placeholder="0.00" /></label>
+          <label className="field"><span>Expense Classification <b>*</b></span>
+            <select required value={form.expenseClassification} onChange={(e) => set('expenseClassification', e.target.value)}>
+              <option value="">Select classification</option>
+              <option value="OPEX">OPEX — Operating Expenditure</option>
+              <option value="CAPEX">CAPEX — Capital Expenditure</option>
+            </select>
+          </label>
+        </div>
+        <label className="toggle-field"><input type="checkbox" checked={form.purchaseRequest} onChange={(e) => { set('purchaseRequest', e.target.checked); if (!e.target.checked) set('includeProcurement', false); }} /> This is a purchase request</label>
+        <p className="muted">Amounts are monitored by department as Total OPEX + Total CAPEX. Presidential approval is {needsPresident ? 'required' : 'not required'} at {money(threshold)} threshold (amount: {money(amount || 0)}).</p>
+        {isAcademic && <p className="muted">Academic department: VP for Academic Affairs is automatically included in Approved By.</p>}
       </section>
 
       <section className="form-card">
         <div className="section-title">
           <span>03</span>
-          <div><h2>Purpose and allocation</h2><p>Explain what is requested, why it is needed, and when it is targeted.</p></div>
+          <div><h2>Purpose and justification</h2><p>Explain what is requested, why it is needed, and when it is targeted.</p></div>
         </div>
         <label className="field full">
           <span>Purpose <b>*</b></span>
           <textarea required minLength={10} rows={5} value={form.purpose} onChange={(e) => set('purpose', e.target.value)} placeholder="Describe the intended purpose and expected outcome" />
         </label>
         <div className="form-grid">
-          {!form.isBudgetRequest && <label className="field">
+          {usesLegacyWorkflow && <label className="field">
             <span>Budget Allocation (PHP) <b>*</b></span>
             <input required min="0" step="0.01" type="number" value={form.budgetAllocation} onChange={(e) => set('budgetAllocation', e.target.value)} placeholder="0.00" />
           </label>}
@@ -157,6 +244,32 @@ export function RfaFormPage() {
       <section className="form-card">
         <div className="section-title">
           <span>04</span>
+          <div><h2>Approval options</h2><p>Select applicable optional approvers and involved departments. Mandatory approvers cannot be removed.</p></div>
+        </div>
+        {!usesLegacyWorkflow ? <>
+          {needsAlternate && <label className="field"><span>Alternate Department Head for Recommending Approval <b>*</b></span>
+            <select required={needsAlternate} value={form.recommendingAlternateUserId} onChange={(e) => set('recommendingAlternateUserId', e.target.value)}>
+              <option value="">Select alternate Department Head</option>
+              {(fixedRoute?.alternateCandidates ?? []).map((c) => <option key={c.USER_ID} value={c.USER_ID}>{c.FULL_NAME} — {c.DEPARTMENT}</option>)}
+            </select>
+            <small>Your department has one head. The head must select another Department Head to serve as recommending approver.</small>
+          </label>}
+          {headCount >= 2 && <p className="muted">Your department has {headCount} heads. Either head may provide Recommending Approval.</p>}
+          {headCount === 0 && <p className="muted">No department head is configured yet. Submitting will be blocked until an administrator configures heads.</p>}
+          <label className="toggle-field"><input type="checkbox" checked={form.involvedDepartmentIds.length > 0} onChange={(e) => { if (!e.target.checked) set('involvedDepartmentIds', []); }} /> Another department is involved in this RFA</label>
+          <fieldset>
+            <legend>Involved Department(s) — Other Department Head(s) in Reviewed and Noted By</legend>
+            {involvedChoices.map((d) => <label key={d.DEPARTMENT_ID} className="toggle-field"><input type="checkbox" checked={form.involvedDepartmentIds.includes(d.DEPARTMENT_ID)} onChange={(e) => { set('involvedDepartmentIds', e.target.checked ? [...form.involvedDepartmentIds, d.DEPARTMENT_ID] : form.involvedDepartmentIds.filter((x) => x !== d.DEPARTMENT_ID)); }} /> {d.DEPARTMENT_NAME}</label>)}
+          </fieldset>
+          {isJhsOrShs && <label className="toggle-field"><input type="checkbox" checked={form.includePrincipal} onChange={(e) => set('includePrincipal', e.target.checked)} /> Include JHS/SHS Principal (Noliver Garcia) in Reviewed and Noted By</label>}
+          {form.purchaseRequest && <label className="toggle-field"><input type="checkbox" checked={form.includeProcurement} onChange={(e) => set('includeProcurement', e.target.checked)} /> Include Procurement Clerk (Marjorie Valdez) in Reviewed and Noted By</label>}
+          {!form.purchaseRequest && <p className="muted">Procurement Clerk is only available for purchase requests.</p>}
+        </> : <p className="muted">This historical RFA does not use optional approver selections.</p>}
+      </section>
+
+      <section className="form-card">
+        <div className="section-title">
+          <span>05</span>
           <div><h2>Picture / Letter Attachment</h2><p>Files are stored privately in the configured Google Drive folder.</p></div>
         </div>
         <label className="upload-zone">
@@ -171,21 +284,30 @@ export function RfaFormPage() {
         </li>)}</ul>}
       </section>
 
-      {usesAssignmentWorkflow && <section className="form-card approval-assignment-card">
+      {!usesLegacyWorkflow && <section className="form-card approval-assignment-card">
         <div className="section-title">
-          <span>05</span>
-          <div><h2>Approval route</h2><p>Prepared By is automatic. Select active approvers for each remaining signature stage; empty stages are skipped automatically.</p></div>
+          <span>06</span>
+          <div><h2>Approval route — official matrix</h2><p>Prepared By is automatic. Recommending Approval, Reviewed and Noted By, and Approved By are assigned automatically from the official matrix. Mandatory approvers cannot be removed.</p></div>
         </div>
-        <div className="approval-assignment-grid">
-          {sections.map((section) => <div key={section.key}>
-            {section.key === 'NOTED_BY' && <label className="toggle-field"><input type="checkbox" checked={notedByNa} onChange={(event) => { setNotedByNa(event.target.checked); if (event.target.checked) setAssignments((current) => ({ ...current, NOTED_BY: [] })); }} /> Not Applicable (N/A) — skip Noted By</label>}
-            {section.key === 'NOTED_BY' && notedByNa ? <p className="muted">Noted By: N/A. No approver or email will be assigned for this stage.</p> : <ApproverSelector section={section} employees={employees} selectedIds={assignments[section.key]} onChange={(ids) => setAssignments((current) => ({ ...current, [section.key]: ids }))} />}
-          </div>)}
+        <div className="approval-preview">
+          <span className="eyebrow">OFFICIAL STAGES</span>
+          <div><b>Prepared By</b><b>Recommending Approval</b><b>Reviewed and Noted By</b><b>Approved By</b></div>
+          <p>{fixedRoute ? officialSummary(fixedRoute) : 'Loading fixed route…'}</p>
+          <p className="muted">Mandatory: Ofelia Hocson (Reviewed and Noted), Ana Liza Tago and Raquel Baquiran (Approved). Conditional: VP Academic{isAcademic ? ' (required for this academic RFA)' : ' (not required)'}, President{needsPresident ? ` (required at ${money(threshold)})` : ''}.</p>
         </div>
       </section>}
 
-      {!usesAssignmentWorkflow && existing && <section className="form-card approval-assignment-card legacy-route-notice">
-        <div className="section-title"><span>05</span><div><h2>Legacy approval route</h2><p>This historical RFA keeps its original Approval Matrix route. Its routing configuration cannot be changed here.</p></div></div>
+      {usesLegacyWorkflow && <section className="form-card approval-assignment-card">
+        <div className="section-title">
+          <span>06</span>
+          <div><h2>Approval route</h2><p>Prepared By is automatic. Select active approvers for each remaining signature stage; empty stages are skipped automatically.</p></div>
+        </div>
+        <div className="approval-assignment-grid">
+          {legacySections.map((section) => <div key={section.key}>
+            {section.key === 'NOTED_BY' && <label className="toggle-field"><input type="checkbox" checked={notedByNa} onChange={(event) => { setNotedByNa(event.target.checked); if (event.target.checked) setAssignments((current) => ({ ...current, NOTED_BY: [] })); }} /> Not Applicable (N/A) — skip Noted By</label>}
+            {section.key === 'NOTED_BY' && notedByNa ? <p className="muted">Noted By: N/A. No approver or email will be assigned for this stage.</p> : <ApproverSelector section={section} employees={employees} selectedIds={assignments[section.key] ?? []} onChange={(ids) => setAssignments((current) => ({ ...current, [section.key]: ids }))} />}
+          </div>)}
+        </div>
       </section>}
 
       <section className="approval-preview">
@@ -193,11 +315,10 @@ export function RfaFormPage() {
         <div>
           <b>Prepared By</b>
           <b>Recommending Approval</b>
-          <b>Reviewed By</b>
-          <b>Noted By</b>
+          <b>Reviewed and Noted By</b>
           <b>Approved By</b>
         </div>
-        <p>{usesAssignmentWorkflow ? 'Selected active employees are stored with this RFA. You cannot approve your own request.' : 'This historical RFA preserves its original approval route.'}</p>
+        <p>{usesLegacyWorkflow ? 'This historical RFA preserves its original approval route.' : isOfficial ? 'Official matrix assignments apply. You cannot approve your own request.' : 'Fixed department assignments apply (historical workflow).'}</p>
       </section>
 
       <div className="form-actions">
@@ -206,6 +327,17 @@ export function RfaFormPage() {
       </div>
     </form>
   </>;
+}
+
+function officialSummary(route: FixedRoutePreview): string {
+  const parts: string[] = [];
+  const rec = route.assignments?.RECOMMENDING_APPROVAL ?? [];
+  const reviewed = route.assignments?.REVIEWED_AND_NOTED ?? [];
+  const approved = route.assignments?.APPROVED_BY ?? [];
+  parts.push(`Recommending: ${rec.length ? rec.map((p) => p.FULL_NAME).join(', ') : 'pending configuration'}`);
+  parts.push(`Reviewed and Noted: ${reviewed.length ? reviewed.map((p) => p.FULL_NAME).join(', ') : 'pending configuration'}`);
+  parts.push(`Approved: ${approved.length ? approved.map((p) => p.FULL_NAME).join(', ') : 'pending configuration'}`);
+  return parts.join(' · ');
 }
 
 function ApproverSelector({ section, employees, selectedIds, onChange }: { section: { key: ApprovalSection; label: string }; employees: EmployeeDirectory; selectedIds: string[]; onChange: (ids: string[]) => void }) {

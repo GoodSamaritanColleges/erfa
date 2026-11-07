@@ -1,6 +1,49 @@
 import { APPROVAL_SECTIONS, APPROVAL_STEPS } from './constants';
 import type { ApprovalSection, MatrixRecord, UserRecord } from './types';
 
+export type ExpenseClassification = 'OPEX' | 'CAPEX';
+
+export function validateExpenseClassification(value: unknown): ExpenseClassification {
+  const clean = String(value ?? '').trim().toUpperCase();
+  if (clean !== 'OPEX' && clean !== 'CAPEX') throw new Error('Expense Classification must be OPEX or CAPEX.');
+  return clean as ExpenseClassification;
+}
+
+export function parseExpenseClassificationOptional(value: unknown): ExpenseClassification | '' {
+  const clean = String(value ?? '').trim().toUpperCase();
+  if (!clean) return '';
+  if (clean !== 'OPEX' && clean !== 'CAPEX') throw new Error('Expense Classification must be OPEX or CAPEX.');
+  return clean as ExpenseClassification;
+}
+
+export function isValidFiscalYear(value: unknown): boolean {
+  return /^\d{4}$/.test(String(value ?? '').trim());
+}
+
+export function parsePresidentThresholdCents(value: unknown): number {
+  const raw = String(value ?? '').trim().replace(/,/g, '');
+  if (!raw) return 5_000_000; // ₱50,000 default
+  if (!/^\d+(?:\.\d{1,2})?$/.test(raw)) throw new Error('Presidential threshold must be a valid PHP amount.');
+  const [whole, fraction = ''] = raw.split('.');
+  const cents = Number(whole) * 100 + Number((fraction + '00').slice(0, 2));
+  if (!Number.isSafeInteger(cents) || cents < 0) throw new Error('Presidential threshold must be non-negative.');
+  return cents;
+}
+
+export function isJhsOrShsDepartment(department: { DEPARTMENT_CODE?: unknown; DEPARTMENT_NAME?: unknown } | null | undefined): boolean {
+  if (!department) return false;
+  const code = String(department.DEPARTMENT_CODE ?? '').trim().toUpperCase();
+  const name = String(department.DEPARTMENT_NAME ?? '').trim().toUpperCase();
+  if (code === 'JHS' || code === 'SHS') return true;
+  if (name === 'JHS' || name === 'SHS') return true;
+  if (name.includes('JUNIOR HIGH') || name.includes('SENIOR HIGH')) return true;
+  return false;
+}
+
+export function isOrStageCompleted(assignedCount: number, approvedCount: number): boolean {
+  return assignedCount > 0 && approvedCount >= 1;
+}
+
 export function formatRfaNumber(year: number, sequence: number): string {
   if (!Number.isInteger(year) || !Number.isInteger(sequence) || sequence < 1) {
     throw new Error('Invalid RFA numbering input.');
@@ -98,10 +141,10 @@ export function validateRfaInput(payload: Record<string, unknown>, forSubmission
   return clean;
 }
 
-export function nextAssignedSection(counts: Record<ApprovalSection, number>, startIndex = 0): ApprovalSection | undefined {
-  for (let index = Math.max(0, startIndex); index < APPROVAL_SECTIONS.length; index += 1) {
-    const section = APPROVAL_SECTIONS[index];
-    if (counts[section] > 0) return section;
+export function nextAssignedSection(counts: Record<string, number>, startIndex = 0, sections: readonly ApprovalSection[] = APPROVAL_SECTIONS): ApprovalSection | undefined {
+  for (let index = Math.max(0, startIndex); index < sections.length; index += 1) {
+    const section = sections[index];
+    if ((counts[section] ?? 0) > 0) return section;
   }
   return undefined;
 }
@@ -112,11 +155,12 @@ export function isAssignedSectionComplete(assignedCount: number, approvedCount: 
 
 /** Returns the current incomplete stage, the next stage, or undefined only after all assigned stages finish. */
 export function nextAssignedStageAfterAction(
-  assignedCounts: Record<ApprovalSection, number>,
-  approvedCounts: Record<ApprovalSection, number>,
-  currentIndex: number
+  assignedCounts: Record<string, number>,
+  approvedCounts: Record<string, number>,
+  currentIndex: number,
+  sections: readonly ApprovalSection[] = APPROVAL_SECTIONS
 ): ApprovalSection | undefined {
-  const current = APPROVAL_SECTIONS[currentIndex];
-  if (current && !isAssignedSectionComplete(assignedCounts[current], approvedCounts[current])) return current;
-  return nextAssignedSection(assignedCounts, currentIndex + 1);
+  const current = sections[currentIndex];
+  if (current && !isAssignedSectionComplete(assignedCounts[current] ?? 0, approvedCounts[current] ?? 0)) return current;
+  return nextAssignedSection(assignedCounts, currentIndex + 1, sections);
 }

@@ -7,7 +7,8 @@ import { ErrorNotice, StatusBadge } from '../components';
 import { date, money, stepLabel } from '../format';
 import type { Rfa } from '../types';
 
-type DashboardBudget = { totals: { allocated: number; committed: number; actualSpent: number; available: number }; rows: Array<{ departmentName: string; utilization: number }> };
+type DashboardExpenses = { totals: { totalOpex: number; totalCapex: number; total: number; rfaCount: number }; deptRows: Array<{ departmentName: string; total: number; rfaCount: number }> };
+type DashboardBudget = { totals: { totalOpex: number; totalCapex: number; total: number; rfaCount: number }; deptRows: Array<{ departmentName: string; total: number; rfaCount: number }> };
 
 function DashboardSkeleton() {
   return <>
@@ -38,15 +39,15 @@ export function DashboardPage() {
   const [approvals, setApprovals] = useState<Rfa[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
-  const [budget, setBudget] = useState<{ totals: { allocated: number; committed: number; actualSpent: number; available: number }; rows: Array<{ departmentName: string; utilization: number }> } | null>(null);
+  const [expenses, setExpenses] = useState<DashboardExpenses | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    void api<{ rfas: Rfa[]; approvals: Rfa[]; budget: DashboardBudget | null }>('dashboard.home').then(({ rfas: mine, approvals: action, budget: summary }) => {
+    void api<{ rfas: Rfa[]; approvals: Rfa[]; expenseMonitoring?: DashboardBudget | null; budget?: DashboardBudget | null }>('dashboard.home').then(({ rfas: mine, approvals: action, expenseMonitoring, budget }) => {
       if (cancelled) return;
       setRfas(Array.isArray(mine) ? mine : []);
       setApprovals(Array.isArray(action) ? action : []);
-      setBudget(summary);
+      setExpenses(expenseMonitoring ?? budget ?? null);
     })
       .catch((e: Error) => { if (!cancelled) setError(e.message); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -87,10 +88,10 @@ export function DashboardPage() {
       <Metric icon={<ShieldCheck />} label="Closed" value={counts.closed} />
     </section>
 
-    {user?.IS_ADMIN && budget && <section className="panel budget-dashboard">
-      <header className="panel-header"><div><span className="eyebrow orange">BUDGET OVERVIEW</span><h2>Current fiscal year</h2></div><Link to="/admin/budgets">Manage budgets <ArrowRight size={14} /></Link></header>
-      <div className="metric-grid"><MetricValue label="Annual Budget" value={money(budget.totals.allocated)} /><MetricValue label="Used" value={money(budget.totals.committed + budget.totals.actualSpent)} /><MetricValue label="Remaining" value={money(budget.totals.available)} /></div>
-      {budget.rows.length > 0 && <p className="muted">{budget.rows.slice(0, 4).map((row) => `${row.departmentName}: ${(row.utilization * 100).toFixed(0)}% utilized`).join(' · ')}</p>}
+    {user?.IS_ADMIN && expenses && <section className="panel budget-dashboard">
+      <header className="panel-header"><div><span className="eyebrow orange">EXPENSE MONITORING</span><h2>Current fiscal year</h2></div><Link to="/admin/expense-monitoring">Expense monitoring <ArrowRight size={14} /></Link></header>
+      <div className="metric-grid"><MetricValue label="Total OPEX" value={money(expenses.totals.totalOpex)} /><MetricValue label="Total CAPEX" value={money(expenses.totals.totalCapex)} /><MetricValue label="Combined Total" value={money(expenses.totals.total)} /><MetricValue label="RFAs" value={String(expenses.totals.rfaCount)} /></div>
+      {(expenses.deptRows?.length ?? 0) > 0 && <p className="muted">{expenses.deptRows.slice(0, 4).map((row) => `${row.departmentName}: ${money(row.total)} (${row.rfaCount} RFAs)`).join(' · ')}</p>}
     </section>}
 
     {user?.CAN_APPROVE_RFA && <section className="panel">
@@ -146,7 +147,7 @@ export function RfaTable({ rfas, review = false }: { rfas: Rfa[]; review?: boole
           <th>RFA Number</th>
           <th>Request</th>
           <th>Department</th>
-          <th>Budget</th>
+          <th>Requested Amount</th>
           {review && <th>Current Step</th>}
           <th>Status</th>
           <th>Date Filed</th>
@@ -161,7 +162,7 @@ export function RfaTable({ rfas, review = false }: { rfas: Rfa[]; review?: boole
             <small>{rfa.REQUESTED_BY}</small>
           </td>
           <td data-label="Department">{rfa.DEPARTMENT_NAME}</td>
-          <td data-label="Budget">{money(rfa.BUDGET_ALLOCATION)}</td>
+          <td data-label="Requested Amount">{money(rfa.REQUESTED_AMOUNT ? rfa.REQUESTED_AMOUNT / 100 : rfa.BUDGET_ALLOCATION)}</td>
           {review && <td data-label="Current Step">{rfa.CURRENT_STEP ? stepLabel(rfa.CURRENT_STEP) : '—'}</td>}
           <td data-label="Status"><StatusBadge status={rfa.STATUS} /></td>
           <td data-label="Date Filed">{date(rfa.DATE_FILED)}</td>

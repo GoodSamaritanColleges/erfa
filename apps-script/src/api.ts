@@ -2,11 +2,11 @@ import { APP_VERSION } from './constants';
 import { timed } from './performance';
 import { dashboardHome } from './dashboard';
 import { authenticate, requireCapability } from './auth';
-import { adminData, saveDepartment, saveMatrix, saveUser } from './admin';
-import { adjustBudget, adminBudgetManagement, adminBudgetOverview, adminBudgetSummary, adminExpenseCategories, budgetReport, departmentExpenseReport, departmentFinancialDetail, requesterBudgetContext, saveBudget, saveCategory, setOverBudget } from './budget';
+import { adminAudit, adminData, removeDepartmentHead, saveApprovalSettings, saveDepartment, saveDepartmentHead, saveMatrix, saveUser } from './admin';
+import { adjustBudget, adminBudgetManagement, adminBudgetOverview, adminBudgetSummary, adminExpenseCategories, budgetReport, departmentExpenseReport, departmentFinancialDetail, expenseMonitoringReport, requesterBudgetContext, saveBudget, saveCategory, setOverBudget } from './budget';
 import { getDatabase, resetPerRequestCache } from './store';
 import { resetWorkflowCache } from './workflow';
-import { createRfa, dashboardRfas, decideRfa, detailRfa, downloadAttachment, eligibleApprovers, listForApproval, listRfas, saveActualExpense, submitRfa, transitionCloseout, updateRfa, uploadAttachment } from './workflow';
+import { createRfa, dashboardRfas, decideRfa, detailRfa, downloadAttachment, eligibleApprovers, fixedRoutePreview, listDepartments, listForApproval, listRfas, saveActualExpense, submitRfa, transitionCloseout, updateRfa, uploadAttachment } from './workflow';
 
 export interface ApiRequest { action: string; idToken?: string; payload?: Record<string, unknown>; performance?: boolean }
 
@@ -29,7 +29,11 @@ function dispatchRequest(request: ApiRequest): unknown {
     case 'rfa.forApproval': return listForApproval(user);
     case 'rfa.detail': return detailRfa(user, String(payload.rfaId ?? ''));
     case 'rfa.eligibleApprovers': return eligibleApprovers(user);
+    case 'rfa.departments': return listDepartments(user);
+    case 'rfa.fixedRoute': return fixedRoutePreview(user);
     case 'budget.context': return requesterBudgetContext(user, payload.fiscalYear);
+    case 'expense.monitoring': return expenseMonitoringReport(user, payload);
+    case 'admin.audit': return adminAudit(user, payload);
     case 'rfa.create': return withLock(() => createRfa(user, payload));
     case 'rfa.update': return withLock(() => updateRfa(user, payload));
     case 'rfa.submit': return withLock(() => submitRfa(user, String(payload.rfaId ?? ''), false));
@@ -46,6 +50,9 @@ function dispatchRequest(request: ApiRequest): unknown {
     case 'admin.data': return adminData(user);
     case 'admin.user.save': return withLock(() => saveUser(user, payload));
     case 'admin.department.save': return withLock(() => saveDepartment(user, payload));
+    case 'admin.departmentHead.save': return withLock(() => saveDepartmentHead(user, payload));
+    case 'admin.departmentHead.remove': return withLock(() => removeDepartmentHead(user, payload));
+    case 'admin.settings.save': return withLock(() => saveApprovalSettings(user, payload));
     case 'admin.matrix.save': return withLock(() => saveMatrix(user, payload));
     case 'admin.budget.overview': return adminBudgetOverview(user, payload.fiscalYear);
     case 'admin.budget.management': return adminBudgetManagement(user, payload.fiscalYear);

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { canonicalIsoDate, formatRfaNumber, isAssignedSectionComplete, nextAssignedSection, nextAssignedStageAfterAction, selectNextApprover, validateRfaInput } from '../src/core';
+import { canonicalIsoDate, formatRfaNumber, isAssignedSectionComplete, nextAssignedSection, nextAssignedStageAfterAction, selectNextApprover, validateExpenseClassification, validateRfaInput } from '../src/core';
+import { LEGACY_APPROVAL_SECTIONS } from '../src/constants';
 import type { MatrixRecord, UserRecord } from '../src/types';
 
 const baseUser = (id: string, email: string, overrides: Partial<UserRecord> = {}): UserRecord => ({
@@ -47,9 +48,22 @@ describe('eRFA workflow core', () => {
   });
 
   it('skips zero-assignment sections and finishes when none are assigned', () => {
-    expect(nextAssignedSection({ RECOMMENDING_APPROVAL: 0, REVIEWED_BY: 1, NOTED_BY: 1, APPROVED_BY: 1 })).toBe('REVIEWED_BY');
-    expect(nextAssignedSection({ RECOMMENDING_APPROVAL: 1, REVIEWED_BY: 0, NOTED_BY: 0, APPROVED_BY: 2 }, 1)).toBe('APPROVED_BY');
-    expect(nextAssignedSection({ RECOMMENDING_APPROVAL: 0, REVIEWED_BY: 0, NOTED_BY: 0, APPROVED_BY: 0 })).toBeUndefined();
+    // Official V3 sections
+    expect(nextAssignedSection({ RECOMMENDING_APPROVAL: 1, REVIEWED_AND_NOTED: 1, APPROVED_BY: 1 })).toBe('RECOMMENDING_APPROVAL');
+    expect(nextAssignedSection({ RECOMMENDING_APPROVAL: 0, REVIEWED_AND_NOTED: 1, APPROVED_BY: 1 })).toBe('REVIEWED_AND_NOTED');
+    expect(nextAssignedSection({ RECOMMENDING_APPROVAL: 0, REVIEWED_AND_NOTED: 0, APPROVED_BY: 0 })).toBeUndefined();
+  });
+
+  it('still supports legacy and V2 routing when their section lists are supplied', () => {
+    expect(nextAssignedSection({ RECOMMENDING_APPROVAL: 0, REVIEWED_BY: 1, NOTED_BY: 1, APPROVED_BY: 1 }, 0, LEGACY_APPROVAL_SECTIONS)).toBe('REVIEWED_BY');
+    expect(nextAssignedSection({ REVIEWED_BY: 1, NOTED_BY: 0, INVOLVED_DEPARTMENT_HEAD: 0, APPROVED_BY: 2 }, 1, ['REVIEWED_BY', 'NOTED_BY', 'INVOLVED_DEPARTMENT_HEAD', 'APPROVED_BY'])).toBe('APPROVED_BY');
+  });
+
+  it('validates OPEX/CAPEX classification on the backend', () => {
+    expect(validateExpenseClassification('OPEX')).toBe('OPEX');
+    expect(validateExpenseClassification('capex')).toBe('CAPEX');
+    expect(() => validateExpenseClassification('')).toThrow('OPEX or CAPEX');
+    expect(() => validateExpenseClassification('OTHER')).toThrow('OPEX or CAPEX');
   });
 
   it('requires every selected approver before a section is complete', () => {
@@ -61,12 +75,12 @@ describe('eRFA workflow core', () => {
   });
 
   it('advances a saved multi-stage route only after every current assignee approves', () => {
-    const assigned = { RECOMMENDING_APPROVAL: 2, REVIEWED_BY: 1, NOTED_BY: 1, APPROVED_BY: 1 };
-    expect(nextAssignedStageAfterAction(assigned, { RECOMMENDING_APPROVAL: 0, REVIEWED_BY: 0, NOTED_BY: 0, APPROVED_BY: 0 }, 0)).toBe('RECOMMENDING_APPROVAL');
-    expect(nextAssignedStageAfterAction(assigned, { RECOMMENDING_APPROVAL: 1, REVIEWED_BY: 0, NOTED_BY: 0, APPROVED_BY: 0 }, 0)).toBe('RECOMMENDING_APPROVAL');
-    expect(nextAssignedStageAfterAction(assigned, { RECOMMENDING_APPROVAL: 2, REVIEWED_BY: 0, NOTED_BY: 0, APPROVED_BY: 0 }, 0)).toBe('REVIEWED_BY');
-    expect(nextAssignedStageAfterAction(assigned, { RECOMMENDING_APPROVAL: 2, REVIEWED_BY: 1, NOTED_BY: 0, APPROVED_BY: 0 }, 1)).toBe('NOTED_BY');
-    expect(nextAssignedStageAfterAction(assigned, { RECOMMENDING_APPROVAL: 2, REVIEWED_BY: 1, NOTED_BY: 1, APPROVED_BY: 0 }, 2)).toBe('APPROVED_BY');
-    expect(nextAssignedStageAfterAction(assigned, { RECOMMENDING_APPROVAL: 2, REVIEWED_BY: 1, NOTED_BY: 1, APPROVED_BY: 1 }, 3)).toBeUndefined();
+    const assigned = { RECOMMENDING_APPROVAL: 2, REVIEWED_AND_NOTED: 2, APPROVED_BY: 2 };
+    expect(nextAssignedStageAfterAction(assigned, { RECOMMENDING_APPROVAL: 0, REVIEWED_AND_NOTED: 0, APPROVED_BY: 0 }, 0)).toBe('RECOMMENDING_APPROVAL');
+    expect(nextAssignedStageAfterAction(assigned, { RECOMMENDING_APPROVAL: 1, REVIEWED_AND_NOTED: 0, APPROVED_BY: 0 }, 0)).toBe('RECOMMENDING_APPROVAL');
+    expect(nextAssignedStageAfterAction(assigned, { RECOMMENDING_APPROVAL: 2, REVIEWED_AND_NOTED: 0, APPROVED_BY: 0 }, 0)).toBe('REVIEWED_AND_NOTED');
+    expect(nextAssignedStageAfterAction(assigned, { RECOMMENDING_APPROVAL: 2, REVIEWED_AND_NOTED: 1, APPROVED_BY: 0 }, 1)).toBe('REVIEWED_AND_NOTED');
+    expect(nextAssignedStageAfterAction(assigned, { RECOMMENDING_APPROVAL: 2, REVIEWED_AND_NOTED: 2, APPROVED_BY: 0 }, 1)).toBe('APPROVED_BY');
+    expect(nextAssignedStageAfterAction(assigned, { RECOMMENDING_APPROVAL: 2, REVIEWED_AND_NOTED: 2, APPROVED_BY: 2 }, 2)).toBeUndefined();
   });
 });

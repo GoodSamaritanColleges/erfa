@@ -34,7 +34,7 @@ export function Layout() {
   const { user, signOut } = useAuth();
   const { pathname } = useLocation();
   if (!user) return null;
-  const pageTitle = pathname === '/' ? 'Dashboard' : pathname === '/rfas' ? 'My RFAs' : pathname === '/rfa/new' ? 'Create RFA' : pathname === '/approvals' ? 'For My Action' : pathname === '/admin' ? 'Administration' : pathname.startsWith('/admin/budgets') ? 'Budget Management' : pathname.startsWith('/admin/budget-reports') ? 'Expense Reports' : pathname.startsWith('/rfa/') ? 'RFA Detail' : 'Electronic Request for Approval';
+  const pageTitle = pathname === '/' ? 'Dashboard' : pathname === '/rfas' ? 'My RFAs' : pathname === '/rfa/new' ? 'Create RFA' : pathname === '/approvals' ? 'For My Action' : pathname === '/admin' ? 'Administration' : pathname.startsWith('/admin/expense-monitoring') || pathname.startsWith('/admin/budgets') ? 'Expense Monitoring' : pathname.startsWith('/admin/expense-reports') || pathname.startsWith('/admin/budget-reports') ? 'Expense Reports' : pathname.startsWith('/rfa/') ? 'RFA Detail' : 'Electronic Request for Approval';
 
   return <div className="app-shell">
     <aside className="sidebar">
@@ -49,8 +49,8 @@ export function Layout() {
         {user.CAN_CREATE_RFA && <NavLink to="/rfa/new"><Send /> Create RFA</NavLink>}
         {user.CAN_APPROVE_RFA && <NavLink to="/approvals"><ShieldCheck /> For My Action</NavLink>}
         {user.IS_ADMIN && <NavLink to="/admin" end><LayoutGrid /> Administration</NavLink>}
-        {user.IS_ADMIN && <NavLink to="/admin/budgets"><LayoutGrid /> Budget Management</NavLink>}
-        {user.IS_ADMIN && <NavLink to="/admin/budget-reports"><ListTodo /> Expense Reports</NavLink>}
+        {user.IS_ADMIN && <NavLink to="/admin/expense-monitoring"><LayoutGrid /> Expense Monitoring</NavLink>}
+        {user.IS_ADMIN && <NavLink to="/admin/expense-reports"><ListTodo /> Expense Reports</NavLink>}
       </nav>
 
       <div className="sidebar-footer">
@@ -86,8 +86,8 @@ export function Layout() {
       {user.CAN_CREATE_RFA && <NavLink to="/rfa/new">Create RFA</NavLink>}
       {user.CAN_APPROVE_RFA && <NavLink to="/approvals">For My Action</NavLink>}
       {user.IS_ADMIN && <NavLink to="/admin" end>Admin</NavLink>}
-      {user.IS_ADMIN && <NavLink to="/admin/budgets">Budgets</NavLink>}
-      {user.IS_ADMIN && <NavLink to="/admin/budget-reports">Reports</NavLink>}
+      {user.IS_ADMIN && <NavLink to="/admin/expense-monitoring">Expenses</NavLink>}
+      {user.IS_ADMIN && <NavLink to="/admin/expense-reports">Reports</NavLink>}
     </nav>
   </div>;
 }

@@ -22,6 +22,17 @@ export interface DepartmentRecord extends SheetRecord {
   ACTIVE: boolean;
   CREATED_AT: string;
   UPDATED_AT: string;
+  DEPARTMENT_HEAD_USER_ID: string;
+  IS_ACADEMIC: boolean;
+}
+
+export interface DepartmentHeadRecord extends SheetRecord {
+  HEAD_ID: string;
+  DEPARTMENT_ID: string;
+  USER_ID: string;
+  ACTIVE: boolean;
+  CREATED_AT: string;
+  UPDATED_AT: string;
 }
 
 export interface MatrixRecord extends SheetRecord {
@@ -68,6 +79,15 @@ export interface RfaRecord extends SheetRecord {
   ACTUAL_AMOUNT: number;
   FISCAL_YEAR: string;
   ACTUAL_EXPENSE_RECORDED_AT: string;
+  EXPENSE_CLASSIFICATION: string;
+  INVOLVED_DEPARTMENT_ID: string;
+  INVOLVED_DEPARTMENT_NAME: string;
+  PURCHASE_REQUEST: boolean;
+  RECOMMENDING_ALTERNATE_USER_ID: string;
+  RECOMMENDING_ALTERNATE_NAME: string;
+  INCLUDE_PRINCIPAL: boolean;
+  INCLUDE_PROCUREMENT: boolean;
+  INVOLVED_DEPARTMENT_IDS: string;
 }
 
 export interface DepartmentBudgetRecord extends SheetRecord {
@@ -92,6 +112,7 @@ export type ApprovalStep =
   | 'REVIEWED_AND_NOTED'
   | 'REVIEWED_BY'
   | 'NOTED_BY'
+  | 'INVOLVED_DEPARTMENT_HEAD'
   | 'APPROVED_BY';
 
 export type RfaStatus =
@@ -133,8 +154,10 @@ export interface EligibleApprover {
 
 export type ApprovalSection =
   | 'RECOMMENDING_APPROVAL'
+  | 'REVIEWED_AND_NOTED'
   | 'REVIEWED_BY'
   | 'NOTED_BY'
+  | 'INVOLVED_DEPARTMENT_HEAD'
   | 'APPROVED_BY';
 
 export type RfaSectionAssignments = Record<ApprovalSection, EligibleApprover[]>;

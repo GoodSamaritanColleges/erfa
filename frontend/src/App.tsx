@@ -23,8 +23,10 @@ export default function App() {
       <Route path="rfa/:id/edit" element={<RfaFormPage />} />
       <Route path="rfa/:id" element={<RfaDetailPage />} />
       <Route path="admin" element={user?.IS_ADMIN ? <AdminPage /> : <Navigate to="/" replace />} />
+      <Route path="admin/expense-monitoring" element={user?.IS_ADMIN ? <BudgetManagementPage /> : <Navigate to="/" replace />} />
       <Route path="admin/budgets" element={user?.IS_ADMIN ? <BudgetManagementPage /> : <Navigate to="/" replace />} />
       <Route path="admin/budget-reports" element={user?.IS_ADMIN ? <DepartmentExpenseReportPage /> : <Navigate to="/" replace />} />
+      <Route path="admin/expense-reports" element={user?.IS_ADMIN ? <DepartmentExpenseReportPage /> : <Navigate to="/" replace />} />
     </Route>
     <Route path="*" element={<Navigate to={user ? '/' : '/login'} replace />} />
   </Routes>;

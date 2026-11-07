@@ -7,8 +7,10 @@ export const statusLabel = (status: RfaStatus | string): string => ({
 }[status] ?? status.replaceAll('_', ' '));
 
 export const stepLabel = (step: ApprovalStep | string): string => ({
-  PREPARED_BY: 'Prepared By', RECOMMENDING_APPROVAL: 'Recommending Approval', REVIEWED_AND_NOTED: 'Reviewed and Noted By', REVIEWED_BY: 'Reviewed By', NOTED_BY: 'Noted By', APPROVED_BY: 'Approved By'
+  PREPARED_BY: 'Prepared By', RECOMMENDING_APPROVAL: 'Recommending Approval', REVIEWED_AND_NOTED: 'Reviewed and Noted By', REVIEWED_BY: 'Reviewed By', NOTED_BY: 'Noted By', INVOLVED_DEPARTMENT_HEAD: 'Involved Department Head', APPROVED_BY: 'Approved By'
 }[step] ?? step.replaceAll('_', ' '));
+
+export const expenseClassificationLabel = (value?: string | null): string => value === 'OPEX' ? 'OPEX — Operating Expenditure' : value === 'CAPEX' ? 'CAPEX — Capital Expenditure' : value ? String(value) : '—';
 
 /** Produces the only value accepted by an HTML input[type="date"]. */
 export const dateInputValue = (value: string): string => /^(\d{4}-\d{2}-\d{2})(?:T.*)?$/.exec(value.trim())?.[1] ?? '';

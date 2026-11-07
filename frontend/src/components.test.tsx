@@ -17,8 +17,8 @@ describe('sidebar active navigation', () => {
     ['/rfa/new', '/rfa/new'],
     ['/approvals', '/approvals'],
     ['/admin', '/admin'],
-    ['/admin/budgets', '/admin/budgets'],
-    ['/admin/budget-reports', '/admin/budget-reports']
+    ['/admin/expense-monitoring', '/admin/expense-monitoring'],
+    ['/admin/expense-reports', '/admin/expense-reports']
   ])('marks only %s as active', (route, expectedHref) => {
     const html = renderToStaticMarkup(<MemoryRouter initialEntries={[route]}><Layout /></MemoryRouter>);
     for (const navClass of ['sidebar-nav', 'mobile-nav']) {
@@ -29,7 +29,7 @@ describe('sidebar active navigation', () => {
   });
 
   it('shows a contextual page label without changing navigation', () => {
-    const html = renderToStaticMarkup(<MemoryRouter initialEntries={['/admin/budget-reports']}><Layout /></MemoryRouter>);
+    const html = renderToStaticMarkup(<MemoryRouter initialEntries={['/admin/expense-reports']}><Layout /></MemoryRouter>);
     expect(html).toContain('<b>Expense Reports</b>');
     expect(html).toContain('Electronic Request for Approval');
   });
