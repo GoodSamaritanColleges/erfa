@@ -28,9 +28,12 @@ export function authenticate(idToken: string): SessionUser {
   if (claims.email_verified !== 'true' || Number(claims.exp) * 1000 <= Date.now()) fail('Google sign-in is expired or the email is not verified.');
   const email = normalizeEmail(claims.email);
   const allowedDomain = normalizeEmail(getSetting('ALLOWED_DOMAIN'));
-  if (allowedDomain && !email.endsWith(`@${allowedDomain}`)) fail(`Use an authorized ${allowedDomain} Google Workspace account.`);
+  const preUser = all<UserRecord>('USERS').find((candidate) => normalizeEmail(candidate.EMAIL) === email);
+  // External-domain approvers (e.g. feu.edu.ph, gmail.com) are still registered in USERS
+  // and must be able to sign in to approve — domain restriction only blocks *unregistered* accounts.
+  if (allowedDomain && !email.endsWith(`@${allowedDomain}`) && !preUser) fail(`Use an authorized ${allowedDomain} Google Workspace account.`);
 
-  const user = all<UserRecord>('USERS').find((candidate) => normalizeEmail(candidate.EMAIL) === email);
+  const user = preUser;
   if (!user) {
     audit('ACCESS_DENIED', { FULL_NAME: claims.name || email, EMAIL: email } as SessionUser, '', '', '', 'Google account is not registered.');
     fail('Your Google account is not registered in eRFA.', 'NOT_REGISTERED');
