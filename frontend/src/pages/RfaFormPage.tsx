@@ -64,6 +64,7 @@ export function RfaFormPage() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(Boolean(id));
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [deptSearch, setDeptSearch] = useState('');
   const [fixedRoute, setFixedRoute] = useState<FixedRoutePreview | null>(null);
 
   useEffect(() => {
@@ -160,7 +161,19 @@ export function RfaFormPage() {
   if (loading) return <Spinner label="Loading RFA" />;
 
   const requestingDeptId = (user as unknown as { DEPARTMENT_ID?: string } | undefined)?.DEPARTMENT_ID;
-  const involvedChoices = departments.filter((d) => d.DEPARTMENT_ID !== requestingDeptId);
+  const dedupedDepartments = (() => {
+    const seen = new Map<string, Department>();
+    for (const d of departments) {
+      const key = d.DEPARTMENT_NAME.trim().toLowerCase();
+      if (!seen.has(key)) seen.set(key, d);
+    }
+    return Array.from(seen.values()).sort((a, b) => a.DEPARTMENT_NAME.localeCompare(b.DEPARTMENT_NAME));
+  })();
+  const involvedChoices = dedupedDepartments.filter((d) => d.DEPARTMENT_ID !== requestingDeptId);
+  const filteredInvolved = deptSearch
+    ? involvedChoices.filter((d) => d.DEPARTMENT_NAME.toLowerCase().includes(deptSearch.toLowerCase()))
+    : involvedChoices;
+  const headForDept = (deptId: string) => (fixedRoute?.heads ?? []).find((h) => h.departmentId === deptId)?.headName || '';
   const amount = Number(form.requestedAmount || 0);
   const threshold = fixedRoute?.presidentThresholdPhp ?? 50000;
   const needsPresident = amount >= threshold && amount > 0;
@@ -255,14 +268,27 @@ export function RfaFormPage() {
           </label>}
           {headCount >= 2 && <p className="muted">Your department has {headCount} heads. Either head may provide Recommending Approval.</p>}
           {headCount === 0 && <p className="muted">No department head is configured yet. Submitting will be blocked until an administrator configures heads.</p>}
-          <label className="toggle-field"><input type="checkbox" checked={form.involvedDepartmentIds.length > 0} onChange={(e) => { if (!e.target.checked) set('involvedDepartmentIds', []); }} /> Another department is involved in this RFA</label>
-          <fieldset>
-            <legend>Involved Department(s) — Other Department Head(s) in Reviewed and Noted By</legend>
-            {involvedChoices.map((d) => <label key={d.DEPARTMENT_ID} className="toggle-field"><input type="checkbox" checked={form.involvedDepartmentIds.includes(d.DEPARTMENT_ID)} onChange={(e) => { set('involvedDepartmentIds', e.target.checked ? [...form.involvedDepartmentIds, d.DEPARTMENT_ID] : form.involvedDepartmentIds.filter((x) => x !== d.DEPARTMENT_ID)); }} /> {d.DEPARTMENT_NAME}</label>)}
-          </fieldset>
           {isJhsOrShs && <label className="toggle-field"><input type="checkbox" checked={form.includePrincipal} onChange={(e) => set('includePrincipal', e.target.checked)} /> Include JHS/SHS Principal (Noliver Garcia) in Reviewed and Noted By</label>}
-          {form.purchaseRequest && <label className="toggle-field"><input type="checkbox" checked={form.includeProcurement} onChange={(e) => set('includeProcurement', e.target.checked)} /> Include Procurement Clerk (Marjorie Valdez) in Reviewed and Noted By</label>}
-          {!form.purchaseRequest && <p className="muted">Procurement Clerk is only available for purchase requests.</p>}
+          {form.purchaseRequest && <label className="toggle-field"><input type="checkbox" checked={form.includeProcurement} onChange={(e) => set('includeProcurement', e.target.checked)} /> Include Procurement Clerk (Marjorie Valdez)</label>}
+          {!form.purchaseRequest && <p className="muted">Check “Purchase request” in Expense information to offer the Procurement Clerk.</p>}
+          <div className="involved-picker">
+            <div className="involved-header">
+              <b>Involved Department(s)</b>
+              <span>{form.involvedDepartmentIds.length} selected — their heads join Reviewed and Noted By</span>
+            </div>
+            <input className="dept-search" placeholder="Search departments…" value={deptSearch} onChange={(e) => setDeptSearch(e.target.value)} />
+            <div className="dept-grid">
+              {filteredInvolved.map((d) => {
+                const checked = form.involvedDepartmentIds.includes(d.DEPARTMENT_ID);
+                const head = headForDept(d.DEPARTMENT_ID);
+                return <label key={d.DEPARTMENT_ID} className={checked ? 'dept-option selected' : 'dept-option'}>
+                  <input type="checkbox" checked={checked} onChange={(e) => { set('involvedDepartmentIds', e.target.checked ? [...form.involvedDepartmentIds, d.DEPARTMENT_ID] : form.involvedDepartmentIds.filter((x) => x !== d.DEPARTMENT_ID)); }} />
+                  <span className="dept-text"><b>{displayName(d.DEPARTMENT_NAME)}</b>{head ? <small>{displayName(head)}</small> : null}</span>
+                </label>;
+              })}
+              {filteredInvolved.length === 0 && <p className="muted">No departments match your search.</p>}
+            </div>
+          </div>
         </> : <p className="muted">This historical RFA does not use optional approver selections.</p>}
       </section>
 

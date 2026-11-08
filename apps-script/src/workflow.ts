@@ -682,7 +682,12 @@ function officialSelectionsFromRfa(rfa: RfaRecord): OfficialSelections {
 
 export function listDepartments(user: SessionUser): DepartmentRecord[] {
   if (!toBoolean(user.CAN_CREATE_RFA)) businessError('You do not have permission to select departments.', 'FORBIDDEN');
-  return all<DepartmentRecord>('DEPARTMENTS').filter((d) => toBoolean(d.ACTIVE)).sort((a, b) => String(a.DEPARTMENT_NAME).localeCompare(String(b.DEPARTMENT_NAME)));
+  const seen = new Map<string, DepartmentRecord>();
+  for (const d of all<DepartmentRecord>('DEPARTMENTS').filter((d) => toBoolean(d.ACTIVE))) {
+    const key = String(d.DEPARTMENT_NAME || '').trim().toLowerCase() || String(d.DEPARTMENT_CODE || '').toUpperCase();
+    if (!seen.has(key)) seen.set(key, d);
+  }
+  return Array.from(seen.values()).sort((a, b) => String(a.DEPARTMENT_NAME).localeCompare(String(b.DEPARTMENT_NAME)));
 }
 
 export function fixedRoutePreview(user: SessionUser): Record<string, unknown> {
