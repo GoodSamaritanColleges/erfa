@@ -12,6 +12,20 @@ export const stepLabel = (step: ApprovalStep | string): string => ({
 
 export const expenseClassificationLabel = (value?: string | null): string => value === 'OPEX' ? 'OPEX — Operating Expenditure' : value === 'CAPEX' ? 'CAPEX — Capital Expenditure' : value ? String(value) : '—';
 
+/** Normalize imported "LAST, FIRST M." names to consistent Title Case for display. */
+export const displayName = (value?: string | null): string => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '—';
+  // "LAST, FIRST M." -> "Last, First M." ; "FIRST LAST" stays Title Case
+  const parts = raw.split(',').map((p) => p.trim());
+  const title = (text: string) => text.replace(/\b\w+/g, (w) => {
+    if (/^[A-Z]\.$/.test(w)) return w; // initial
+    if (/^[A-Z]{2,}$/.test(w)) return w.charAt(0) + w.slice(1).toLowerCase();
+    return w;
+  }).replace(/\bMc\w+/g, (w) => 'Mc' + w.slice(2).charAt(0).toUpperCase() + w.slice(3));
+  return parts.map((p) => p ? title(p) : '').join(', ');
+};
+
 /** Produces the only value accepted by an HTML input[type="date"]. */
 export const dateInputValue = (value: string): string => /^(\d{4}-\d{2}-\d{2})(?:T.*)?$/.exec(value.trim())?.[1] ?? '';
 

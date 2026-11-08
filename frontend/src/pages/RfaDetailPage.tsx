@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { Dialog, ErrorNotice, Spinner, StatusBadge, SuccessNotice } from '../components';
-import { date, dateTime, expenseClassificationLabel, money, stepLabel } from '../format';
+import { date, dateTime, displayName, expenseClassificationLabel, money, stepLabel } from '../format';
 import type { Approval, ApprovalStep, Attachment, Rfa, RfaDetail } from '../types';
 
 const legacySteps: ApprovalStep[] = ['PREPARED_BY', 'RECOMMENDING_APPROVAL', 'REVIEWED_AND_NOTED', 'APPROVED_BY'];
@@ -291,10 +291,10 @@ function ApprovalSignature({ step, rfa, approvals, current, notApplicable }: { s
     {notApplicable ? <strong>N/A</strong> : assigned.length > 0 ? <ul className="signature-assignees">
       {assigned.map((employee) => {
         const action = actions.get(employee.APPROVER_USER_ID);
-        return <li key={employee.APPROVAL_ID}><strong>{employee.APPROVER_NAME}</strong><span>{action ? `${action.ACTION} · ${dateTime(action.TIMESTAMP)}` : current ? 'Awaiting action' : 'Waiting for prior stage'}</span></li>;
+        return <li key={employee.APPROVAL_ID}><strong>{displayName(employee.APPROVER_NAME)}</strong><span>{action ? `${action.ACTION} · ${dateTime(action.TIMESTAMP)}` : current ? 'Awaiting action' : 'Waiting for prior stage'}</span></li>;
       })}
     </ul> : fallback
-      ? <><strong>{fallback.ACTION === 'APPROVED' ? `Approved electronically by ${fallback.APPROVER_NAME}` : `${fallback.ACTION} by ${fallback.APPROVER_NAME}`}</strong><span>{dateTime(fallback.TIMESTAMP)}</span></>
+      ? <><strong>{fallback.ACTION === 'APPROVED' ? `Approved electronically by ${displayName(fallback.APPROVER_NAME)}` : `${fallback.ACTION} by ${displayName(fallback.APPROVER_NAME)}`}</strong><span>{dateTime(fallback.TIMESTAMP)}</span></>
       : <strong>Pending electronic approval</strong>}
   </div>;
 }
@@ -305,7 +305,7 @@ function HistoryTable({ approvals }: { approvals: Approval[] }) {
       <thead><tr><th>Step</th><th>Approver</th><th>Action</th><th>Remarks</th><th>Timestamp</th></tr></thead>
       <tbody>{approvals.map((approval) => <tr key={approval.APPROVAL_ID}>
         <td data-label="Step">{stepLabel(approval.STEP)}</td>
-        <td data-label="Approver">{approval.APPROVER_NAME || 'System'}</td>
+        <td data-label="Approver">{approval.APPROVER_NAME ? displayName(approval.APPROVER_NAME) : 'System'}</td>
         <td data-label="Action"><b>{approval.ACTION}</b></td>
         <td data-label="Remarks">{approval.REMARKS || '—'}</td>
         <td data-label="Timestamp">{dateTime(approval.TIMESTAMP)}</td>

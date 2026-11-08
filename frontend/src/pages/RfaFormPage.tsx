@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, fileToBase64 } from '../api';
 import { useAuth } from '../auth';
 import { ErrorNotice, Spinner } from '../components';
-import { dateInputValue, fiscalYearPattern, isFiscalYear, money } from '../format';
+import { dateInputValue, displayName, fiscalYearPattern, isFiscalYear, money } from '../format';
 import type { ApprovalAssignments, ApprovalSection, Department, EligibleApprover, EmployeeDirectory, Rfa, RfaDetail } from '../types';
 
 interface FormState {
@@ -161,7 +161,6 @@ export function RfaFormPage() {
 
   const requestingDeptId = (user as unknown as { DEPARTMENT_ID?: string } | undefined)?.DEPARTMENT_ID;
   const involvedChoices = departments.filter((d) => d.DEPARTMENT_ID !== requestingDeptId);
-  const isOfficial = !usesLegacyWorkflow && existing?.CURRENT_MATRIX_ID !== fixedV2Marker;
   const amount = Number(form.requestedAmount || 0);
   const threshold = fixedRoute?.presidentThresholdPhp ?? 50000;
   const needsPresident = amount >= threshold && amount > 0;
@@ -287,19 +286,15 @@ export function RfaFormPage() {
       {!usesLegacyWorkflow && <section className="form-card approval-assignment-card">
         <div className="section-title">
           <span>06</span>
-          <div><h2>Approval route — official matrix</h2><p>Prepared By is automatic. Recommending Approval, Reviewed and Noted By, and Approved By are assigned automatically from the official matrix. Mandatory approvers cannot be removed.</p></div>
+          <div><h2>Approval route — official matrix</h2><p>Assigned automatically. Mandatory approvers cannot be removed.</p></div>
         </div>
-        <div className="approval-preview">
-          <span className="eyebrow">OFFICIAL STAGES</span>
-          <div className="route-names">
-            <div className="route-stage"><b>Prepared By</b><small>{existing?.REQUESTED_BY || user?.FULL_NAME || 'Requester'}</small><span>{existing?.POSITION || user?.POSITION || ''}</span></div>
-            <div className="route-stage"><b>Recommending Approval</b><small>{(fixedRoute?.assignments?.RECOMMENDING_APPROVAL ?? []).map((p) => p.FULL_NAME).join(', ') || 'Pending configuration'}</small></div>
-            <div className="route-stage"><b>Reviewed and Noted By</b><small>{(fixedRoute?.assignments?.REVIEWED_AND_NOTED ?? []).map((p) => p.FULL_NAME).join(', ') || 'Pending configuration'}</small></div>
-            <div className="route-stage"><b>Approved By</b><small>{(fixedRoute?.assignments?.APPROVED_BY ?? []).map((p) => p.FULL_NAME).join(', ') || 'Pending configuration'}</small></div>
-          </div>
-          <p>{fixedRoute ? officialSummary(fixedRoute) : 'Loading fixed route…'}</p>
-          <p className="muted">Mandatory: Ofelia Hocson (Reviewed and Noted), Ana Liza Tago and Raquel Baquiran (Approved). Conditional: VP Academic{isAcademic ? ' (required for this academic RFA)' : ' (not required)'}, President{needsPresident ? ` (required at ${money(threshold)})` : ''}.</p>
+        <div className="route-names">
+          <RouteStage title="Prepared By" names={[existing?.REQUESTED_BY || user?.FULL_NAME || 'Requester']} note={existing?.POSITION || user?.POSITION || ''} />
+          <RouteStage title="Recommending Approval" names={(fixedRoute?.assignments?.RECOMMENDING_APPROVAL ?? []).map((p) => p.FULL_NAME)} />
+          <RouteStage title="Reviewed and Noted By" names={(fixedRoute?.assignments?.REVIEWED_AND_NOTED ?? []).map((p) => p.FULL_NAME)} />
+          <RouteStage title="Approved By" names={(fixedRoute?.assignments?.APPROVED_BY ?? []).map((p) => p.FULL_NAME)} />
         </div>
+        <p className="muted">{isAcademic ? 'Academic: VP Academic required. ' : ''}{needsPresident ? `President required (≥ ${money(threshold)}). ` : 'President not required below threshold. '}{fixedRoute ? '' : 'Loading route…'}</p>
       </section>}
 
       {usesLegacyWorkflow && <section className="form-card approval-assignment-card">
@@ -315,16 +310,16 @@ export function RfaFormPage() {
         </div>
       </section>}
 
-      <section className="approval-preview">
+      {usesLegacyWorkflow && <section className="approval-preview">
         <span className="eyebrow">APPROVAL SIGNATURES</span>
         <div className="route-names">
           <div className="route-stage"><b>Prepared By</b><small>{existing?.REQUESTED_BY || user?.FULL_NAME || 'Requester'}</small></div>
-          <div className="route-stage"><b>Recommending Approval</b><small>{usesLegacyWorkflow ? '' : (fixedRoute?.assignments?.RECOMMENDING_APPROVAL ?? []).map((p) => p.FULL_NAME).join(', ') || 'Pending configuration'}</small></div>
-          <div className="route-stage"><b>Reviewed and Noted By</b><small>{usesLegacyWorkflow ? '' : (fixedRoute?.assignments?.REVIEWED_AND_NOTED ?? []).map((p) => p.FULL_NAME).join(', ') || 'Pending configuration'}</small></div>
-          <div className="route-stage"><b>Approved By</b><small>{usesLegacyWorkflow ? '' : (fixedRoute?.assignments?.APPROVED_BY ?? []).map((p) => p.FULL_NAME).join(', ') || 'Pending configuration'}</small></div>
+          <div className="route-stage"><b>Recommending Approval</b><small>Legacy</small></div>
+          <div className="route-stage"><b>Reviewed and Noted By</b><small>Legacy</small></div>
+          <div className="route-stage"><b>Approved By</b><small>Legacy</small></div>
         </div>
-        <p>{usesLegacyWorkflow ? 'This historical RFA preserves its original approval route.' : isOfficial ? 'Official matrix assignments apply. You cannot approve your own request.' : 'Fixed department assignments apply (historical workflow).'}</p>
-      </section>
+        <p>This historical RFA preserves its original approval route.</p>
+      </section>}
 
       <div className="form-actions">
         <button className="button secondary" type="button" disabled={saving} onClick={() => void persist(false)}><Save size={16} /> Save Draft</button>
@@ -334,15 +329,12 @@ export function RfaFormPage() {
   </>;
 }
 
-function officialSummary(route: FixedRoutePreview): string {
-  const parts: string[] = [];
-  const rec = route.assignments?.RECOMMENDING_APPROVAL ?? [];
-  const reviewed = route.assignments?.REVIEWED_AND_NOTED ?? [];
-  const approved = route.assignments?.APPROVED_BY ?? [];
-  parts.push(`Recommending: ${rec.length ? rec.map((p) => p.FULL_NAME).join(', ') : 'pending configuration'}`);
-  parts.push(`Reviewed and Noted: ${reviewed.length ? reviewed.map((p) => p.FULL_NAME).join(', ') : 'pending configuration'}`);
-  parts.push(`Approved: ${approved.length ? approved.map((p) => p.FULL_NAME).join(', ') : 'pending configuration'}`);
-  return parts.join(' · ');
+function RouteStage({ title, names, note }: { title: string; names: string[]; note?: string }) {
+  return <div className="route-stage">
+    <b>{title}</b>
+    {names.length ? <ul>{names.map((name, i) => <li key={`${name}-${i}`}>{displayName(name)}</li>)}</ul> : <small>Pending configuration</small>}
+    {note ? <span>{note}</span> : null}
+  </div>;
 }
 
 function ApproverSelector({ section, employees, selectedIds, onChange }: { section: { key: ApprovalSection; label: string }; employees: EmployeeDirectory; selectedIds: string[]; onChange: (ids: string[]) => void }) {
