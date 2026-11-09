@@ -151,9 +151,9 @@ function userById(id: string): SessionUser {
 describe('official matrix — 12 scenarios', () => {
   it('1. Non-academic, below threshold, no optionals', () => {
     const req = requesterFor('it');
-    const draft = createRfa(req, input({ requestedAmount: '10000', budgetAllocation: 10000, recommendingAlternateUserId: 'hrHead' }));
+    const draft = createRfa(req, input({ requestedAmount: '10000', budgetAllocation: 10000 }));
     expect(draft.CURRENT_MATRIX_ID).toBe('RFA_FIXED_V3');
-    expect(assignmentsFor(draft.RFA_ID, 'RECOMMENDING_APPROVAL')).toEqual(expect.arrayContaining(['itHead', 'hrHead']));
+    expect(assignmentsFor(draft.RFA_ID, 'RECOMMENDING_APPROVAL')).toEqual(['itHead']);
     expect(assignmentsFor(draft.RFA_ID, 'REVIEWED_AND_NOTED')).toEqual(['ofelia']);
     expect(assignmentsFor(draft.RFA_ID, 'APPROVED_BY')).toEqual(expect.arrayContaining(['ana', 'raquel']));
     expect(assignmentsFor(draft.RFA_ID, 'APPROVED_BY')).not.toContain('jennelyn');
@@ -221,17 +221,12 @@ describe('official matrix — 12 scenarios', () => {
     expect(() => acted(draft.RFA_ID, userById('dualHead1'))).toThrow('not assigned');
   });
 
-  it('6. Department with one head: alternate selection is required', () => {
+  it('6. Department with one head: head approves alone (alternate removed)', () => {
     const req = requesterFor('it');
-    // Without alternate, submit must fail
-    const missing = createRfa(req, input({ requestedAmount: '10000', budgetAllocation: 10000 }));
-    expect(() => submitRfa(req, missing.RFA_ID)).toThrow(/alternate/);
-    // With alternate, succeeds and records it
-    const draft = createRfa(req, input({ requestedAmount: '10000', budgetAllocation: 10000, recommendingAlternateUserId: 'hrHead' }));
-    expect(rfaRow(draft.RFA_ID).RECOMMENDING_ALTERNATE_NAME).toBeTruthy();
+    const draft = createRfa(req, input({ requestedAmount: '10000', budgetAllocation: 10000 }));
+    expect(assignmentsFor(draft.RFA_ID, 'RECOMMENDING_APPROVAL')).toEqual(['itHead']);
     submitRfa(req, draft.RFA_ID);
-    expect(assignmentsFor(draft.RFA_ID, 'RECOMMENDING_APPROVAL')).toContain('hrHead');
-    acted(draft.RFA_ID, userById('hrHead'));
+    acted(draft.RFA_ID, userById('itHead'));
     expect(step(draft.RFA_ID)).toBe('REVIEWED_AND_NOTED');
   });
 
@@ -307,10 +302,11 @@ describe('official matrix — 12 scenarios', () => {
     expect(() => acted(draft.RFA_ID, userById('itHead'))).toThrow('not assigned');
   });
 
-  it('validates inapplicable optionals (Principal and Procurement guards)', () => {
+  it('validates inapplicable optionals (Principal guard)', () => {
     const req = requesterFor('it'); // not JHS/SHS
     expect(() => createRfa(req, input({ requestingDeptId: 'it', includePrincipal: true }))).toThrow(/JHS\/SHS/);
-    expect(() => createRfa(req, input({ includeProcurement: true, purchaseRequest: false }))).toThrow(/purchase/);
+    // Procurement is now a standalone optional (no purchase-flag gate)
+    expect(createRfa(req, input({ includeProcurement: true, purchaseRequest: false }))).toMatchObject({});
   });
 });
 

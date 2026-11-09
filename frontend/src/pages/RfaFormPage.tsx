@@ -122,11 +122,6 @@ export function RfaFormPage() {
         if (!isFiscalYear(form.fiscalYear)) throw new Error('Fiscal Year must be a four-digit year.');
         if (!form.requestedAmount || Number(form.requestedAmount) <= 0) throw new Error('Requested Amount is required.');
         if (form.includePrincipal && fixedRoute && !fixedRoute.isJhsOrShs) throw new Error('The JHS/SHS Principal is only available for Junior High School or Senior High School departments.');
-        if (form.includeProcurement && !form.purchaseRequest) throw new Error('The Procurement Clerk is only available for purchase requests.');
-        if ((fixedRoute?.requestingHeadCount ?? 0) === 1 && !form.recommendingAlternateUserId) {
-          // Server will enforce on submit; warn early on save Draft? Allow draft, but require on submit
-          if (submit) throw new Error('Your department has one Department Head. An alternate Department Head must be selected for Recommending Approval.');
-        }
       }
       if (isV2Edit && !form.expenseClassification) {
         // V2 already has classification; keep it
@@ -180,7 +175,6 @@ export function RfaFormPage() {
   const isAcademic = Boolean(fixedRoute?.isAcademic);
   const isJhsOrShs = Boolean(fixedRoute?.isJhsOrShs);
   const headCount = fixedRoute?.requestingHeadCount ?? 0;
-  const needsAlternate = headCount === 1;
 
   return <>
     <Link className="back-link" to={existing ? `/rfa/${existing.RFA_ID}` : '/rfas'}><ArrowLeft size={16} /> Back</Link>
@@ -223,7 +217,6 @@ export function RfaFormPage() {
             </select>
           </label>
         </div>
-        <label className="toggle-field"><input type="checkbox" checked={form.purchaseRequest} onChange={(e) => { set('purchaseRequest', e.target.checked); if (!e.target.checked) set('includeProcurement', false); }} /> This is a purchase request</label>
         <p className="muted">Amounts are monitored by department as Total OPEX + Total CAPEX. Presidential approval is {needsPresident ? 'required' : 'not required'} at {money(threshold)} threshold (amount: {money(amount || 0)}).</p>
         {isAcademic && <p className="muted">Academic department: VP for Academic Affairs is automatically included in Approved By.</p>}
       </section>
@@ -259,18 +252,9 @@ export function RfaFormPage() {
           <div><h2>Approval options</h2><p>Select applicable optional approvers and involved departments. Mandatory approvers cannot be removed.</p></div>
         </div>
         {!usesLegacyWorkflow ? <>
-          {needsAlternate && <label className="field"><span>Alternate Department Head for Recommending Approval <b>*</b></span>
-            <select required={needsAlternate} value={form.recommendingAlternateUserId} onChange={(e) => set('recommendingAlternateUserId', e.target.value)}>
-              <option value="">Select alternate Department Head</option>
-              {(fixedRoute?.alternateCandidates ?? []).map((c) => <option key={c.USER_ID} value={c.USER_ID}>{c.FULL_NAME} — {c.DEPARTMENT}</option>)}
-            </select>
-            <small>Your department has one head. The head must select another Department Head to serve as recommending approver.</small>
-          </label>}
-          {headCount >= 2 && <p className="muted">Your department has {headCount} heads. Either head may provide Recommending Approval.</p>}
-          {headCount === 0 && <p className="muted">No department head is configured yet. Submitting will be blocked until an administrator configures heads.</p>}
+          <p className="muted">Your department head{headCount >= 2 ? `s (${headCount})` : ''} will be your Recommending Approver{headCount === 0 ? ' — pending configuration' : ''}.</p>
           {isJhsOrShs && <label className="toggle-field"><input type="checkbox" checked={form.includePrincipal} onChange={(e) => set('includePrincipal', e.target.checked)} /> Include JHS/SHS Principal (Noliver Garcia) in Reviewed and Noted By</label>}
-          {form.purchaseRequest && <label className="toggle-field"><input type="checkbox" checked={form.includeProcurement} onChange={(e) => set('includeProcurement', e.target.checked)} /> Include Procurement Clerk (Marjorie Valdez)</label>}
-          {!form.purchaseRequest && <p className="muted">Check “Purchase request” in Expense information to offer the Procurement Clerk.</p>}
+          <label className="toggle-field"><input type="checkbox" checked={form.includeProcurement} onChange={(e) => set('includeProcurement', e.target.checked)} /> Include Procurement Clerk (Marjorie Valdez) in Reviewed and Noted By</label>
           <div className="involved-picker">
             <div className="involved-header">
               <b>Involved Department(s)</b>

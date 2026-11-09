@@ -23,7 +23,8 @@ describe('RfaFormPage expense classification', () => {
     expect(html).toContain('OPEX');
     expect(html).toContain('CAPEX');
     expect(html).not.toContain('Remaining');
-    expect(html).toContain('purchase request');
+    expect(html).not.toContain('purchase request');
+    expect(html).not.toContain('Alternate Department Head');
     expect(html).toContain('Recommending Approval');
     expect(html).toContain('Reviewed and Noted By');
     expect(html).toContain('Approved By');

@@ -499,44 +499,13 @@ function resolveOfficialAssignments(
   };
 
   // --- Stage 1: Recommending Approval (Dept Head, OR) ---
+  // Alternate selection removed — single head approves alone; dual heads: either approves.
   let recommending: EligibleApprover[] = [];
   const heads = getDepartmentHeads(departmentId, usersById, requester, requesterUserId, true);
   recommending = heads.map((h) => toEligible(h, deptNameMap));
-  let alternateName = '';
-  if (heads.length === 1) {
-    const altId = selections.recommendingAlternateUserId.trim();
-    if (altId) {
-      const alt = usersById.get(altId);
-      if (!isValidApprover(alt, requester, requesterUserId)) businessError('The selected alternate Department Head is invalid or cannot approve this RFA.', 'FORBIDDEN');
-      // Must be a head of some department (sheet or primary).
-      const isHeadOfSomewhere = all<DepartmentHeadRecord>('DEPARTMENT_HEADS').some((r) => String(r.USER_ID) === altId && toBoolean(r.ACTIVE)) || all<DepartmentRecord>('DEPARTMENTS').some((d) => String(d.DEPARTMENT_HEAD_USER_ID || '') === altId);
-      if (!isHeadOfSomewhere) businessError('The alternate must be a Department Head of another department.', 'FORBIDDEN');
-      alternateName = (alt as UserRecord).FULL_NAME;
-      addDistinct(recommending, [toEligible(alt as UserRecord, deptNameMap)]);
-    } else if (strict) {
-      businessError('Your department has one Department Head. An alternate Department Head must be selected for Recommending Approval.', 'CONFIGURATION_REQUIRED');
-    }
-  } else if (heads.length === 0) {
-    // If no head but an alternate was chosen (e.g., head is requester, excluded), allow alternate alone.
-    const altId = selections.recommendingAlternateUserId.trim();
-    if (altId) {
-      const alt = usersById.get(altId);
-      if (isValidApprover(alt, requester, requesterUserId)) {
-        alternateName = (alt as UserRecord).FULL_NAME;
-        addDistinct(recommending, [toEligible(alt as UserRecord, deptNameMap)]);
-      }
-    }
-    if (strict && !recommending.length) businessError('No Department Head is configured for the requesting department. An administrator must set department heads before submission.', 'CONFIGURATION_REQUIRED');
-  } else {
-    // heads >= 2: either may approve, no alternate needed
-    if (selections.recommendingAlternateUserId.trim()) {
-      const alt = usersById.get(selections.recommendingAlternateUserId.trim());
-      if (isValidApprover(alt, requester, requesterUserId) && !recommending.some((e) => e.USER_ID === (alt as UserRecord).USER_ID)) {
-        alternateName = (alt as UserRecord).FULL_NAME;
-        addDistinct(recommending, [toEligible(alt as UserRecord, deptNameMap)]);
-      }
-    }
-  }
+  const alternateName = '';
+  // Backward compat: ignore any legacy alternate selection (don't require, don't add)
+  if (strict && !recommending.length) businessError('No Department Head is configured for the requesting department. An administrator must set department heads before submission.', 'CONFIGURATION_REQUIRED');
   assignments.RECOMMENDING_APPROVAL = recommending;
 
   // --- Stage 2: Reviewed and Noted By ---
@@ -573,9 +542,8 @@ function resolveOfficialAssignments(
     if (strict && !principal) businessError('JHS/SHS Principal (Noliver Garcia) is not configured.', 'CONFIGURATION_REQUIRED');
     if (principal) addDistinct(reviewed, [toEligible(principal, deptNameMap)]);
   }
-  // Optional: Procurement (purchase only)
+  // Optional: Procurement (standalone optional — no purchase-flag gate)
   if (selections.includeProcurement) {
-    if (!selections.purchaseRequest) businessError('The Procurement Clerk is only available for purchase requests.', 'FORBIDDEN');
     const procurement = findOfficialUser('PROCUREMENT_USER_ID', 'Marjorie Valdez', usersById, requester, requesterUserId);
     if (strict && !procurement) businessError('Procurement Clerk (Marjorie Valdez) is not configured.', 'CONFIGURATION_REQUIRED');
     if (procurement) addDistinct(reviewed, [toEligible(procurement, deptNameMap)]);
@@ -748,7 +716,6 @@ export function createRfa(user: SessionUser, payload: Record<string, unknown>): 
   const financial = financialRfaFields(user, { ...payload, isBudgetRequest: true, expenseClassification, involvedDepartmentId: selections.involvedDepartmentIds[0] || '', involvedDepartmentIds: selections.involvedDepartmentIds.join(',') }, false) as Pick<RfaRecord, 'IS_BUDGET_REQUEST' | 'EXPENSE_CATEGORY_ID' | 'REQUESTED_AMOUNT' | 'APPROVED_AMOUNT' | 'ACTUAL_AMOUNT' | 'FISCAL_YEAR' | 'ACTUAL_EXPENSE_RECORDED_AT' | 'EXPENSE_CLASSIFICATION' | 'INVOLVED_DEPARTMENT_ID' | 'INVOLVED_DEPARTMENT_NAME' | 'PURCHASE_REQUEST' | 'RECOMMENDING_ALTERNATE_USER_ID' | 'RECOMMENDING_ALTERNATE_NAME' | 'INCLUDE_PRINCIPAL' | 'INCLUDE_PROCUREMENT' | 'INVOLVED_DEPARTMENT_IDS'>;
   // Validate applicabilities softly at draft (strict at submit)
   if (selections.includePrincipal && !isJhsOrShsDepartment(department)) businessError('The JHS/SHS Principal is only available for Junior High School or Senior High School departments.', 'FORBIDDEN');
-  if (selections.includeProcurement && !selections.purchaseRequest) businessError('The Procurement Clerk is only available for purchase requests.', 'FORBIDDEN');
   const resolved = resolveOfficialAssignments(department.DEPARTMENT_ID, selections, Number(financial.REQUESTED_AMOUNT), user.EMAIL, user.USER_ID, false);
   const timestamp = nowIso();
   const involvedNames = resolved.involvedDepartmentNames.join(', ');
@@ -800,7 +767,6 @@ export function updateRfa(user: SessionUser, payload: Record<string, unknown>): 
       const dept = findBy<DepartmentRecord>('DEPARTMENTS', 'DEPARTMENT_ID', rfa.DEPARTMENT_ID);
       if (!isJhsOrShsDepartment(dept)) businessError('The JHS/SHS Principal is only available for Junior High School or Senior High School departments.', 'FORBIDDEN');
     }
-    if (selections.includeProcurement && !selections.purchaseRequest) businessError('The Procurement Clerk is only available for purchase requests.', 'FORBIDDEN');
     const financial = financialRfaFields(user, { ...payload, isBudgetRequest: true, expenseClassification, involvedDepartmentId: selections.involvedDepartmentIds[0] || '', involvedDepartmentIds: selections.involvedDepartmentIds.join(',') }, false);
     const resolved = resolveOfficialAssignments(rfa.DEPARTMENT_ID, selections, Number(financial.REQUESTED_AMOUNT), rfa.REQUESTER_EMAIL, user.USER_ID, false);
     const updates = {
