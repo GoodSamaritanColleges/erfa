@@ -647,3 +647,33 @@ tbody tr:last-child td { border-bottom: 0; }
   .page > * { animation: none; }
   .status::before { display: none; }
 }
+
+/* ============================================================
+   PaperPulse background palette — no yellow
+   ============================================================ */
+:root {
+  --bg: #f6f8fc;
+  --orange-soft: #eaf1fc;
+  --pp-primary: #0b4ea2;
+  --pp-secondary: #2f6fd1;
+  --pp-tint: #eaf1fc;
+  --pp-tint-2: #ecf3ff;
+}
+body, .full-loader { background: #f6f8fc; }
+thead th { background: #f8fafd; }
+tbody tr:hover { background: #fbfcfe; }
+.page-fallback .panel, .panel, .form-card, .table-panel { background: #fff; }
+
+/* Pending / returned statuses: blue instead of yellow */
+.status-pending_recommending_approval,
+.status-pending_review,
+.status-pending_authority_approval { background: var(--pp-tint-2); color: var(--pp-primary); border-color: #c9dbf5; }
+.status-returned { background: var(--pp-tint); color: var(--pp-secondary); border-color: #c9dbf5; }
+
+/* Dashboard "Returned" card icon */
+.metric.tone-amber .metric-icon { background: var(--pp-tint); color: var(--pp-secondary); }
+
+/* Light-blue backgrounds where peach/yellow was used */
+.action-banner { background: var(--pp-tint); border-color: #c9dbf5; }
+.tabs button.active { background: var(--pp-tint); }
+.budget-note { background: var(--pp-tint-2); border-color: #c9dbf5; color: #1d3f73; }
