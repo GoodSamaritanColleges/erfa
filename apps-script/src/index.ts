@@ -1,6 +1,7 @@
 import { dispatch, type ApiRequest } from './api';
 import { bootstrapAdmin as bootstrap } from './auth';
-import { setupSchema } from './store';
+import { cleanImportedData } from './admin';
+import { all, setupSchema } from './store';
 import { beginPerformance, performanceSnapshot, timed } from './performance';
 
 function json(value: unknown): GoogleAppsScript.Content.TextOutput {
@@ -41,7 +42,16 @@ function bootstrapAdmin(email: string, fullName: string): unknown {
   return bootstrap(email, fullName);
 }
 
+// One-click clean for the Apps Script editor: keeps ALL admins, deletes
+// every other user + all departments/heads. Run once, then import the new list.
+function cleanAllNow(): unknown {
+  setupSchema();
+  const admins = (all('USERS') as Array<{ IS_ADMIN?: unknown; EMAIL?: string; FULL_NAME?: string; USER_ID?: string }>).filter((u) => String(u.IS_ADMIN).toUpperCase() === 'TRUE' || u.IS_ADMIN === true);
+  const actor = (admins[0] || { USER_ID: 'admin', FULL_NAME: 'Admin', EMAIL: '', IS_ADMIN: true }) as never;
+  return cleanImportedData(actor as never, { confirm: 'DELETE' });
+}
+
 // The production bundle keeps implementation code inside an IIFE. Store only
 // intended Apps Script entry points here; build.mjs emits top-level forwarding
 // declarations so Apps Script can discover them in the editor and Web App.
-Object.assign(globalThis, { __erfaEntrypoints: { doGet, doPost, setupDatabase, bootstrapAdmin } });
+Object.assign(globalThis, { __erfaEntrypoints: { doGet, doPost, setupDatabase, bootstrapAdmin, cleanAllNow } });
