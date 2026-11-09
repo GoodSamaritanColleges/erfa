@@ -5,6 +5,8 @@ export type ApprovalSection = 'RECOMMENDING_APPROVAL' | 'REVIEWED_AND_NOTED' | '
 export interface SessionUser {
   USER_ID: string; FULL_NAME: string; EMAIL: string; DEPARTMENT_ID: string; DEPARTMENT_NAME: string; POSITION: string;
   CAN_CREATE_RFA: boolean; CAN_APPROVE_RFA: boolean; CAN_IMPLEMENT_RFA: boolean; IS_ADMIN: boolean; ACTIVE: boolean;
+  /** Access to the institution-wide All RFAs register: everything, approved RFAs only (Procurement), or none. */
+  ALL_RFAS_SCOPE?: 'all' | 'approved' | 'none';
 }
 export interface Department { DEPARTMENT_ID: string; DEPARTMENT_NAME: string; DEPARTMENT_CODE: string; ACTIVE: boolean; CREATED_AT: string; UPDATED_AT: string; DEPARTMENT_HEAD_USER_ID?: string; IS_ACADEMIC?: boolean }
 export interface DepartmentHead { HEAD_ID: string; DEPARTMENT_ID: string; USER_ID: string; ACTIVE: boolean; CREATED_AT: string; UPDATED_AT: string }

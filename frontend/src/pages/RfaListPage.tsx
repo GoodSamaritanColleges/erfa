@@ -1,11 +1,24 @@
 import { Search } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
+import { useAuth } from '../auth';
 import { ErrorNotice } from '../components';
 import type { Rfa } from '../types';
 import { Empty, RfaTable } from './DashboardPage';
 
-export function RfaListPage({ approvalsOnly = false }: { approvalsOnly?: boolean }) {
+type ListMode = 'mine' | 'approvals' | 'all';
+
+const COPY: Record<ListMode, { eyebrow: string; title: string; text: string; empty: string; emptyText: string }> = {
+  mine: { eyebrow: 'REQUEST REGISTER', title: 'My RFAs', text: 'The requests you filed. Search, filter, and follow each one from draft through closeout.', empty: 'No matching RFAs', emptyText: 'Try a different search or create a new Request for Approval.' },
+  approvals: { eyebrow: 'APPROVAL QUEUE', title: 'For My Action', text: 'Requests currently assigned to you. Review every detail before deciding.', empty: 'No requests need your action', emptyText: 'Your queue is clear.' },
+  all: { eyebrow: 'INSTITUTION REGISTER', title: 'All RFAs', text: 'Every submitted request across all departments. Drafts stay private to their requesters.', empty: 'No matching RFAs', emptyText: 'Try a different search or filter.' }
+};
+
+export function RfaListPage({ mode = 'mine' }: { mode?: ListMode }) {
+  const { user } = useAuth();
+  const approvalsOnly = mode === 'approvals';
+  const approvedOnlyScope = mode === 'all' && user?.ALL_RFAS_SCOPE === 'approved';
+  const copy = COPY[mode];
   const [rfas, setRfas] = useState<Rfa[]>([]);
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('');
@@ -21,23 +34,20 @@ export function RfaListPage({ approvalsOnly = false }: { approvalsOnly?: boolean
     previousQuery.current = query;
     setLoading(true);
     const timer = setTimeout(() => {
-      void api<Rfa[]>(approvalsOnly ? 'rfa.forApproval' : 'rfa.list', approvalsOnly ? {} : { query, status, expenseClassification, fiscalYear })
+      void api<Rfa[]>(approvalsOnly ? 'rfa.forApproval' : mode === 'all' ? 'rfa.all' : 'rfa.list', approvalsOnly ? {} : { query, status, expenseClassification, fiscalYear })
         .then((next) => { if (current) { setRfas(next); setError(''); } })
         .catch((caught: Error) => { if (current) setError(caught.message); })
         .finally(() => { if (current) setLoading(false); });
     }, delay);
     return () => { current = false; clearTimeout(timer); };
-  }, [query, status, expenseClassification, fiscalYear, approvalsOnly]);
+  }, [query, status, expenseClassification, fiscalYear, approvalsOnly, mode]);
 
   return <>
     <header className="page-header">
       <div>
-        <span className="eyebrow orange">{approvalsOnly ? 'APPROVAL QUEUE' : 'REQUEST REGISTER'}</span>
-        <h1>{approvalsOnly ? 'For My Action' : 'My RFAs'}</h1>
-        <p>{approvalsOnly
-          ? 'Requests currently assigned to you. Review every detail before deciding.'
-          : 'Search, filter, and follow each request from draft through closeout.'}
-        </p>
+        <span className="eyebrow orange">{copy.eyebrow}</span>
+        <h1>{copy.title}</h1>
+        <p>{approvedOnlyScope ? 'Approved, in-implementation, and closed requests across all departments, for procurement.' : copy.text}</p>
       </div>
     </header>
     <ErrorNotice message={error} />
@@ -71,7 +81,7 @@ export function RfaListPage({ approvalsOnly = false }: { approvalsOnly?: boolean
         ? <ListSkeleton />
         : rfas.length
           ? <RfaTable rfas={rfas} review={approvalsOnly} />
-          : <Empty title={approvalsOnly ? 'No requests need your action' : 'No matching RFAs'} text={approvalsOnly ? 'Your queue is clear.' : 'Try a different search or create a new Request for Approval.'} />}
+          : <Empty title={copy.empty} text={copy.emptyText} />}
     </section>
   </>;
 }

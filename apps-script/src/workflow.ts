@@ -88,21 +88,49 @@ function isProcurementUser(user: SessionUser): boolean {
   } catch { return false; }
 }
 
-function canView(user: SessionUser, rfa: RfaRecord, approvals?: SheetRecord[]): boolean {
-  if (toBoolean(user.IS_ADMIN) || normalizeEmail(rfa.REQUESTER_EMAIL) === normalizeEmail(user.EMAIL)) return true;
-  if (toBoolean(user.CAN_IMPLEMENT_RFA) && ['APPROVED', 'IMPLEMENTATION', 'CLOSED'].includes(rfa.STATUS)) return true;
-  if (isProcurementUser(user) && ['APPROVED', 'IMPLEMENTATION', 'CLOSED'].includes(rfa.STATUS)) return true;
-  if (normalizeEmail(rfa.CURRENT_APPROVER_EMAIL) === normalizeEmail(user.EMAIL)) return true;
-  return (approvals ?? approvalRows(rfa.RFA_ID)).some((row) => normalizeEmail(row.APPROVER_EMAIL) === normalizeEmail(user.EMAIL));
+const APPROVED_STATUSES = ['APPROVED', 'IMPLEMENTATION', 'CLOSED'];
+
+function nameMatches(candidate: string, fullName: string): boolean {
+  const name = candidate.trim().toLowerCase();
+  const parts = fullName.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  return parts.length >= 2 && name.includes(parts[0]) && name.includes(parts[parts.length - 1]);
 }
 
-/** Optimized canView that reuses preloaded approval index (avoids N+1). */
-function canViewWithApproverSet(user: SessionUser, rfa: RfaRecord, approverRfaSet: Set<string>): boolean {
+/**
+ * Who may open the institution-wide "All RFAs" register:
+ *  - 'all'      administrators, both VPs, the President, the Reviewed and Noted
+ *               official (Ma'am Ofel) and the Approved By officials (Ma'am Tago)
+ *  - 'approved' Procurement: approved, in-implementation and closed RFAs only
+ *  - 'none'     everyone else (they see only their own RFAs and their approval queue)
+ * Officials are recognised by their configured user ID or email; when a setting is
+ * blank, by name, mirroring how approval routing locates them.
+ */
+export function allRfasScope(user: SessionUser): 'all' | 'approved' | 'none' {
+  if (toBoolean(user.IS_ADMIN)) return 'all';
+  const email = normalizeEmail(user.EMAIL);
+  const ids = new Set<string>();
+  const addIds = (key: string) => String(getSetting(key) || '').split(',').map((v) => v.trim()).filter(Boolean).forEach((v) => ids.add(v));
+  ['VP_ACADEMIC_USER_ID', 'PRESIDENT_USER_ID', 'REVIEWED_MANDATORY_USER_ID', 'APPROVED_MANDATORY_USER_IDS'].forEach(addIds);
+  if (ids.has(user.USER_ID)) return 'all';
+  const emails = [getSetting('VP_ADMIN_FINANCE_EMAIL'), getSetting('PRESIDENT_EMAIL'), ...Object.values(DEFAULT_OFFICIAL_EMAILS)].map((v) => normalizeEmail(String(v || ''))).filter(Boolean);
+  if (emails.includes(email)) return 'all';
+  const byName: Array<[string, string]> = [['VP_ACADEMIC_USER_ID', 'Jennelyn De Guzman'], ['REVIEWED_MANDATORY_USER_ID', 'Ofelia Hocson'], ['APPROVED_MANDATORY_USER_IDS', 'Ana Liza Tago']];
+  if (byName.some(([key, name]) => !String(getSetting(key) || '').trim() && nameMatches(String(user.FULL_NAME || ''), name))) return 'all';
+  // VP Admin & Finance and the President: exact full-name match only, as routing does, so the two accounts never swap.
+  const fullName = String(user.FULL_NAME || '').trim().toLowerCase();
+  if (['raquel baquiran', 'alessandra de guzman-valino'].includes(fullName)) return 'all';
+  const procurementId = String(getSetting('PROCUREMENT_USER_ID') || '').trim();
+  if ((procurementId && procurementId === user.USER_ID) || isProcurementUser(user)) return 'approved';
+  return 'none';
+}
+
+function canView(user: SessionUser, rfa: RfaRecord, approvals?: SheetRecord[]): boolean {
   if (toBoolean(user.IS_ADMIN) || normalizeEmail(rfa.REQUESTER_EMAIL) === normalizeEmail(user.EMAIL)) return true;
-  if (toBoolean(user.CAN_IMPLEMENT_RFA) && ['APPROVED', 'IMPLEMENTATION', 'CLOSED'].includes(rfa.STATUS)) return true;
-  if (isProcurementUser(user) && ['APPROVED', 'IMPLEMENTATION', 'CLOSED'].includes(rfa.STATUS)) return true;
+  if (toBoolean(user.CAN_IMPLEMENT_RFA) && APPROVED_STATUSES.includes(rfa.STATUS)) return true;
+  const scope = allRfasScope(user);
+  if (scope === 'all' || (scope === 'approved' && APPROVED_STATUSES.includes(rfa.STATUS))) return true;
   if (normalizeEmail(rfa.CURRENT_APPROVER_EMAIL) === normalizeEmail(user.EMAIL)) return true;
-  return approverRfaSet.has(String(rfa.RFA_ID));
+  return (approvals ?? approvalRows(rfa.RFA_ID)).some((row) => normalizeEmail(row.APPROVER_EMAIL) === normalizeEmail(user.EMAIL));
 }
 
 function assertView(user: SessionUser, rfa: RfaRecord, approvals?: SheetRecord[]): void {
@@ -989,7 +1017,21 @@ export function saveActualExpense(user: SessionUser, rfaId: string, payload: Rec
   return recordActualExpense(user, rfa, payload);
 }
 
-export function listRfas(user: SessionUser, filters: Record<string, unknown>, approvals?: SheetRecord[], records?: RfaRecord[]): RfaRecord[] {
+/** "My RFAs": only the requests this user filed — for every role, including administrators. */
+export function listRfas(user: SessionUser, filters: Record<string, unknown>, _approvals?: SheetRecord[], records?: RfaRecord[]): RfaRecord[] {
+  const email = normalizeEmail(user.EMAIL);
+  return filterRfas((records ?? all<RfaRecord>('RFA')).filter((rfa) => normalizeEmail(rfa.REQUESTER_EMAIL) === email), filters);
+}
+
+/** "All RFAs": the institution-wide register, limited by allRfasScope(). */
+export function listAllRfas(user: SessionUser, filters: Record<string, unknown>): RfaRecord[] {
+  const scope = allRfasScope(user);
+  if (scope === 'none') businessError('You do not have access to the All RFAs register.', 'FORBIDDEN');
+  const records = all<RfaRecord>('RFA').filter((rfa) => rfa.STATUS !== 'DRAFT' && (scope === 'all' || APPROVED_STATUSES.includes(rfa.STATUS)));
+  return filterRfas(records, filters);
+}
+
+function filterRfas(records: RfaRecord[], filters: Record<string, unknown>): RfaRecord[] {
   const query = String(filters.query ?? '').trim().toLowerCase();
   const status = String(filters.status ?? '');
   const departmentId = String(filters.departmentId ?? '');
@@ -999,16 +1041,7 @@ export function listRfas(user: SessionUser, filters: Record<string, unknown>, ap
   const involvedDepartmentId = String(filters.involvedDepartmentId ?? '').trim();
   const fromDate = String(filters.fromDate ?? '').trim();
   const toDate = String(filters.toDate ?? '').trim();
-  // Load once per request — eliminates N+1 approval scans inside canView
-  const normalizedUserEmail = normalizeEmail(user.EMAIL);
-  const approverRfaSet = new Set<string>();
-  if (!toBoolean(user.IS_ADMIN)) {
-    for (const row of approvals ?? all<SheetRecord>('RFA_APPROVALS')) {
-      if (normalizeEmail(row.APPROVER_EMAIL) === normalizedUserEmail) approverRfaSet.add(String(row.RFA_ID));
-    }
-  }
-  return (records ?? all<RfaRecord>('RFA')).filter((rfa) => {
-    if (!canViewWithApproverSet(user, rfa, approverRfaSet)) return false;
+  return records.filter((rfa) => {
     if (status && rfa.STATUS !== status) return false;
     if (departmentId && rfa.DEPARTMENT_ID !== departmentId) return false;
     if (currentStep && rfa.CURRENT_STEP !== currentStep) return false;

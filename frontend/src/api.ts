@@ -1,10 +1,10 @@
 const API_URL = import.meta.env.VITE_API_URL as string | undefined;
 const TOKEN_KEY = 'erfa_google_id_token';
-const coalescedReads = new Set(['session', 'dashboard.home', 'dashboard.rfas', 'rfa.list', 'rfa.forApproval', 'rfa.detail', 'rfa.eligibleApprovers', 'rfa.departments', 'rfa.fixedRoute', 'expense.monitoring', 'admin.audit', 'admin.data', 'admin.budget.summary', 'admin.budget.overview', 'admin.budget.management', 'admin.category.list', 'admin.budget.report', 'admin.budget.expenses', 'admin.budget.detail', 'budget.context']);
+const coalescedReads = new Set(['session', 'dashboard.home', 'dashboard.rfas', 'rfa.list', 'rfa.all', 'rfa.forApproval', 'rfa.detail', 'rfa.eligibleApprovers', 'rfa.departments', 'rfa.fixedRoute', 'expense.monitoring', 'admin.audit', 'admin.data', 'admin.budget.summary', 'admin.budget.overview', 'admin.budget.management', 'admin.category.list', 'admin.budget.report', 'admin.budget.expenses', 'admin.budget.detail', 'budget.context']);
 const pendingReads = new Map<string, Promise<unknown>>();
 // Short-lived cache for list/lookup reads so moving between pages is instant.
 // Any write (non-read action) or sign-out clears it, so users never act on stale data after their own changes.
-const cachedReads = new Set(['dashboard.home', 'dashboard.rfas', 'rfa.list', 'rfa.forApproval', 'rfa.departments', 'rfa.fixedRoute', 'admin.category.list', 'budget.context']);
+const cachedReads = new Set(['dashboard.home', 'dashboard.rfas', 'rfa.list', 'rfa.all', 'rfa.forApproval', 'rfa.departments', 'rfa.fixedRoute', 'admin.category.list', 'budget.context']);
 const READ_CACHE_TTL_MS = 30_000;
 const readCache = new Map<string, { at: number; data: unknown }>();
 export function clearReadCache(): void { readCache.clear(); }

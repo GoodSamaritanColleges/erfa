@@ -1,4 +1,4 @@
-import { AlertTriangle, BarChart3, CheckCircle2, FilePlus2, FileText, Home, ListTodo, LoaderCircle, LogOut, Settings2, ShieldCheck, Wallet, X } from 'lucide-react';
+import { AlertTriangle, BarChart3, Files, CheckCircle2, FilePlus2, FileText, Home, ListTodo, LoaderCircle, LogOut, Settings2, ShieldCheck, Wallet, X } from 'lucide-react';
 import { Suspense, type ReactNode } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from './auth';
@@ -49,7 +49,8 @@ export function Layout() {
   const { user, signOut } = useAuth();
   const { pathname } = useLocation();
   if (!user) return null;
-  const pageTitle = pathname === '/' ? 'Dashboard' : pathname === '/rfas' ? 'My RFAs' : pathname === '/rfa/new' ? 'Create RFA' : pathname === '/approvals' ? 'For My Action' : pathname === '/admin' ? 'Administration' : pathname.startsWith('/admin/expense-monitoring') || pathname.startsWith('/admin/budgets') ? 'Expense Monitoring' : pathname.startsWith('/admin/expense-reports') || pathname.startsWith('/admin/budget-reports') ? 'Expense Reports' : pathname.startsWith('/rfa/') ? 'RFA Detail' : 'Electronic Request for Approval';
+  const canSeeAll = user.ALL_RFAS_SCOPE === 'all' || user.ALL_RFAS_SCOPE === 'approved';
+  const pageTitle = pathname === '/' ? 'Dashboard' : pathname === '/rfas' ? 'My RFAs' : pathname === '/all-rfas' ? 'All RFAs' : pathname === '/rfa/new' ? 'Create RFA' : pathname === '/approvals' ? 'For My Action' : pathname === '/admin' ? 'Administration' : pathname.startsWith('/admin/expense-monitoring') || pathname.startsWith('/admin/budgets') ? 'Expense Monitoring' : pathname.startsWith('/admin/expense-reports') || pathname.startsWith('/admin/budget-reports') ? 'Expense Reports' : pathname.startsWith('/rfa/') ? 'RFA Detail' : 'Electronic Request for Approval';
 
   return <div className="app-shell">
     <aside className="sidebar">
@@ -61,6 +62,7 @@ export function Layout() {
         <span className="sidebar-nav-label">Navigation</span>
         <NavLink to="/" end><Home /> Dashboard</NavLink>
         <NavLink to="/rfas"><ListTodo /> My RFAs</NavLink>
+        {canSeeAll && <NavLink to="/all-rfas"><Files /> All RFAs</NavLink>}
         {user.CAN_CREATE_RFA && <NavLink to="/rfa/new"><FilePlus2 /> Create RFA</NavLink>}
         {user.CAN_APPROVE_RFA && <NavLink to="/approvals"><ShieldCheck /> For My Action</NavLink>}
         {user.IS_ADMIN && <span className="sidebar-nav-label">Administration</span>}
@@ -105,6 +107,7 @@ export function Layout() {
     <nav className="mobile-nav" aria-label="Mobile navigation">
       <NavLink to="/" end><Home />Home</NavLink>
       <NavLink to="/rfas"><ListTodo />My RFAs</NavLink>
+      {canSeeAll && <NavLink to="/all-rfas"><Files />All RFAs</NavLink>}
       {user.CAN_CREATE_RFA && <NavLink to="/rfa/new"><FilePlus2 />Create</NavLink>}
       {user.CAN_APPROVE_RFA && <NavLink to="/approvals"><ShieldCheck />Action</NavLink>}
       {user.IS_ADMIN && <NavLink to="/admin" end><Settings2 />Admin</NavLink>}

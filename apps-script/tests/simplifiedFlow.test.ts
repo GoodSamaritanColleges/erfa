@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { commitApprovedFinancialRfa, expenseMonitoringReport, financialDetail, financialRfaFields, summarizeBudget } from '../src/budget';
-import { createRfa, decideRfa, detailRfa, listRfas, submitRfa, transitionCloseout } from '../src/workflow';
+import { allRfasScope, createRfa, decideRfa, detailRfa, listAllRfas, listRfas, submitRfa, transitionCloseout } from '../src/workflow';
 import type { BudgetTransactionRecord, DepartmentBudgetRecord, RfaRecord, SessionUser, SheetRecord } from '../src/types';
 
 const sheets = new Map<string, SheetRecord[]>();
@@ -402,14 +402,17 @@ describe('procurement view-only access', () => {
     if (idx >= 0) { (all[idx] as Record<string, unknown>).DEPARTMENT_ID = 'ppu'; sheets.set('USERS', all); }
     const draft = createRfa(req, input({}));
     submitRfa(req, draft.RFA_ID);
-    // Pending: procurement cannot view
+    // Pending: procurement cannot view, and it is not in their All RFAs register
     expect(() => detailRfa(procurementUser, draft.RFA_ID)).toThrow('do not have access');
+    expect(allRfasScope(procurementUser)).toBe('approved');
+    expect(listAllRfas(procurementUser, {}).map((r) => r.RFA_ID)).not.toContain(draft.RFA_ID);
     acted(draft.RFA_ID, userById('itHead'));
     acted(draft.RFA_ID, userById('ofelia'));
     acted(draft.RFA_ID, userById('ana')); acted(draft.RFA_ID, userById('raquel'));
     expect(status(draft.RFA_ID)).toBe('APPROVED');
     // Approved: can view via list and detail, but cannot approve (not assigned)
-    expect(listRfas(procurementUser, {}).map((r) => r.RFA_ID)).toContain(draft.RFA_ID);
+    expect(listAllRfas(procurementUser, {}).map((r) => r.RFA_ID)).toContain(draft.RFA_ID);
+    expect(listRfas(procurementUser, {}).map((r) => r.RFA_ID)).not.toContain(draft.RFA_ID); // My RFAs = own requests only
     expect(detailRfa(procurementUser, draft.RFA_ID).rfa).toMatchObject({ RFA_ID: draft.RFA_ID });
     expect(() => acted(draft.RFA_ID, procurementUser)).toThrow('not assigned');
   });
@@ -443,5 +446,33 @@ describe('history, lifecycle, and backward compatibility (preserved)', () => {
     const req = requesterFor('it');
     const draft = createRfa(req, input({ recommendingAlternateUserId: 'hrHead' }));
     expect(detailRfa(req, draft.RFA_ID)).toMatchObject({ rfa: { EXPENSE_CLASSIFICATION: 'OPEX' } });
+  });
+});
+
+describe('My RFAs and All RFAs visibility', () => {
+  it('My RFAs lists only the requests a user filed, even for approvers', () => {
+    const req = requesterFor('it');
+    const draft = createRfa(req, input({}));
+    submitRfa(req, draft.RFA_ID);
+    expect(listRfas(req, {}).map((r) => r.RFA_ID)).toContain(draft.RFA_ID);
+    expect(listRfas(userById('itHead'), {}).map((r) => r.RFA_ID)).not.toContain(draft.RFA_ID);
+    // The assigned approver can still open it from their queue
+    expect(detailRfa(userById('itHead'), draft.RFA_ID).rfa).toMatchObject({ RFA_ID: draft.RFA_ID });
+  });
+
+  it('officials see every submitted RFA in All RFAs; regular staff cannot open the register', () => {
+    const req = requesterFor('it');
+    const draft = createRfa(req, input({}));
+    submitRfa(req, draft.RFA_ID);
+    const unsent = createRfa(req, input({}));
+    for (const official of ['ofelia', 'ana', 'raquel', 'jennelyn', 'president']) {
+      expect(allRfasScope(userById(official))).toBe('all');
+      const ids = listAllRfas(userById(official), {}).map((r) => r.RFA_ID);
+      expect(ids).toContain(draft.RFA_ID);
+      expect(ids).not.toContain(unsent.RFA_ID); // drafts stay private to the requester
+    }
+    expect(allRfasScope(req)).toBe('none');
+    expect(allRfasScope(userById('itHead'))).toBe('none');
+    expect(() => listAllRfas(userById('itHead'), {})).toThrow('do not have access');
   });
 });

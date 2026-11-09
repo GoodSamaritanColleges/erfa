@@ -44,7 +44,8 @@ export default function App() {
     <Route element={user ? <Layout /> : <Navigate to="/login" replace />}>
       <Route index element={<DashboardPage />} />
       <Route path="rfas" element={<RfaListPage key="mine" />} />
-      <Route path="approvals" element={user?.CAN_APPROVE_RFA ? <RfaListPage key="approvals" approvalsOnly /> : <Navigate to="/" replace />} />
+      <Route path="all-rfas" element={user?.ALL_RFAS_SCOPE === 'all' || user?.ALL_RFAS_SCOPE === 'approved' ? <RfaListPage key="all" mode="all" /> : <Navigate to="/" replace />} />
+      <Route path="approvals" element={user?.CAN_APPROVE_RFA ? <RfaListPage key="approvals" mode="approvals" /> : <Navigate to="/" replace />} />
       <Route path="rfa/new" element={user?.CAN_CREATE_RFA ? <RfaFormPage /> : <Navigate to="/" replace />} />
       <Route path="rfa/:id/edit" element={<RfaFormPage />} />
       <Route path="rfa/:id" element={<RfaDetailPage />} />

@@ -7,7 +7,7 @@ import { importUsersFromList } from './importUsers';
 import { adjustBudget, adminBudgetManagement, adminBudgetOverview, adminBudgetSummary, adminExpenseCategories, budgetReport, departmentExpenseReport, departmentFinancialDetail, expenseMonitoringReport, requesterBudgetContext, saveBudget, saveCategory, setOverBudget } from './budget';
 import { getDatabase, resetPerRequestCache } from './store';
 import { resetWorkflowCache } from './workflow';
-import { createRfa, dashboardRfas, decideRfa, detailRfa, downloadAttachment, eligibleApprovers, fixedRoutePreview, listDepartments, listForApproval, listRfas, saveActualExpense, submitRfa, transitionCloseout, updateRfa, uploadAttachment } from './workflow';
+import { allRfasScope, createRfa, dashboardRfas, decideRfa, detailRfa, downloadAttachment, eligibleApprovers, fixedRoutePreview, listDepartments, listAllRfas, listForApproval, listRfas, saveActualExpense, submitRfa, transitionCloseout, updateRfa, uploadAttachment } from './workflow';
 
 export interface ApiRequest { action: string; idToken?: string; payload?: Record<string, unknown>; performance?: boolean }
 
@@ -23,10 +23,11 @@ function dispatchRequest(request: ApiRequest): unknown {
   const payload = request.payload ?? {};
   return timed('handlerMs', () => {
   switch (request.action) {
-    case 'session': return { user, version: APP_VERSION };
+    case 'session': return { user: { ...user, ALL_RFAS_SCOPE: allRfasScope(user) }, version: APP_VERSION };
     case 'dashboard.rfas': return dashboardRfas(user);
     case 'dashboard.home': return dashboardHome(user);
     case 'rfa.list': return listRfas(user, payload);
+    case 'rfa.all': return listAllRfas(user, payload);
     case 'rfa.forApproval': return listForApproval(user);
     case 'rfa.detail': return detailRfa(user, String(payload.rfaId ?? ''));
     case 'rfa.eligibleApprovers': return eligibleApprovers(user);
