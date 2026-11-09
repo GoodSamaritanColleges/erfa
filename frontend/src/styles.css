@@ -692,3 +692,26 @@ tbody tr:hover { background: #fbfcfe; }
 
 /* Keep RFA numbers and dates on one line in tables */
 td[data-label="RFA Number"] > b, td[data-label="Date Filed"] { white-space: nowrap; }
+
+/* ============================================================
+   Dashboard wave banner — PaperPulse hero colours
+   deep blue #2B509B · mid blue #3962AB · lavender #9D83B6 · coral #F19A87
+   ============================================================ */
+.dashboard-hero {
+  position: relative; overflow: hidden; isolation: isolate;
+  margin-bottom: 1.35rem; padding: 1.9rem 2rem 2.4rem; border-radius: var(--radius-md); color: #fff;
+  background:
+    linear-gradient(180deg, rgba(43,80,155,0) 45%, rgba(43,80,155,.35) 100%),
+    linear-gradient(100deg, #3962ab 0%, #4a6fb2 32%, #9d83b6 56%, #f19a87 78%, #4c70b2 90%, #2b509b 100%);
+  box-shadow: 0 10px 24px -12px rgba(43,80,155,.55);
+}
+.dashboard-hero::after {
+  content: ""; position: absolute; inset: auto 0 0 0; height: 70%; z-index: -1; pointer-events: none;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 200' preserveAspectRatio='none'%3E%3Cpath d='M0 120 C 250 40 450 190 720 110 S 1050 30 1200 90 L1200 200 L0 200Z' fill='%23ffffff' fill-opacity='.10'/%3E%3Cpath d='M0 160 C 300 90 520 200 800 150 S 1100 110 1200 140 L1200 200 L0 200Z' fill='%23ffffff' fill-opacity='.14'/%3E%3C/svg%3E") bottom / 100% 100% no-repeat;
+}
+.dashboard-hero h1 { color: #fff; }
+.dashboard-hero p { color: rgba(255,255,255,.88); }
+.dashboard-hero .button.primary { background: #fff; color: #0b4ea2; box-shadow: 0 4px 12px rgba(16,24,40,.18); }
+.dashboard-hero .button.primary:hover { background: #eaf1fc; }
+@media (max-width: 620px) { .dashboard-hero { padding: 1.4rem 1.2rem 1.8rem; } }
+@media print { .dashboard-hero { background: none; color: inherit; box-shadow: none; } .dashboard-hero h1, .dashboard-hero p { color: inherit; } }

@@ -67,7 +67,7 @@ export function DashboardPage() {
   const displayName = user?.FULL_NAME?.split(' ')[0] ?? 'there';
 
   return <>
-    <div className="dashboard-greeting">
+    <div className="dashboard-greeting dashboard-hero">
       <h1>Good day, {displayName}.</h1>
       <p>{approvals.length
         ? `You have ${approvals.length} request${approvals.length === 1 ? '' : 's'} waiting for your action.`
