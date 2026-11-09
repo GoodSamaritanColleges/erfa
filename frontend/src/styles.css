@@ -715,3 +715,40 @@ td[data-label="RFA Number"] > b, td[data-label="Date Filed"] { white-space: nowr
 .dashboard-hero .button.primary:hover { background: #eaf1fc; }
 @media (max-width: 620px) { .dashboard-hero { padding: 1.4rem 1.2rem 1.8rem; } }
 @media print { .dashboard-hero { background: none; color: inherit; box-shadow: none; } .dashboard-hero h1, .dashboard-hero p { color: inherit; } }
+
+/* ============================================================
+   Unified PaperPulse palette — clean white sidebar, one blue family
+   ============================================================ */
+:root {
+  --navy: #0b4ea2;     /* primary (buttons, titles, badges) */
+  --navy-2: #1a5fbf;   /* primary hover */
+  --navy-3: #083b7d;   /* deepest shade */
+  --blue: #2f6fd1;     /* links, focus rings */
+  --hero-blend: linear-gradient(135deg, #3962ab 0%, #9d83b6 60%, #f19a87 100%);
+}
+.metric-card b, .budget-context b { color: var(--navy-3); }
+
+/* Sidebar — white, quiet, PaperPulse-style */
+.sidebar { background: #fff; color: var(--ink); border-right: 1px solid #e6e9ef; box-shadow: none; }
+.sidebar-brand { border-bottom: 1px solid #eef1f5; }
+.sidebar-brand img { filter: none; }
+.sidebar-nav-label { color: #98a2b3; }
+.sidebar-nav a { color: #475467; font-weight: 550; }
+.sidebar-nav a svg { opacity: 1; color: #667085; }
+.sidebar-nav a:hover { background: #f4f7fc; color: var(--ink); }
+.sidebar-nav a:hover svg { color: var(--navy); }
+.sidebar-nav a.active { background: var(--pp-tint); color: var(--navy); font-weight: 650; box-shadow: none; }
+.sidebar-nav a.active svg { color: var(--navy); }
+.sidebar-nav a.active::before { background: var(--navy); }
+.sidebar-footer { border-top: 1px solid #eef1f5; background: #fbfcfe; }
+.sidebar-user b { color: var(--ink); }
+.sidebar-user small { color: var(--muted); opacity: 1; }
+.sidebar .button.ghost { color: #475467; border-color: #e4e7ec; background: #fff; }
+.sidebar .button.ghost:hover { background: #f4f7fc; color: var(--navy); border-color: #c9dbf5; }
+
+/* Avatars pick up the banner blend */
+.avatar, .avatar.small { background: var(--hero-blend); box-shadow: 0 2px 6px rgba(57,98,171,.25); }
+
+/* Header sits on the same white as the sidebar */
+.content-header { border-bottom-color: #e6e9ef; }
+.content-header-left b { color: var(--ink); }
