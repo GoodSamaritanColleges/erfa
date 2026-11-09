@@ -149,6 +149,11 @@ export function importUsersFromList(actor: SessionUser, payload: Record<string, 
     if (exists) { skippedHeads.push({ key: `${code}/${email}`, reason: 'already a head' }); continue; }
     insert('DEPARTMENT_HEADS', { HEAD_ID: newId('head'), DEPARTMENT_ID: dept.DEPARTMENT_ID, USER_ID: userId, ACTIVE: true, CREATED_AT: nowIso(), UPDATED_AT: nowIso() });
     createdHeads.push(`${code}/${email}`);
+    // Also set primary head so Departments table + Recommending fallback show it (first head wins)
+    const freshDept = all<DepartmentRecord>('DEPARTMENTS').find((d) => d.DEPARTMENT_ID === dept.DEPARTMENT_ID);
+    if (!freshDept || !String(freshDept.DEPARTMENT_HEAD_USER_ID || '').trim()) {
+      try { updateBy('DEPARTMENTS', 'DEPARTMENT_ID', dept.DEPARTMENT_ID, { DEPARTMENT_HEAD_USER_ID: userId, UPDATED_AT: nowIso() }); } catch { /* keep going */ }
+    }
   }
 
   audit('USERS_IMPORTED', actor, '', '', '', `departments=${createdDepartments.length} users=${createdUsers.length} updated=${updatedUsers.length} heads=${createdHeads.length}`, {
