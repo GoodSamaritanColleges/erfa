@@ -194,7 +194,7 @@ function DepartmentsTable({ departments, users, heads, edit, onSaved, onError }:
 }
 
 function ApprovalSettingsPanel({ data, onSaved, onError }: { data: AdminData; onSaved: () => void; onError: (e: string) => void }) {
-  const settings = data.settings ?? { presidentThresholdPhp: '50000', reviewedMandatoryUserId: '', approvedMandatoryUserIds: '', vpAcademicUserId: '', presidentUserId: '', principalUserId: '', procurementUserId: '', vpAdminFinanceEmail: 'vp.finance@example.edu', presidentEmail: 'president@example.edu' };
+  const settings = data.settings ?? { presidentThresholdPhp: '50000', reviewedMandatoryUserId: '', approvedMandatoryUserIds: '', vpAcademicUserId: '', presidentUserId: '', principalUserId: '', vpAdminFinanceEmail: 'vp.finance@example.edu', presidentEmail: 'president@example.edu' };
   const [form, setForm] = useState(settings);
   const [saving, setSaving] = useState(false);
   useEffect(() => { setForm(settings); }, [JSON.stringify(settings)]);
@@ -233,10 +233,9 @@ function ApprovalSettingsPanel({ data, onSaved, onError }: { data: AdminData; on
       {userSelect('vpAcademicUserId', 'VP Academic (Jennelyn De Guzman)')}
       {userSelect('presidentUserId', 'President (Alessandra De Guzman-Valino)')}
       {userSelect('principalUserId', 'JHS/SHS Principal (Noliver Garcia)')}
-      {userSelect('procurementUserId', 'Procurement Clerk (Marjorie Valdez)')}
       <label className="field"><span>Raquel Baquiran email — VP Admin and Finance (separate account)</span><input type="email" value={form.vpAdminFinanceEmail ?? 'vp.finance@example.edu'} onChange={(e) => set('vpAdminFinanceEmail', e.target.value)} /></label>
       <label className="field"><span>President email — Alessandra De Guzman-Valino (separate account)</span><input type="email" value={form.presidentEmail ?? 'president@example.edu'} onChange={(e) => set('presidentEmail', e.target.value)} /></label>
-      <p className="muted">Confirmed emails are preconfigured. Do not interchange them. Other approver emails will be supplied later and remain unconfigured until set here or via Users. Procurement shows “Not configured” until Marjorie Valdez has <b>Can Approve RFA</b> enabled in Users.</p>
+      <p className="muted">Confirmed emails are preconfigured. Do not interchange them. Other approver emails will be supplied later and remain unconfigured until set here or via Users. Procurement is view-only by department (PPU) — no approver to set.</p>
     </div>
     <button className="button primary" disabled={saving} onClick={() => void save()}>Save approval settings</button>
   </section>;
