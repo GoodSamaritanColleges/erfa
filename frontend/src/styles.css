@@ -763,3 +763,4 @@ td[data-label="RFA Number"] > b, td[data-label="Date Filed"] { white-space: nowr
 .history-action-idle { background: #f2f4f7; color: #667085; border-color: #e4e7ec; }
 .history-muted { color: var(--muted); font-size: var(--text-xs); }
 @media print { .history-action { border: 0; padding: 0; } .history-action::before { display: none; } }
+.history-action-sent { background: var(--pp-tint); color: var(--pp-primary); border-color: #c9dbf5; }

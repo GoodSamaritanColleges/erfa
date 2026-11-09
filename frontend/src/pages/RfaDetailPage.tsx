@@ -290,16 +290,22 @@ function ApprovalSignature({ step, rfa, approvals, current, notApplicable }: { s
     {notApplicable ? <strong>N/A</strong> : assigned.length > 0 ? <ul className="signature-assignees">
       {assigned.map((employee) => {
         const action = actions.get(employee.APPROVER_USER_ID);
-        return <li key={employee.APPROVAL_ID}><strong>{displayName(employee.APPROVER_NAME)}</strong><span>{action ? `${action.ACTION} · ${dateTime(action.TIMESTAMP)}` : current ? 'Awaiting action' : 'Waiting for prior stage'}</span></li>;
+        return <li key={employee.APPROVAL_ID}><strong>{displayName(employee.APPROVER_NAME)}</strong><span>{action ? `${actionLabel(step, action.ACTION)} · ${dateTime(action.TIMESTAMP)}` : current ? 'Awaiting action' : 'Waiting for prior stage'}</span></li>;
       })}
     </ul> : fallback
-      ? <><strong>{fallback.ACTION === 'APPROVED' ? `Approved electronically by ${displayName(fallback.APPROVER_NAME)}` : `${fallback.ACTION} by ${displayName(fallback.APPROVER_NAME)}`}</strong><span>{dateTime(fallback.TIMESTAMP)}</span></>
+      ? <><strong>{fallback.ACTION === 'APPROVED' ? `${step === 'PREPARED_BY' ? 'Sent' : 'Approved'} electronically by ${displayName(fallback.APPROVER_NAME)}` : `${actionLabel(step, fallback.ACTION)} by ${displayName(fallback.APPROVER_NAME)}`}</strong><span>{dateTime(fallback.TIMESTAMP)}</span></>
       : <strong>Pending electronic approval</strong>}
   </div>;
 }
 
 const HISTORY_STEP_ORDER = ['PREPARED_BY', 'RECOMMENDING_APPROVAL', 'REVIEWED_AND_NOTED', 'REVIEWED_BY', 'NOTED_BY', 'INVOLVED_DEPARTMENT_HEAD', 'APPROVED_BY'];
 const ACTION_LABELS: Record<string, string> = { APPROVED: 'Approved', RETURNED: 'Returned', DISAPPROVED: 'Disapproved', CANCELLED: 'Cancelled' };
+
+/** The requester's own Prepared By row is stored as APPROVED but means the RFA was sent, not self-approved. */
+function actionLabel(step: string, action: string): string {
+  if (step === 'PREPARED_BY' && action === 'APPROVED') return 'Sent';
+  return ACTION_LABELS[action] ?? action;
+}
 
 function sameApprover(a: Approval, b: Approval): boolean {
   if (a.APPROVER_USER_ID && b.APPROVER_USER_ID) return a.APPROVER_USER_ID === b.APPROVER_USER_ID;
@@ -322,11 +328,12 @@ function HistoryTable({ approvals, status }: { approvals: Approval[]; status: st
       <thead><tr><th>Step</th><th>Approver</th><th>Action</th><th>Remarks</th><th>Date and Time</th></tr></thead>
       <tbody>{rows.map((approval) => {
         const acted = Boolean(approval.ACTION);
-        const label = acted ? (ACTION_LABELS[approval.ACTION] ?? approval.ACTION) : awaiting ? 'Pending' : 'Not reached';
+        const sent = approval.STEP === 'PREPARED_BY' && approval.ACTION === 'APPROVED';
+        const label = acted ? actionLabel(approval.STEP, approval.ACTION) : awaiting ? 'Pending' : 'Not reached';
         return <tr key={approval.APPROVAL_ID}>
           <td data-label="Step">{stepLabel(approval.STEP)}</td>
           <td data-label="Approver">{approval.APPROVER_NAME ? displayName(approval.APPROVER_NAME) : 'System'}</td>
-          <td data-label="Action"><span className={`history-action history-action-${acted ? approval.ACTION.toLowerCase() : awaiting ? 'pending' : 'idle'}`}>{label}</span></td>
+          <td data-label="Action"><span className={`history-action history-action-${sent ? 'sent' : acted ? approval.ACTION.toLowerCase() : awaiting ? 'pending' : 'idle'}`}>{label}</span></td>
           <td data-label="Remarks">{approval.REMARKS || '—'}</td>
           <td data-label={acted ? 'Date and Time' : 'Assigned'}>{acted ? dateTime(approval.TIMESTAMP) : <span className="history-muted">Assigned {dateTime(approval.TIMESTAMP)}</span>}</td>
         </tr>;
