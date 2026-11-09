@@ -97,10 +97,22 @@ function UsersImportPanel({ onSaved, onError }: { onSaved: () => void; onError: 
     } catch (e) { onError(e instanceof Error ? e.message : 'Import failed.'); }
     finally { setBusy(false); }
   }
-  if (!open) return <div className="form-card" style={{ marginBottom: '1rem' }}><button className="button secondary" onClick={() => setOpen(true)}>Import departments / users / heads from JSON</button><p className="muted">Safe insert-only: existing emails/departments are skipped, never overwritten. Use the generated `erfa-import-payload.json` from the Excel.</p></div>;
+  async function loadFile(file: File | undefined) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onerror = () => onError('Could not read the file.');
+    reader.onload = () => {
+      const text = String(reader.result ?? '');
+      // Strip BOM that Excel/VS Code sometimes adds
+      setJsonText(text.replace(/^\uFEFF/, ''));
+    };
+    reader.readAsText(file);
+  }
+  if (!open) return <div className="form-card" style={{ marginBottom: '1rem' }}><button className="button secondary" onClick={() => setOpen(true)}>Import departments / users / heads from JSON</button><p className="muted">Overwrite-proof: existing emails keep history; department + designation (Position) are overwritten from the file.</p></div>;
   return <section className="form-card" style={{ marginBottom: '1rem' }}>
     <h3>Import from Excel payload (JSON)</h3>
-    <p className="muted">Paste the contents of <code>import/erfa-import-payload.json</code>. Entries with missing emails are skipped.</p>
+    <p className="muted">Pick the file <code>erfa-import-payload.json</code> — no copy-paste needed. Entries with missing emails are skipped.</p>
+    <label className="field"><span>Choose payload file</span><input type="file" accept=".json,application/json" onChange={(e) => void loadFile(e.target.files?.[0])} /></label>
     <label className="field"><span>Payload JSON</span><textarea rows={8} value={jsonText} onChange={(e) => setJsonText(e.target.value)} placeholder='{"departments":[],"users":[],"heads":[]}' /></label>
     {result && <p>{result}</p>}
     <div className="dialog-actions"><button className="button secondary" onClick={() => setOpen(false)}>Cancel</button><button className="button primary" disabled={busy || !jsonText} onClick={() => void runImport()}>Run import</button></div>
