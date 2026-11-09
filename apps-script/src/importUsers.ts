@@ -62,6 +62,9 @@ export function importUsersFromList(actor: SessionUser, payload: Record<string, 
     const existing = deptByCode.get(code) || deptByName.get(name.toLowerCase());
     if (existing) {
       deptIdForCode.set(code, existing.DEPARTMENT_ID);
+      // Alias payload code to the existing department so user lookup by payload code succeeds
+      if (!deptByCode.has(code)) deptByCode.set(code, existing);
+      if (!deptByName.has(name.toLowerCase())) deptByName.set(name.toLowerCase(), existing);
       skippedDepartments.push(code);
       continue;
     }
@@ -135,7 +138,8 @@ export function importUsersFromList(actor: SessionUser, payload: Record<string, 
 
   const createdHeads: string[] = [];
   const skippedHeads: Array<{ key: string; reason: string }> = [];
-  const existingHeads = all<SheetRecord>('DEPARTMENT_HEADS');
+  let existingHeads: SheetRecord[] = [];
+  try { existingHeads = all<SheetRecord>('DEPARTMENT_HEADS'); } catch { skippedHeads.push({ key: 'ALL', reason: 'DEPARTMENT_HEADS sheet missing — run setupDatabase() first' }); }
   for (const raw of headsIn) {
     const code = String(raw.departmentCode || '').trim().toUpperCase();
     const email = normalizeEmail(raw.userEmail || '');

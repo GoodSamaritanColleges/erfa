@@ -45,4 +45,16 @@ describe('importUsersFromList', () => {
     expect(existing.DEPARTMENT_ID).toBeTruthy();
     expect((sheets.get('USERS') || [])).toHaveLength(2);
   });
+
+  it('assigns users when existing department has a different code but same name', () => {
+    sheets.set('DEPARTMENTS', [{ DEPARTMENT_ID: 'dep_existing', DEPARTMENT_NAME: 'Office Of Legal Affairs', DEPARTMENT_CODE: 'LEGAL', ACTIVE: true }]);
+    const result = importUsersFromList(admin, {
+      departments: [{ departmentName: 'Office Of Legal Affairs', departmentCode: 'OLA', isAcademic: false }],
+      users: [{ fullName: 'Head', email: 'head@x.edu', departmentCode: 'OLA', position: 'Counsel' }],
+      heads: [{ departmentCode: 'OLA', userEmail: 'head@x.edu' }]
+    }) as { createdUsers: string[]; createdDepartments: string[] };
+    expect(result.createdUsers).toEqual(['head@x.edu']);
+    const created = (sheets.get('USERS') || []).find((u) => u.EMAIL === 'head@x.edu') as Record<string, unknown>;
+    expect(created.DEPARTMENT_ID).toBe('dep_existing');
+  });
 });
