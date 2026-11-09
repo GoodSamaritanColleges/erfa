@@ -2,7 +2,7 @@ import { APP_VERSION } from './constants';
 import { timed } from './performance';
 import { dashboardHome } from './dashboard';
 import { authenticate, requireCapability } from './auth';
-import { adminAudit, adminData, removeDepartmentHead, saveApprovalSettings, saveDepartment, saveDepartmentHead, saveMatrix, saveUser } from './admin';
+import { adminAudit, adminData, cleanImportedData, removeDepartmentHead, saveApprovalSettings, saveDepartment, saveDepartmentHead, saveMatrix, saveUser } from './admin';
 import { importUsersFromList } from './importUsers';
 import { adjustBudget, adminBudgetManagement, adminBudgetOverview, adminBudgetSummary, adminExpenseCategories, budgetReport, departmentExpenseReport, departmentFinancialDetail, expenseMonitoringReport, requesterBudgetContext, saveBudget, saveCategory, setOverBudget } from './budget';
 import { getDatabase, resetPerRequestCache } from './store';
@@ -53,6 +53,7 @@ function dispatchRequest(request: ApiRequest): unknown {
     case 'admin.department.save': return withLock(() => saveDepartment(user, payload));
     case 'admin.departmentHead.save': return withLock(() => saveDepartmentHead(user, payload));
     case 'admin.departmentHead.remove': return withLock(() => removeDepartmentHead(user, payload));
+    case 'admin.data.clean': return withLock(() => cleanImportedData(user, payload));
     case 'admin.users.import': return withLock(() => importUsersFromList(user, payload));
     case 'admin.settings.save': return withLock(() => saveApprovalSettings(user, payload));
     case 'admin.matrix.save': return withLock(() => saveMatrix(user, payload));

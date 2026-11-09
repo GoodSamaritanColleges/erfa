@@ -1,9 +1,9 @@
 import { audit } from './audit';
 import { normalizeEmail, parsePresidentThresholdCents, toBoolean } from './core';
 import { requireCapability } from './auth';
-import { all, allTail, findBy, getSetting, insert, newId, nowIso, setSetting, updateBy } from './store';
+import { all, allTail, findBy, getDatabase, getSetting, insert, newId, nowIso, setSetting, updateBy } from './store';
 import type { ApprovalStep, DepartmentHeadRecord, DepartmentRecord, MatrixRecord, RfaRecord, SessionUser, SheetRecord, UserRecord } from './types';
-import { APPROVAL_STEPS } from './constants';
+import { APPROVAL_STEPS, SHEETS } from './constants';
 
 function required(value: unknown, label: string): string {
   const clean = String(value ?? '').trim();
@@ -101,6 +101,34 @@ export function saveApprovalSettings(actor: SessionUser, payload: Record<string,
   }
   audit('APPROVAL_SETTINGS_CHANGED', actor, '', '', '', 'approval settings updated', {});
   return adminData(actor);
+}
+
+function deleteSheetRows(sheetName: keyof typeof SHEETS, keep: (row: SheetRecord) => boolean): number {
+  const sheet = getDatabase().getSheetByName(sheetName);
+  if (!sheet) return 0;
+  const headers = [...SHEETS[sheetName]] as string[];
+  if (sheet.getLastRow() < 2) return 0;
+  const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).getValues();
+  let deleted = 0;
+  for (let i = values.length - 1; i >= 0; i -= 1) {
+    const row: SheetRecord = {};
+    headers.forEach((h, idx) => { row[h] = values[i][idx] as string; });
+    if (!keep(row)) { sheet.deleteRow(i + 2); deleted += 1; }
+  }
+  return deleted;
+}
+
+/** Wipe imported users/departments/heads, keep admins + approval rules + RFAs/audit. */
+export function cleanImportedData(actor: SessionUser, payload: Record<string, unknown>): Record<string, unknown> {
+  requireCapability(actor, 'IS_ADMIN');
+  if (String(payload.confirm || '').trim().toUpperCase() !== 'DELETE') throw new Error('Type DELETE to confirm cleaning. This deletes non-admin users, departments and heads (keeps Approval Matrix, Settings, RFAs and audit).');
+  const adminEmails = new Set(all<UserRecord>('USERS').filter((u) => toBoolean(u.IS_ADMIN)).map((u) => normalizeEmail(u.EMAIL)));
+  adminEmails.add(normalizeEmail(actor.EMAIL));
+  const usersDeleted = deleteSheetRows('USERS', (row) => adminEmails.has(normalizeEmail(row.EMAIL)) || toBoolean(row.IS_ADMIN));
+  const headsDeleted = (() => { try { return deleteSheetRows('DEPARTMENT_HEADS', () => false); } catch { return 0; } })();
+  const departmentsDeleted = deleteSheetRows('DEPARTMENTS', () => false);
+  audit('IMPORT_CLEANED', actor, '', '', '', `users=${usersDeleted} departments=${departmentsDeleted} heads=${headsDeleted}`, { usersDeleted, departmentsDeleted, headsDeleted });
+  return { usersDeleted, departmentsDeleted, headsDeleted, message: `Cleaned ${usersDeleted} users, ${departmentsDeleted} departments, ${headsDeleted} heads. Approval rules kept.` };
 }
 
 export function saveUser(actor: SessionUser, payload: Record<string, unknown>): UserRecord {

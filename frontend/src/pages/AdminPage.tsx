@@ -108,14 +108,31 @@ function UsersImportPanel({ onSaved, onError }: { onSaved: () => void; onError: 
     };
     reader.readAsText(file);
   }
-  if (!open) return <div className="form-card" style={{ marginBottom: '1rem' }}><button className="button secondary" onClick={() => setOpen(true)}>Import departments / users / heads from JSON</button><p className="muted">Overwrite-proof: existing emails keep history; department + designation (Position) are overwritten from the file.</p></div>;
+  const [cleanConfirm, setCleanConfirm] = useState('');
+  async function runClean() {
+    setBusy(true); onError(''); setResult('');
+    try {
+      const res = await api<{ message: string }>('admin.data.clean', { confirm: cleanConfirm });
+      setResult(res.message); onSaved(); setCleanConfirm('');
+    } catch (e) { onError(e instanceof Error ? e.message : 'Clean failed.'); }
+    finally { setBusy(false); }
+  }
+  if (!open) return <div className="form-card" style={{ marginBottom: '1rem' }}>
+    <button className="button secondary" onClick={() => setOpen(true)}>Import departments / users / heads from JSON</button>{' '}
+    <button className="button secondary" onClick={() => { setOpen(true); }}>Clean wrong import (keep rules)</button>
+    <p className="muted">Import overwrites department + designation (Position) for existing emails. Clean keeps Admins + Approval Matrix + Settings + RFAs/audit, deletes other Users/Departments/Heads.</p>
+  </div>;
   return <section className="form-card" style={{ marginBottom: '1rem' }}>
     <h3>Import from Excel payload (JSON)</h3>
-    <p className="muted">Pick the file <code>erfa-import-payload.json</code> — no copy-paste needed. Entries with missing emails are skipped.</p>
+    <p className="muted">Pick the file <code>erfa-import-payload.json</code> — no copy-paste needed. Entries with missing emails are skipped. Department + designation (Position) overwrite on re-import.</p>
     <label className="field"><span>Choose payload file</span><input type="file" accept=".json,application/json" onChange={(e) => void loadFile(e.target.files?.[0])} /></label>
     <label className="field"><span>Payload JSON</span><textarea rows={8} value={jsonText} onChange={(e) => setJsonText(e.target.value)} placeholder='{"departments":[],"users":[],"heads":[]}' /></label>
+    <hr style={{ margin: '1rem 0' }} />
+    <h3>Clean wrong import (keep rules)</h3>
+    <p className="muted">Deletes all non-admin Users, all Departments and Heads. Keeps **Admins, Approval Matrix, Settings, RFAs and audit**. Type <b>DELETE</b> to confirm.</p>
+    <label className="field"><span>Type DELETE to confirm</span><input value={cleanConfirm} onChange={(e) => setCleanConfirm(e.target.value)} placeholder="DELETE" /></label>
     {result && <p>{result}</p>}
-    <div className="dialog-actions"><button className="button secondary" onClick={() => setOpen(false)}>Cancel</button><button className="button primary" disabled={busy || !jsonText} onClick={() => void runImport()}>Run import</button></div>
+    <div className="dialog-actions"><button className="button secondary" onClick={() => setOpen(false)}>Cancel</button><button className="button secondary" disabled={busy || cleanConfirm !== 'DELETE'} onClick={() => void runClean()}>Clean wrong import</button><button className="button primary" disabled={busy || !jsonText} onClick={() => void runImport()}>Run import</button></div>
   </section>;
 }
 
