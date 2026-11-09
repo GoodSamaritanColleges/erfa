@@ -2,13 +2,19 @@ const API_URL = import.meta.env.VITE_API_URL as string | undefined;
 const TOKEN_KEY = 'erfa_google_id_token';
 const coalescedReads = new Set(['session', 'dashboard.home', 'dashboard.rfas', 'rfa.list', 'rfa.forApproval', 'rfa.detail', 'rfa.eligibleApprovers', 'rfa.departments', 'rfa.fixedRoute', 'expense.monitoring', 'admin.audit', 'admin.data', 'admin.budget.summary', 'admin.budget.overview', 'admin.budget.management', 'admin.category.list', 'admin.budget.report', 'admin.budget.expenses', 'admin.budget.detail', 'budget.context']);
 const pendingReads = new Map<string, Promise<unknown>>();
+// Short-lived cache for list/lookup reads so moving between pages is instant.
+// Any write (non-read action) or sign-out clears it, so users never act on stale data after their own changes.
+const cachedReads = new Set(['dashboard.home', 'dashboard.rfas', 'rfa.list', 'rfa.forApproval', 'rfa.departments', 'rfa.fixedRoute', 'admin.category.list', 'budget.context']);
+const READ_CACHE_TTL_MS = 30_000;
+const readCache = new Map<string, { at: number; data: unknown }>();
+export function clearReadCache(): void { readCache.clear(); }
 
 export class ApiError extends Error {
   constructor(public code: string, message: string) { super(message); }
 }
 
 export function getToken(): string { return sessionStorage.getItem(TOKEN_KEY) ?? ''; }
-export function setToken(token: string): void { if (token) sessionStorage.setItem(TOKEN_KEY, token); else sessionStorage.removeItem(TOKEN_KEY); }
+export function setToken(token: string): void { clearReadCache(); if (token) sessionStorage.setItem(TOKEN_KEY, token); else sessionStorage.removeItem(TOKEN_KEY); }
 export function isConfigured(): boolean { return Boolean(API_URL && import.meta.env.VITE_GOOGLE_CLIENT_ID); }
 
 export async function api<T>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
@@ -16,6 +22,12 @@ export async function api<T>(action: string, payload: Record<string, unknown> = 
   const idToken = getToken();
   const diagnostic = sessionStorage.getItem('erfa_perf') === '1';
   const key = coalescedReads.has(action) ? JSON.stringify([action, payload, idToken]) : '';
+  if (!key) clearReadCache();
+  const cacheable = Boolean(key) && cachedReads.has(action);
+  if (cacheable) {
+    const hit = readCache.get(key);
+    if (hit && Date.now() - hit.at < READ_CACHE_TTL_MS) return hit.data as T;
+  }
   if (key && pendingReads.has(key)) return pendingReads.get(key) as Promise<T>;
   const request = (async () => {
     const start = performance.now();
@@ -38,6 +50,8 @@ export async function api<T>(action: string, payload: Record<string, unknown> = 
     parsed = performance.now();
     backend = result.performance;
     if (!result.ok || result.data === undefined) throw new ApiError(result.error?.code ?? 'SERVER_ERROR', result.error?.message ?? 'The request could not be completed.');
+    if (cacheable) readCache.set(key, { at: Date.now(), data: result.data });
+    else if (!key) clearReadCache();
     return result.data;
     } finally {
       if (diagnostic) console.info('[eRFA PERF]', /^[a-z.]+$/.test(action) ? action : 'request', {

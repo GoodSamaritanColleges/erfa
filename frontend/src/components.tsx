@@ -1,5 +1,5 @@
-import { AlertTriangle, CheckCircle2, FileText, Home, LayoutGrid, ListTodo, LoaderCircle, Send, ShieldCheck, X } from 'lucide-react';
-import { type ReactNode } from 'react';
+import { AlertTriangle, BarChart3, CheckCircle2, FilePlus2, FileText, Home, ListTodo, LoaderCircle, LogOut, Settings2, ShieldCheck, Wallet, X } from 'lucide-react';
+import { Suspense, type ReactNode } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from './auth';
 import { statusLabel } from './format';
@@ -7,6 +7,21 @@ import type { RfaStatus } from './types';
 
 export function Spinner({ label = 'Loading' }: { label?: string }) {
   return <div className="spinner-wrap" role="status"><LoaderCircle className="spin" /><span>{label}...</span></div>;
+}
+
+export function PageFallback() {
+  return <div className="page-fallback" aria-busy="true" aria-label="Loading page">
+    <div className="skeleton" style={{ height: 12, width: 120, marginBottom: 10 }} />
+    <div className="skeleton" style={{ height: 26, width: 260, marginBottom: 10 }} />
+    <div className="skeleton" style={{ height: 14, width: 360, marginBottom: 24 }} />
+    <div className="panel">
+      {Array.from({ length: 4 }).map((_, i) => <div key={i} className="skeleton-row"><div className="skeleton skeleton-cell" style={{ width: 90 }} /><div className="skeleton skeleton-cell" style={{ flex: 1 }} /><div className="skeleton skeleton-cell" style={{ width: 70 }} /></div>)}
+    </div>
+  </div>;
+}
+
+function initials(name: string): string {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase() ?? '').join('') || '?';
 }
 
 export function StatusBadge({ status }: { status: RfaStatus | string }) {
@@ -46,19 +61,23 @@ export function Layout() {
         <span className="sidebar-nav-label">Navigation</span>
         <NavLink to="/" end><Home /> Dashboard</NavLink>
         <NavLink to="/rfas"><ListTodo /> My RFAs</NavLink>
-        {user.CAN_CREATE_RFA && <NavLink to="/rfa/new"><Send /> Create RFA</NavLink>}
+        {user.CAN_CREATE_RFA && <NavLink to="/rfa/new"><FilePlus2 /> Create RFA</NavLink>}
         {user.CAN_APPROVE_RFA && <NavLink to="/approvals"><ShieldCheck /> For My Action</NavLink>}
-        {user.IS_ADMIN && <NavLink to="/admin" end><LayoutGrid /> Administration</NavLink>}
-        {user.IS_ADMIN && <NavLink to="/admin/expense-monitoring"><LayoutGrid /> Expense Monitoring</NavLink>}
-        {user.IS_ADMIN && <NavLink to="/admin/expense-reports"><ListTodo /> Expense Reports</NavLink>}
+        {user.IS_ADMIN && <span className="sidebar-nav-label">Administration</span>}
+        {user.IS_ADMIN && <NavLink to="/admin" end><Settings2 /> Administration</NavLink>}
+        {user.IS_ADMIN && <NavLink to="/admin/expense-monitoring"><Wallet /> Expense Monitoring</NavLink>}
+        {user.IS_ADMIN && <NavLink to="/admin/expense-reports"><BarChart3 /> Expense Reports</NavLink>}
       </nav>
 
       <div className="sidebar-footer">
         <div className="sidebar-user">
-          <b>{user.FULL_NAME}</b>
-          <small>{user.POSITION || user.DEPARTMENT_NAME || user.EMAIL}</small>
+          <span className="avatar" aria-hidden>{initials(user.FULL_NAME)}</span>
+          <div>
+            <b>{user.FULL_NAME}</b>
+            <small>{user.POSITION || user.DEPARTMENT_NAME || user.EMAIL}</small>
+          </div>
         </div>
-        <button className="button ghost" onClick={signOut}>Sign out</button>
+        <button className="button ghost" onClick={signOut}><LogOut /> Sign out</button>
       </div>
     </aside>
 
@@ -68,10 +87,13 @@ export function Layout() {
           <FileText size={15} />
           <div><span className="content-header-context">Electronic Request for Approval</span><b>{pageTitle}</b></div>
         </div>
-        <span className="content-header-user" title={user.FULL_NAME}>{user.FULL_NAME}</span>
+        <div className="content-header-right">
+          <span className="content-header-user" title={user.FULL_NAME}>{user.FULL_NAME}</span>
+          <span className="avatar small" aria-hidden>{initials(user.FULL_NAME)}</span>
+        </div>
       </header>
 
-      <main className="page"><Outlet /></main>
+      <main className="page"><Suspense fallback={<PageFallback />}><Outlet /></Suspense></main>
 
       <footer className="site-footer">
         <span>eRFA - Good Samaritan Colleges</span>
@@ -81,13 +103,13 @@ export function Layout() {
 
     {/* Mobile navigation — visible only via CSS media query at ≤900px */}
     <nav className="mobile-nav" aria-label="Mobile navigation">
-      <NavLink to="/" end>Dashboard</NavLink>
-      <NavLink to="/rfas">My RFAs</NavLink>
-      {user.CAN_CREATE_RFA && <NavLink to="/rfa/new">Create RFA</NavLink>}
-      {user.CAN_APPROVE_RFA && <NavLink to="/approvals">For My Action</NavLink>}
-      {user.IS_ADMIN && <NavLink to="/admin" end>Admin</NavLink>}
-      {user.IS_ADMIN && <NavLink to="/admin/expense-monitoring">Expenses</NavLink>}
-      {user.IS_ADMIN && <NavLink to="/admin/expense-reports">Reports</NavLink>}
+      <NavLink to="/" end><Home />Home</NavLink>
+      <NavLink to="/rfas"><ListTodo />My RFAs</NavLink>
+      {user.CAN_CREATE_RFA && <NavLink to="/rfa/new"><FilePlus2 />Create</NavLink>}
+      {user.CAN_APPROVE_RFA && <NavLink to="/approvals"><ShieldCheck />Action</NavLink>}
+      {user.IS_ADMIN && <NavLink to="/admin" end><Settings2 />Admin</NavLink>}
+      {user.IS_ADMIN && <NavLink to="/admin/expense-monitoring"><Wallet />Expenses</NavLink>}
+      {user.IS_ADMIN && <NavLink to="/admin/expense-reports"><BarChart3 />Reports</NavLink>}
     </nav>
   </div>;
 }

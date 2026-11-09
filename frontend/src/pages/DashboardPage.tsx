@@ -81,11 +81,11 @@ export function DashboardPage() {
     <ErrorNotice message={error} />
 
     <section className="metrics" aria-label="RFA summary">
-      <Metric icon={<FilePenLine />} label="Draft" value={counts.draft} />
-      <Metric icon={<Clock3 />} label="Pending" value={counts.pending} />
-      <Metric icon={<RotateCcw />} label="Returned" value={counts.returned} />
-      <Metric icon={<CheckCircle2 />} label="Approved" value={counts.approved} />
-      <Metric icon={<ShieldCheck />} label="Closed" value={counts.closed} />
+      <Metric tone="neutral" icon={<FilePenLine />} label="Draft" value={counts.draft} />
+      <Metric tone="blue" icon={<Clock3 />} label="Pending" value={counts.pending} />
+      <Metric tone="amber" icon={<RotateCcw />} label="Returned" value={counts.returned} />
+      <Metric tone="green" icon={<CheckCircle2 />} label="Approved" value={counts.approved} />
+      <Metric tone="navy" icon={<ShieldCheck />} label="Closed" value={counts.closed} />
     </section>
 
     {user?.IS_ADMIN && expenses && <section className="panel budget-dashboard">
@@ -122,8 +122,8 @@ export function DashboardPage() {
   </>;
 }
 
-function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) {
-  return <div className="metric">
+function Metric({ icon, label, value, tone = 'neutral' }: { icon: React.ReactNode; label: string; value: number; tone?: string }) {
+  return <div className={`metric tone-${tone}`}>
     <span className="metric-icon">{icon}</span>
     <div><strong>{value}</strong><span>{label}</span></div>
   </div>;

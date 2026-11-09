@@ -1,7 +1,7 @@
 import { Search } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
-import { ErrorNotice, Spinner } from '../components';
+import { ErrorNotice } from '../components';
 import type { Rfa } from '../types';
 import { Empty, RfaTable } from './DashboardPage';
 
@@ -22,7 +22,7 @@ export function RfaListPage({ approvalsOnly = false }: { approvalsOnly?: boolean
     setLoading(true);
     const timer = setTimeout(() => {
       void api<Rfa[]>(approvalsOnly ? 'rfa.forApproval' : 'rfa.list', approvalsOnly ? {} : { query, status, expenseClassification, fiscalYear })
-        .then((next) => { if (current) setRfas(next); })
+        .then((next) => { if (current) { setRfas(next); setError(''); } })
         .catch((caught: Error) => { if (current) setError(caught.message); })
         .finally(() => { if (current) setLoading(false); });
     }, delay);
@@ -66,12 +66,23 @@ export function RfaListPage({ approvalsOnly = false }: { approvalsOnly?: boolean
         <input value={fiscalYear} onChange={(e) => setFiscalYear(e.target.value)} placeholder="Fiscal year (e.g. 2026)" inputMode="numeric" aria-label="Fiscal year" />
       </label>
     </div>}
-    <section className="panel flush">
-      {loading
-        ? <Spinner label="Loading RFAs" />
+    <section className={`panel flush${loading && rfas.length ? ' is-refreshing' : ''}`} aria-busy={loading}>
+      {loading && !rfas.length
+        ? <ListSkeleton />
         : rfas.length
           ? <RfaTable rfas={rfas} review={approvalsOnly} />
           : <Empty title={approvalsOnly ? 'No requests need your action' : 'No matching RFAs'} text={approvalsOnly ? 'Your queue is clear.' : 'Try a different search or create a new Request for Approval.'} />}
     </section>
   </>;
+}
+
+function ListSkeleton() {
+  return <div aria-label="Loading RFAs" role="status">
+    {Array.from({ length: 6 }).map((_, i) => <div key={i} className="skeleton-row">
+      <div className="skeleton skeleton-cell" style={{ width: 96 }} />
+      <div className="skeleton skeleton-cell" style={{ flex: 1 }} />
+      <div className="skeleton skeleton-cell" style={{ width: 110 }} />
+      <div className="skeleton skeleton-cell" style={{ width: 80 }} />
+    </div>)}
+  </div>;
 }
