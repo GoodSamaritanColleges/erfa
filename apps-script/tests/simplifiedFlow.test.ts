@@ -206,19 +206,18 @@ describe('official matrix — 12 scenarios', () => {
     expect(status(draft.RFA_ID)).toBe('APPROVED');
   });
 
-  it('5. Department with two heads: either head can provide recommending approval', () => {
+  it('5. Department with two heads: both heads must approve recommending', () => {
     seedOfficial({ requestingDeptId: 'dual', isAcademic: false, heads: { dual: ['dualHead1', 'dualHead2'] } });
     const req = requesterFor('dual');
     const draft = createRfa(req, input({ requestedAmount: '10000', budgetAllocation: 10000 }));
     expect(assignmentsFor(draft.RFA_ID, 'RECOMMENDING_APPROVAL').sort()).toEqual(['dualHead1', 'dualHead2'].sort());
-    // No alternate required
     submitRfa(req, draft.RFA_ID);
     expect(step(draft.RFA_ID)).toBe('RECOMMENDING_APPROVAL');
-    // First head approves; stage completes without second head
+    // First head approves; stage stays pending until second head also approves
     acted(draft.RFA_ID, userById('dualHead2'));
+    expect(step(draft.RFA_ID)).toBe('RECOMMENDING_APPROVAL');
+    acted(draft.RFA_ID, userById('dualHead1'));
     expect(step(draft.RFA_ID)).toBe('REVIEWED_AND_NOTED');
-    // Second head can no longer act (moved on)
-    expect(() => acted(draft.RFA_ID, userById('dualHead1'))).toThrow('not assigned');
   });
 
   it('6. Department with one head: head approves alone (alternate removed)', () => {

@@ -1,7 +1,7 @@
 import { ALLOWED_ATTACHMENT_TYPES, APPROVAL_SECTIONS, ASSIGNMENT_WORKFLOW_MARKER, FIXED_WORKFLOW_MARKER, LEGACY_APPROVAL_SECTIONS, OFFICIAL_WORKFLOW_MARKER, STEP_STATUS, V2_APPROVAL_SECTIONS } from './constants';
 import { audit } from './audit';
 import { commitApprovedFinancialRfa, financialDetail, financialRfaFields, recordActualExpense } from './budget';
-import { formatRfaNumber, isJhsOrShsDepartment, isOrStageCompleted, nextAssignedSection, nextAssignedStageAfterAction, normalizeEmail, orderedMatrix, parsePresidentThresholdCents, selectNextApprover, toBoolean, validateExpenseClassification, validateRfaInput } from './core';
+import { formatRfaNumber, isJhsOrShsDepartment, nextAssignedSection, nextAssignedStageAfterAction, normalizeEmail, orderedMatrix, parsePresidentThresholdCents, selectNextApprover, toBoolean, validateExpenseClassification, validateRfaInput } from './core';
 import { notify } from './notifications';
 import { all, clearPendingRfaAssignments, findBy, getAssignmentsBySection, getSetting, insert, newId, nowIso, saveRfaSectionAssignments, setSetting, updateBy } from './store';
 import type { ApprovalSection, DepartmentHeadRecord, DepartmentRecord, EligibleApprover, MatrixRecord, RfaRecord, RfaSectionAssignments, SessionUser, SheetRecord, UserRecord } from './types';
@@ -464,7 +464,7 @@ export interface OfficialSelections {
 
 /**
  * Official V3 resolver. strict=true enforces all mandatory/conditional config at submit.
- * Recommending stage is OR (one head suffices). Other stages are AND.
+ * All stages are AND: every assigned approver (including every recommending head) must approve.
  */
 function resolveOfficialAssignments(
   departmentId: string,
@@ -498,7 +498,7 @@ function resolveOfficialAssignments(
     return out;
   };
 
-  // --- Stage 1: Recommending Approval (Dept Head, OR) ---
+  // --- Stage 1: Recommending Approval (Dept Head — all must approve) ---
   // Alternate selection removed — single head approves alone; dual heads: either approves.
   let recommending: EligibleApprover[] = [];
   const heads = getDepartmentHeads(departmentId, usersById, requester, requesterUserId, true);
@@ -939,10 +939,7 @@ export function decideRfa(user: SessionUser, rfaId: string, action: 'APPROVED' |
     const sections = sectionsForRfa(rfa);
     const assignedCounts = sections.reduce((counts, section) => ({ ...counts, [section]: getAssignmentsBySection(rfa.RFA_ID, section).length }), {} as Record<string, number>);
     const approvedCounts = sections.reduce((counts, section) => ({ ...counts, [section]: getApprovedAssignments(rfa, section).length }), {} as Record<string, number>);
-    // Official Recommending is OR: one head suffices to complete the stage.
-    if (isOfficialWorkflow(rfa) && assignmentSection === 'RECOMMENDING_APPROVAL' && isOrStageCompleted(assignedCounts[assignmentSection] ?? 0, approvedCounts[assignmentSection] ?? 0)) {
-      return routeAssigned(rfa, user, sections.indexOf(assignmentSection) + 1);
-    }
+    // All stages are AND: every assigned approver (including every recommending head) must approve.
     const next = nextAssignedStageAfterAction(assignedCounts, approvedCounts, sections.indexOf(assignmentSection), sections);
     if (next === assignmentSection) return rfa;
     return routeAssigned(rfa, user, sections.indexOf(assignmentSection) + 1);

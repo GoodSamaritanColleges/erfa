@@ -272,8 +272,7 @@ function assignmentRows(step: ApprovalStep, approvals: Approval[]): Approval[] {
 function WorkflowStep({ step, index, rfa, approvals, current, notApplicable }: { step: ApprovalStep; index: number; rfa: Rfa; approvals: Approval[]; current: boolean; notApplicable: boolean }) {
   const assigned = assignmentRows(step, approvals);
   const approvedUsers = new Set(currentSubmissionActions(rfa, step, approvals).filter((item) => item.ACTION === 'APPROVED').map((item) => item.APPROVER_USER_ID));
-  const isOrStage = step === 'RECOMMENDING_APPROVAL' && rfa.CURRENT_MATRIX_ID === 'RFA_FIXED_V3';
-  const completed = isOrStage ? approvedUsers.size > 0 : assigned.length ? assigned.every((item) => approvedUsers.has(item.APPROVER_USER_ID)) : approvedUsers.size > 0;
+  const completed = assigned.length ? assigned.every((item) => approvedUsers.has(item.APPROVER_USER_ID)) : approvedUsers.size > 0;
   const exception = approvals.some((item) => item.STEP === step && ['RETURNED','DISAPPROVED','EXCEPTION'].includes(item.ACTION));
   return <div className={`${completed ? 'completed' : ''} ${current ? 'current' : ''} ${exception ? 'exception' : ''} ${notApplicable ? 'skipped' : ''}`}>
     <span>{completed ? <Check size={14} /> : index + 1}</span>
