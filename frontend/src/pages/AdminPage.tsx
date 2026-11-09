@@ -208,10 +208,12 @@ function ApprovalSettingsPanel({ data, onSaved, onError }: { data: AdminData; on
   const approverOptions = data.users.filter((u) => u.ACTIVE && u.CAN_APPROVE_RFA);
   const userSelect = (key: keyof typeof form, label: string) => (
     <label className="field"><span>{label}</span>
-      <select value={String(form[key] ?? '')} onChange={(e) => set(key, e.target.value)}>
-        <option value="">Not configured (name lookup)</option>
-        {approverOptions.map((u) => <option key={u.USER_ID} value={u.USER_ID}>{u.FULL_NAME} - {u.EMAIL}</option>)}
-      </select>
+      <SearchableSelect
+        value={String(form[key] ?? '')}
+        options={approverOptions.map((u) => ({ value: u.USER_ID, label: `${u.FULL_NAME} - ${u.EMAIL}` }))}
+        placeholder="Search name or email…"
+        onChange={(v) => set(key, v)}
+      />
     </label>
   );
   const approvedIds = String(form.approvedMandatoryUserIds ?? '').split(',').map((s) => s.trim()).filter(Boolean);
@@ -226,8 +228,8 @@ function ApprovalSettingsPanel({ data, onSaved, onError }: { data: AdminData; on
     <div className="form-grid">
       <label className="field"><span>Presidential threshold (PHP)</span><input inputMode="decimal" value={form.presidentThresholdPhp} onChange={(e) => set('presidentThresholdPhp', e.target.value)} /></label>
       {userSelect('reviewedMandatoryUserId', 'Reviewed and Noted mandatory (Ofelia Hocson)')}
-      <label className="field"><span>Approved mandatory — Ma'am Tago (Ana Liza Tago)</span><select value={approvedIds[0] ?? ''} onChange={(e) => setApprovedId(0, e.target.value)}><option value="">Not configured (name lookup)</option>{approverOptions.map((u) => <option key={u.USER_ID} value={u.USER_ID}>{u.FULL_NAME} - {u.EMAIL}</option>)}</select><small>Always together with VP Raquel below.</small></label>
-      <label className="field"><span>Approved mandatory — VP Raquel (Raquel Baquiran)</span><select value={approvedIds[1] ?? ''} onChange={(e) => setApprovedId(1, e.target.value)}><option value="">Not configured (name lookup)</option>{approverOptions.map((u) => <option key={u.USER_ID} value={u.USER_ID}>{u.FULL_NAME} - {u.EMAIL}</option>)}</select><small>Always together with Ma'am Tago.</small></label>
+      <label className="field"><span>Approved mandatory — Ma'am Tago (Ana Liza Tago)</span><SearchableSelect value={approvedIds[0] ?? ''} options={approverOptions.map((u) => ({ value: u.USER_ID, label: `${u.FULL_NAME} - ${u.EMAIL}` }))} placeholder="Search name or email…" onChange={(v) => setApprovedId(0, v)} /><small>Always together with VP Raquel below.</small></label>
+      <label className="field"><span>Approved mandatory — VP Raquel (Raquel Baquiran)</span><SearchableSelect value={approvedIds[1] ?? ''} options={approverOptions.map((u) => ({ value: u.USER_ID, label: `${u.FULL_NAME} - ${u.EMAIL}` }))} placeholder="Search name or email…" onChange={(v) => setApprovedId(1, v)} /><small>Always together with Ma'am Tago.</small></label>
       {userSelect('vpAcademicUserId', 'VP Academic (Jennelyn De Guzman)')}
       {userSelect('presidentUserId', 'President (Alessandra De Guzman-Valino)')}
       {userSelect('principalUserId', 'JHS/SHS Principal (Noliver Garcia)')}
@@ -369,4 +371,35 @@ function AdminForm({ tab, editing, data, onSaved, onError }: { tab: Tab; editing
 
 function Checkbox({ label, checked, set }: { label: string; checked: boolean; set: (value: boolean) => void }) {
   return <label className="checkbox"><input type="checkbox" checked={checked} onChange={(e) => set(e.target.checked)}/><span>{label}</span></label>;
+}
+
+function SearchableSelect({ value, options, placeholder, onChange }: { value: string; options: Array<{ value: string; label: string }>; placeholder: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [highlight, setHighlight] = useState(0);
+  const selectedLabel = options.find((o) => o.value === value)?.label || '';
+  const filtered = query.trim() === ''
+    ? options
+    : options.filter((o) => o.label.toLowerCase().includes(query.trim().toLowerCase()));
+  const shown = filtered.slice(0, 80);
+  return <div className="searchable">
+    <input
+      className="searchable-input"
+      placeholder={selectedLabel || placeholder}
+      value={open ? query : selectedLabel}
+      onFocus={() => { setOpen(true); setQuery(''); setHighlight(0); }}
+      onChange={(e) => { setQuery(e.target.value); setOpen(true); setHighlight(0); }}
+      onBlur={() => { setTimeout(() => setOpen(false), 120); }}
+      onKeyDown={(e) => {
+        if (e.key === 'ArrowDown') { e.preventDefault(); setHighlight((h) => Math.min(h + 1, shown.length - 1)); }
+        if (e.key === 'ArrowUp') { e.preventDefault(); setHighlight((h) => Math.max(h - 1, 0)); }
+        if (e.key === 'Enter' && shown[highlight]) { e.preventDefault(); onChange(shown[highlight].value); setOpen(false); setQuery(''); }
+      }}
+    />
+    {open && <ul className="searchable-list">
+      <li className={value === '' ? 'active' : ''} onMouseDown={(e) => { e.preventDefault(); onChange(''); setOpen(false); setQuery(''); }}>Not configured (name lookup)</li>
+      {shown.map((o, i) => <li key={o.value} className={o.value === value || i === highlight ? 'active' : ''} onMouseDown={(e) => { e.preventDefault(); onChange(o.value); setOpen(false); setQuery(''); }}>{o.label}</li>)}
+      {shown.length === 0 && <li style={{ color: 'var(--muted)' }}>No matches</li>}
+    </ul>}
+  </div>;
 }

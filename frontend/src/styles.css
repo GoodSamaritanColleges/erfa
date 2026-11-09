@@ -349,6 +349,11 @@ tbody td small { display: block; color: var(--muted); font-size: var(--text-xs);
 .dept-option.selected .dept-text b::after { content: " ✓"; color: var(--green); font-weight: 700; }
 .approval-preview > p { margin: .75rem 0 0; font-size: var(--text-xs); color: var(--muted); line-height: 1.5; }
 .form-actions { display: flex; justify-content: flex-end; gap: .6rem; padding-top: .4rem; }
+.searchable { position: relative; }
+.searchable-input { width: 100%; min-height: 42px; padding: .55rem .65rem; border: 1px solid #cbd3de; border-radius: var(--radius); background: #fff; font-size: var(--text-sm); }
+.searchable-list { position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px); max-height: 220px; overflow-y: auto; margin: 0; padding: .35rem; list-style: none; background: #fff; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 30px rgba(16,24,40,.16); }
+.searchable-list li { padding: .55rem .65rem; border-radius: 8px; font-size: var(--text-sm); cursor: pointer; }
+.searchable-list li:hover, .searchable-list li.active { background: #eef4fb; }
 
 /* Requester-selected, administrator-authorized approval assignments */
 .approval-assignment-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .85rem; }
