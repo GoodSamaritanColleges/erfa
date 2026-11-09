@@ -677,3 +677,18 @@ tbody tr:hover { background: #fbfcfe; }
 .action-banner { background: var(--pp-tint); border-color: #c9dbf5; }
 .tabs button.active { background: var(--pp-tint); }
 .budget-note { background: var(--pp-tint-2); border-color: #c9dbf5; color: #1d3f73; }
+
+/* ============================================================
+   No orange — PaperPulse blues replace every orange accent
+   ============================================================ */
+:root {
+  --orange: #2f6fd1;        /* accent bars, borders, avatar */
+  --orange-muted: #0b4ea2;  /* small labels on white */
+}
+.financial-card { border-left-color: var(--pp-secondary); }
+.sidebar-nav a.active::before { background: #8db8ff; }
+.sidebar-nav a.active svg { color: #8db8ff; }
+.content-header-left svg { color: var(--pp-primary); }
+
+/* Keep RFA numbers and dates on one line in tables */
+td[data-label="RFA Number"] > b, td[data-label="Date Filed"] { white-space: nowrap; }
