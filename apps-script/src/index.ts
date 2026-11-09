@@ -3,6 +3,7 @@ import { bootstrapAdmin as bootstrap } from './auth';
 import { cleanImportedData } from './admin';
 import { all, setupSchema } from './store';
 import { beginPerformance, performanceSnapshot, timed } from './performance';
+import { previewRfaReset, resetRfas } from './resetRfas';
 
 function json(value: unknown): GoogleAppsScript.Content.TextOutput {
   const serialized = timed('serializationMs', () => JSON.stringify(value));
@@ -51,7 +52,24 @@ function cleanAllNow(): unknown {
   return cleanImportedData(actor as never, { confirm: 'DELETE' });
 }
 
+// After the pilot: run previewRfaResetNow first to see what would be removed,
+// then resetAllRfasKeepAccounts to clear every RFA. Accounts, departments, heads,
+// approval matrix, settings and budgets are kept, and a backup copy is made first.
+function previewRfaResetNow(): unknown {
+  const counts = previewRfaReset();
+  console.log('[eRFA] RFA reset preview (rows that would be removed):', JSON.stringify(counts));
+  return counts;
+}
+
+function resetAllRfasKeepAccounts(): unknown {
+  const admins = (all('USERS') as Array<{ IS_ADMIN?: unknown; EMAIL?: string; FULL_NAME?: string }>).filter((u) => String(u.IS_ADMIN).toUpperCase() === 'TRUE' || u.IS_ADMIN === true);
+  const actor = { FULL_NAME: admins[0]?.FULL_NAME || 'Administrator', EMAIL: admins[0]?.EMAIL || Session.getEffectiveUser().getEmail() };
+  const result = resetRfas(actor);
+  console.log('[eRFA] RFA reset complete:', JSON.stringify(result));
+  return result;
+}
+
 // The production bundle keeps implementation code inside an IIFE. Store only
 // intended Apps Script entry points here; build.mjs emits top-level forwarding
 // declarations so Apps Script can discover them in the editor and Web App.
-Object.assign(globalThis, { __erfaEntrypoints: { doGet, doPost, setupDatabase, bootstrapAdmin, cleanAllNow } });
+Object.assign(globalThis, { __erfaEntrypoints: { doGet, doPost, setupDatabase, bootstrapAdmin, cleanAllNow, previewRfaResetNow, resetAllRfasKeepAccounts } });
