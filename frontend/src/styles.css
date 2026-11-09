@@ -764,3 +764,8 @@ td[data-label="RFA Number"] > b, td[data-label="Date Filed"] { white-space: nowr
 .history-muted { color: var(--muted); font-size: var(--text-xs); }
 @media print { .history-action { border: 0; padding: 0; } .history-action::before { display: none; } }
 .history-action-sent { background: var(--pp-tint); color: var(--pp-primary); border-color: #c9dbf5; }
+
+/* Larger sidebar logo — fills the brand area */
+.sidebar-brand { min-height: 104px; padding: 1.1rem 1rem; justify-content: center; }
+.sidebar-brand img { width: 100%; max-width: 244px; }
+@media (max-width: 1200px) { .sidebar-brand img { max-width: 220px; } }
