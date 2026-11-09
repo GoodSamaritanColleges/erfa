@@ -1,7 +1,7 @@
 import { audit } from './audit';
 import { normalizeEmail, toBoolean } from './core';
 import { requireCapability } from './auth';
-import { all, insert, newId, nowIso } from './store';
+import { all, insert, newId, nowIso, updateBy } from './store';
 import type { DepartmentRecord, SessionUser, SheetRecord, UserRecord } from './types';
 
 function emailIsValid(value: string): boolean {
@@ -33,9 +33,10 @@ export interface ImportHeadInput {
 }
 
 /**
- * Safe insert-only import for Admin. Never overwrites existing users/departments
- * (matched by email for users, code/name for departments) and never deletes.
- * Missing/invalid emails are reported as skipped so Admin can fix later.
+ * Admin import. Departments are insert-only; users are matched by email and
+ * their department + designation (POSITION) are overwritten to match the file.
+ * Capabilities/active are only updated when explicitly provided in the payload.
+ * Never deletes. Missing/invalid emails are skipped for later manual entry.
  */
 export function importUsersFromList(actor: SessionUser, payload: Record<string, unknown>): Record<string, unknown> {
   requireCapability(actor, 'IS_ADMIN');
@@ -86,14 +87,29 @@ export function importUsersFromList(actor: SessionUser, payload: Record<string, 
   const skippedUsers: Array<{ email: string; reason: string }> = [];
   const userIdByEmail = new Map<string, string>();
 
+  const updatedUsers: string[] = [];
   for (const raw of usersIn) {
     const fullName = String(raw.fullName || '').trim();
     const email = normalizeEmail(raw.email || '');
     if (!fullName) { skippedUsers.push({ email: email || '(blank)', reason: 'missing name' }); continue; }
     if (!emailIsValid(email)) { skippedUsers.push({ email: email || fullName, reason: 'missing/invalid email — add later in Users' }); continue; }
     if (usersByEmail.has(email)) {
-      userIdByEmail.set(email, usersByEmail.get(email)!.USER_ID);
-      skippedUsers.push({ email, reason: 'already exists' });
+      const existing = usersByEmail.get(email)!;
+      userIdByEmail.set(email, existing.USER_ID);
+      // OVERWRITE department + designation (POSITION) from file; keep USER_ID/history
+      const code = String(raw.departmentCode || '').trim().toUpperCase();
+      const deptName = String(raw.departmentName || '').trim().toLowerCase();
+      const dept = (code && deptByCode.get(code)) || deptByName.get(deptName);
+      const updates: SheetRecord = { UPDATED_AT: nowIso() };
+      if (dept) updates.DEPARTMENT_ID = dept.DEPARTMENT_ID;
+      if (String(raw.position || '').trim()) updates.POSITION = String(raw.position || '').trim();
+      if (raw.canCreateRfa !== undefined) updates.CAN_CREATE_RFA = toBoolean(raw.canCreateRfa);
+      if (raw.canApproveRfa !== undefined) updates.CAN_APPROVE_RFA = toBoolean(raw.canApproveRfa);
+      if (Object.keys(updates).length > 1) {
+        try { updateBy('USERS', 'USER_ID', existing.USER_ID, updates); updatedUsers.push(email); } catch { skippedUsers.push({ email, reason: 'update failed' }); }
+      } else {
+        updatedUsers.push(email);
+      }
       continue;
     }
     let departmentId = '';
@@ -135,11 +151,11 @@ export function importUsersFromList(actor: SessionUser, payload: Record<string, 
     createdHeads.push(`${code}/${email}`);
   }
 
-  audit('USERS_IMPORTED', actor, '', '', '', `departments=${createdDepartments.length} users=${createdUsers.length} heads=${createdHeads.length}`, {
-    createdDepartments, createdUsers, createdHeads, skippedUsers, skippedHeads
+  audit('USERS_IMPORTED', actor, '', '', '', `departments=${createdDepartments.length} users=${createdUsers.length} updated=${updatedUsers.length} heads=${createdHeads.length}`, {
+    createdDepartments, createdUsers, updatedUsers, createdHeads, skippedUsers, skippedHeads
   } as unknown as Record<string, unknown>);
   return {
-    createdDepartments, skippedDepartments, createdUsers, skippedUsers, createdHeads, skippedHeads,
-    summary: `Departments created ${createdDepartments.length} (skipped ${skippedDepartments.length}); Users created ${createdUsers.length} (skipped ${skippedUsers.length}); Heads created ${createdHeads.length} (skipped ${skippedHeads.length})`
+    createdDepartments, skippedDepartments, createdUsers, updatedUsers, skippedUsers, createdHeads, skippedHeads,
+    summary: `Departments created ${createdDepartments.length} (skipped ${skippedDepartments.length}); Users created ${createdUsers.length} updated ${updatedUsers.length} (skipped ${skippedUsers.length}); Heads created ${createdHeads.length} (skipped ${skippedHeads.length})`
   };
 }
