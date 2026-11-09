@@ -520,7 +520,7 @@ function resolveOfficialAssignments(
   addDistinct(reviewed, mandatoryReviewed);
   if (strict && !mandatoryReviewed.length) businessError('Reviewed and Noted By mandatory approver (Ofelia Hocson) is not configured. An administrator must configure it before submission.', 'CONFIGURATION_REQUIRED');
 
-  // Optional: Other Department Heads (one representative head per involved dept)
+  // Optional: Other Department Heads (all heads per involved dept — all must approve)
   const involvedNames: string[] = [];
   for (const involvedId of selections.involvedDepartmentIds) {
     const involved = departmentMap.get(involvedId);
@@ -530,8 +530,8 @@ function resolveOfficialAssignments(
     const involvedHeads = getDepartmentHeads(involvedId, usersById, requester, requesterUserId, true);
     if (strict && !involvedHeads.length) businessError(`No department head is configured for involved department ${involved.DEPARTMENT_NAME}.`, 'CONFIGURATION_REQUIRED');
     if (involvedHeads.length) {
-      // Single representative (first head) as the involved head for this RFA.
-      addDistinct(reviewed, [toEligible(involvedHeads[0], deptNameMap)]);
+      // All heads of the involved department must approve (same AND rule as every stage).
+      addDistinct(reviewed, involvedHeads.map((h) => toEligible(h, deptNameMap)));
     }
   }
 
