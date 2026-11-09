@@ -253,21 +253,15 @@ describe('official matrix — 12 scenarios', () => {
     expect(step(draft.RFA_ID)).toBe('APPROVED_BY');
   });
 
-  it('9. Purchase request with Procurement Clerk selected', () => {
+  it('9. Procurement Clerk is removed from the workflow', () => {
     const req = requesterFor('it');
-    const draft = createRfa(req, input({ requestedAmount: '10000', budgetAllocation: 10000, recommendingAlternateUserId: 'hrHead', purchaseRequest: true, includeProcurement: true }));
-    expect(assignmentsFor(draft.RFA_ID, 'REVIEWED_AND_NOTED')).toContain('procurement');
-    submitRfa(req, draft.RFA_ID);
-    acted(draft.RFA_ID, userById('itHead'));
-    acted(draft.RFA_ID, userById('ofelia')); acted(draft.RFA_ID, userById('procurement'));
-    expect(step(draft.RFA_ID)).toBe('APPROVED_BY');
-  });
-
-  it('10. Purchase request without Procurement Clerk selected', () => {
-    const req = requesterFor('it');
-    const draft = createRfa(req, input({ requestedAmount: '10000', budgetAllocation: 10000, recommendingAlternateUserId: 'hrHead', purchaseRequest: true, includeProcurement: false }));
+    const draft = createRfa(req, input({ requestedAmount: '10000', budgetAllocation: 10000, includeProcurement: true }));
     expect(assignmentsFor(draft.RFA_ID, 'REVIEWED_AND_NOTED')).not.toContain('procurement');
     expect(assignmentsFor(draft.RFA_ID, 'REVIEWED_AND_NOTED')).toEqual(['ofelia']);
+    submitRfa(req, draft.RFA_ID);
+    acted(draft.RFA_ID, userById('itHead'));
+    acted(draft.RFA_ID, userById('ofelia'));
+    expect(step(draft.RFA_ID)).toBe('APPROVED_BY');
   });
 
   it('11. All mandatory approvers remain required (cannot skip)', () => {
@@ -304,8 +298,6 @@ describe('official matrix — 12 scenarios', () => {
   it('validates inapplicable optionals (Principal guard)', () => {
     const req = requesterFor('it'); // not JHS/SHS
     expect(() => createRfa(req, input({ requestingDeptId: 'it', includePrincipal: true }))).toThrow(/JHS\/SHS/);
-    // Procurement is now a standalone optional (no purchase-flag gate)
-    expect(createRfa(req, input({ includeProcurement: true, purchaseRequest: false }))).toMatchObject({});
   });
 });
 
@@ -395,6 +387,31 @@ describe('confirmed approver emails (preconfigured)', () => {
     const presidentAssignment = (sheets.get('RFA_APPROVALS') || []).find((r) => r.STEP === 'APPROVED_BY' && r.APPROVER_USER_ID === 'president2');
     expect(raquelAssignment?.APPROVER_EMAIL).toBe('vp.finance@example.edu');
     expect(presidentAssignment?.APPROVER_EMAIL).toBe('president@example.edu');
+  });
+});
+
+describe('procurement view-only access', () => {
+  it('procurement users can view approved RFAs but cannot approve', () => {
+    const req = requesterFor('it');
+    const procurementUser = { ...userById('procurement'), DEPARTMENT_ID: 'ppu' } as SessionUser;
+    // Add a PPU department so the procurement check resolves
+    const deps = (sheets.get('DEPARTMENTS') || []) as SheetRecord[];
+    sheets.set('DEPARTMENTS', [...deps, { DEPARTMENT_ID: 'ppu', DEPARTMENT_NAME: 'Procurement Unit', DEPARTMENT_CODE: 'PPU', ACTIVE: true, DEPARTMENT_HEAD_USER_ID: 'procurement', IS_ACADEMIC: false }]);
+    const all = (sheets.get('USERS') || []) as SheetRecord[];
+    const idx = all.findIndex((u) => String(u.USER_ID) === 'procurement');
+    if (idx >= 0) { (all[idx] as Record<string, unknown>).DEPARTMENT_ID = 'ppu'; sheets.set('USERS', all); }
+    const draft = createRfa(req, input({}));
+    submitRfa(req, draft.RFA_ID);
+    // Pending: procurement cannot view
+    expect(() => detailRfa(procurementUser, draft.RFA_ID)).toThrow('do not have access');
+    acted(draft.RFA_ID, userById('itHead'));
+    acted(draft.RFA_ID, userById('ofelia'));
+    acted(draft.RFA_ID, userById('ana')); acted(draft.RFA_ID, userById('raquel'));
+    expect(status(draft.RFA_ID)).toBe('APPROVED');
+    // Approved: can view via list and detail, but cannot approve (not assigned)
+    expect(listRfas(procurementUser, {}).map((r) => r.RFA_ID)).toContain(draft.RFA_ID);
+    expect(detailRfa(procurementUser, draft.RFA_ID).rfa).toMatchObject({ RFA_ID: draft.RFA_ID });
+    expect(() => acted(draft.RFA_ID, procurementUser)).toThrow('not assigned');
   });
 });
 

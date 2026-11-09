@@ -78,9 +78,20 @@ export function notedByNotApplicable(auditEntries: SheetRecord[]): boolean {
 const folderCache = new Map<string, GoogleAppsScript.Drive.Folder>();
 export function resetWorkflowCache(): void { folderCache.clear(); }
 
+function isProcurementUser(user: SessionUser): boolean {
+  // Procurement Unit members get view-only access to approved RFAs (no approval role).
+  if (!user.DEPARTMENT_ID) return false;
+  try {
+    const dept = findBy<DepartmentRecord>('DEPARTMENTS', 'DEPARTMENT_ID', user.DEPARTMENT_ID);
+    if (!dept) return false;
+    return String(dept.DEPARTMENT_CODE || '').toUpperCase() === 'PPU' || String(dept.DEPARTMENT_NAME || '').toUpperCase().includes('PROCUREMENT');
+  } catch { return false; }
+}
+
 function canView(user: SessionUser, rfa: RfaRecord, approvals?: SheetRecord[]): boolean {
   if (toBoolean(user.IS_ADMIN) || normalizeEmail(rfa.REQUESTER_EMAIL) === normalizeEmail(user.EMAIL)) return true;
-  if (toBoolean(user.CAN_IMPLEMENT_RFA) && ['APPROVED', 'IMPLEMENTATION'].includes(rfa.STATUS)) return true;
+  if (toBoolean(user.CAN_IMPLEMENT_RFA) && ['APPROVED', 'IMPLEMENTATION', 'CLOSED'].includes(rfa.STATUS)) return true;
+  if (isProcurementUser(user) && ['APPROVED', 'IMPLEMENTATION', 'CLOSED'].includes(rfa.STATUS)) return true;
   if (normalizeEmail(rfa.CURRENT_APPROVER_EMAIL) === normalizeEmail(user.EMAIL)) return true;
   return (approvals ?? approvalRows(rfa.RFA_ID)).some((row) => normalizeEmail(row.APPROVER_EMAIL) === normalizeEmail(user.EMAIL));
 }
@@ -88,7 +99,8 @@ function canView(user: SessionUser, rfa: RfaRecord, approvals?: SheetRecord[]): 
 /** Optimized canView that reuses preloaded approval index (avoids N+1). */
 function canViewWithApproverSet(user: SessionUser, rfa: RfaRecord, approverRfaSet: Set<string>): boolean {
   if (toBoolean(user.IS_ADMIN) || normalizeEmail(rfa.REQUESTER_EMAIL) === normalizeEmail(user.EMAIL)) return true;
-  if (toBoolean(user.CAN_IMPLEMENT_RFA) && ['APPROVED', 'IMPLEMENTATION'].includes(rfa.STATUS)) return true;
+  if (toBoolean(user.CAN_IMPLEMENT_RFA) && ['APPROVED', 'IMPLEMENTATION', 'CLOSED'].includes(rfa.STATUS)) return true;
+  if (isProcurementUser(user) && ['APPROVED', 'IMPLEMENTATION', 'CLOSED'].includes(rfa.STATUS)) return true;
   if (normalizeEmail(rfa.CURRENT_APPROVER_EMAIL) === normalizeEmail(user.EMAIL)) return true;
   return approverRfaSet.has(String(rfa.RFA_ID));
 }
@@ -542,12 +554,7 @@ function resolveOfficialAssignments(
     if (strict && !principal) businessError('JHS/SHS Principal (Noliver Garcia) is not configured.', 'CONFIGURATION_REQUIRED');
     if (principal) addDistinct(reviewed, [toEligible(principal, deptNameMap)]);
   }
-  // Optional: Procurement (standalone optional — no purchase-flag gate)
-  if (selections.includeProcurement) {
-    const procurement = findOfficialUser('PROCUREMENT_USER_ID', 'Marjorie Valdez', usersById, requester, requesterUserId);
-    if (strict && !procurement) businessError('Procurement Clerk (Marjorie Valdez) is not configured.', 'CONFIGURATION_REQUIRED');
-    if (procurement) addDistinct(reviewed, [toEligible(procurement, deptNameMap)]);
-  }
+  // Procurement Clerk removed from the workflow — never assigned.
   assignments.REVIEWED_AND_NOTED = reviewed;
 
   // --- Stage 3: Approved By ---
