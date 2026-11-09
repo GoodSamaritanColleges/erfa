@@ -21,7 +21,12 @@ export function authenticate(idToken: string): SessionUser {
     const response = timed('googleTokenVerificationHttpMs', () => UrlFetchApp.fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`, { muteHttpExceptions: true }));
     if (response.getResponseCode() !== 200) fail('Google sign-in could not be verified. Please sign in again.');
     claimsText = response.getContentText();
-    cache.put(`idtoken:${digest}`, claimsText, 300);
+    // Cache the verified claims until the token itself expires (Google ID tokens last ~1 hour),
+    // so each user pays the Google verification round trip once per sign-in instead of every 5 minutes.
+    // Expiry, audience, issuer and the user's ACTIVE flag are still re-checked on every request below.
+    let secondsLeft = 0;
+    try { secondsLeft = Math.floor(Number((JSON.parse(claimsText) as Record<string, string>).exp) - Date.now() / 1000); } catch { secondsLeft = 0; }
+    if (secondsLeft > 0) cache.put(`idtoken:${digest}`, claimsText, Math.min(secondsLeft, 21600));
   }
   const claims = JSON.parse(claimsText) as Record<string, string>;
   if (claims.aud !== clientId || !['accounts.google.com', 'https://accounts.google.com'].includes(claims.iss)) fail('Google token audience or issuer is invalid.');
