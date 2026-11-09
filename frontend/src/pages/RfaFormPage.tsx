@@ -169,6 +169,14 @@ export function RfaFormPage() {
     ? involvedChoices.filter((d) => d.DEPARTMENT_NAME.toLowerCase().includes(deptSearch.toLowerCase()))
     : involvedChoices;
   const headForDept = (deptId: string) => (fixedRoute?.heads ?? []).find((h) => h.departmentId === deptId)?.headName || '';
+  const headsForDept = (deptId: string) => (fixedRoute?.heads ?? []).find((h) => h.departmentId === deptId)?.heads ?? [];
+  const selectedInvolvedHeads = form.involvedDepartmentIds.flatMap((id) => headsForDept(id).map((h) => ({ deptId: id, name: h.fullName })));
+  const reviewedPreviewNames = (() => {
+    const base = (fixedRoute?.assignments?.REVIEWED_AND_NOTED ?? []).map((p) => p.FULL_NAME);
+    const extra = selectedInvolvedHeads.map((h) => h.name);
+    const principal = form.includePrincipal && fixedRoute?.isJhsOrShs ? ['Noliver Garcia'] : [];
+    return Array.from(new Set([...base, ...extra, ...principal]));
+  })();
   const amount = Number(form.requestedAmount || 0);
   const threshold = fixedRoute?.presidentThresholdPhp ?? 50000;
   const needsPresident = amount >= threshold && amount > 0;
@@ -300,9 +308,10 @@ export function RfaFormPage() {
         <div className="route-names">
           <RouteStage title="Prepared By" names={[existing?.REQUESTED_BY || user?.FULL_NAME || 'Requester']} note={existing?.POSITION || user?.POSITION || ''} />
           <RouteStage title="Recommending Approval" names={(fixedRoute?.assignments?.RECOMMENDING_APPROVAL ?? []).map((p) => p.FULL_NAME)} />
-          <RouteStage title="Reviewed and Noted By" names={(fixedRoute?.assignments?.REVIEWED_AND_NOTED ?? []).map((p) => p.FULL_NAME)} />
+          <RouteStage title="Reviewed and Noted By" names={reviewedPreviewNames} />
           <RouteStage title="Approved By" names={(fixedRoute?.assignments?.APPROVED_BY ?? []).map((p) => p.FULL_NAME)} />
         </div>
+        {form.involvedDepartmentIds.length > 0 && <p className="muted">Involved heads added to Reviewed and Noted By: {selectedInvolvedHeads.map((h) => displayName(h.name)).join(' · ')}</p>}
         <p className="muted">{isAcademic ? 'Academic: VP Academic required. ' : ''}{needsPresident ? `President required (≥ ${money(threshold)}). ` : 'President not required below threshold. '}{fixedRoute ? '' : 'Loading route…'}</p>
       </section>}
 
