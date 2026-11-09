@@ -177,7 +177,7 @@ export function RfaDetailPage() {
       </section>
 
       <DocumentSection title="Approval History">
-        <HistoryTable approvals={approvals} />
+        <HistoryTable approvals={approvals} status={rfa.STATUS} />
       </DocumentSection>
 
       <section className="audit-section screen-only">
@@ -298,17 +298,39 @@ function ApprovalSignature({ step, rfa, approvals, current, notApplicable }: { s
   </div>;
 }
 
-function HistoryTable({ approvals }: { approvals: Approval[] }) {
-  return approvals.length ? <div className="table-wrap">
+const HISTORY_STEP_ORDER = ['PREPARED_BY', 'RECOMMENDING_APPROVAL', 'REVIEWED_AND_NOTED', 'REVIEWED_BY', 'NOTED_BY', 'INVOLVED_DEPARTMENT_HEAD', 'APPROVED_BY'];
+const ACTION_LABELS: Record<string, string> = { APPROVED: 'Approved', RETURNED: 'Returned', DISAPPROVED: 'Disapproved', CANCELLED: 'Cancelled' };
+
+function sameApprover(a: Approval, b: Approval): boolean {
+  if (a.APPROVER_USER_ID && b.APPROVER_USER_ID) return a.APPROVER_USER_ID === b.APPROVER_USER_ID;
+  return Boolean(a.APPROVER_EMAIL) && a.APPROVER_EMAIL.toLowerCase() === (b.APPROVER_EMAIL || '').toLowerCase();
+}
+
+function HistoryTable({ approvals, status }: { approvals: Approval[]; status: string }) {
+  const awaiting = status === 'SUBMITTED' || status.startsWith('PENDING_');
+  // An assignment row (no action yet) is hidden once that approver has acted on the same step.
+  const rows = approvals
+    .filter((row) => row.ACTION || !approvals.some((other) => other.ACTION && other.STEP === row.STEP && sameApprover(other, row) && other.TIMESTAMP >= row.TIMESTAMP))
+    .map((row, index) => ({ row, index }))
+    .sort((a, b) => {
+      const byStep = (HISTORY_STEP_ORDER.indexOf(a.row.STEP) + 1 || 99) - (HISTORY_STEP_ORDER.indexOf(b.row.STEP) + 1 || 99);
+      return byStep || String(a.row.TIMESTAMP).localeCompare(String(b.row.TIMESTAMP)) || a.index - b.index;
+    })
+    .map(({ row }) => row);
+  return rows.length ? <div className="table-wrap">
     <table>
-      <thead><tr><th>Step</th><th>Approver</th><th>Action</th><th>Remarks</th><th>Timestamp</th></tr></thead>
-      <tbody>{approvals.map((approval) => <tr key={approval.APPROVAL_ID}>
-        <td data-label="Step">{stepLabel(approval.STEP)}</td>
-        <td data-label="Approver">{approval.APPROVER_NAME ? displayName(approval.APPROVER_NAME) : 'System'}</td>
-        <td data-label="Action"><b>{approval.ACTION}</b></td>
-        <td data-label="Remarks">{approval.REMARKS || '—'}</td>
-        <td data-label="Timestamp">{dateTime(approval.TIMESTAMP)}</td>
-      </tr>)}</tbody>
+      <thead><tr><th>Step</th><th>Approver</th><th>Action</th><th>Remarks</th><th>Date and Time</th></tr></thead>
+      <tbody>{rows.map((approval) => {
+        const acted = Boolean(approval.ACTION);
+        const label = acted ? (ACTION_LABELS[approval.ACTION] ?? approval.ACTION) : awaiting ? 'Pending' : 'Not reached';
+        return <tr key={approval.APPROVAL_ID}>
+          <td data-label="Step">{stepLabel(approval.STEP)}</td>
+          <td data-label="Approver">{approval.APPROVER_NAME ? displayName(approval.APPROVER_NAME) : 'System'}</td>
+          <td data-label="Action"><span className={`history-action history-action-${acted ? approval.ACTION.toLowerCase() : awaiting ? 'pending' : 'idle'}`}>{label}</span></td>
+          <td data-label="Remarks">{approval.REMARKS || '—'}</td>
+          <td data-label={acted ? 'Date and Time' : 'Assigned'}>{acted ? dateTime(approval.TIMESTAMP) : <span className="history-muted">Assigned {dateTime(approval.TIMESTAMP)}</span>}</td>
+        </tr>;
+      })}</tbody>
     </table>
   </div> : <p>No approval actions recorded.</p>;
 }

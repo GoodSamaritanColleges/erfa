@@ -752,3 +752,14 @@ td[data-label="RFA Number"] > b, td[data-label="Date Filed"] { white-space: nowr
 /* Header sits on the same white as the sidebar */
 .content-header { border-bottom-color: #e6e9ef; }
 .content-header-left b { color: var(--ink); }
+
+/* Approval history — readable action states */
+.history-action { display: inline-flex; align-items: center; gap: .35rem; padding: .18rem .55rem; border-radius: 999px; font-size: .75rem; font-weight: 650; white-space: nowrap; border: 1px solid transparent; }
+.history-action::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.history-action-approved { background: #ecfdf3; color: #067647; border-color: #b8e0c4; }
+.history-action-pending { background: var(--pp-tint-2); color: var(--pp-primary); border-color: #c9dbf5; }
+.history-action-returned { background: var(--pp-tint); color: var(--pp-secondary); border-color: #c9dbf5; }
+.history-action-disapproved, .history-action-cancelled { background: #fef3f2; color: #9a221a; border-color: #f0b4b8; }
+.history-action-idle { background: #f2f4f7; color: #667085; border-color: #e4e7ec; }
+.history-muted { color: var(--muted); font-size: var(--text-xs); }
+@media print { .history-action { border: 0; padding: 0; } .history-action::before { display: none; } }
