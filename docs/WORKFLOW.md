@@ -7,6 +7,7 @@
 3. The requester-selected active approvers are saved as the RFA's immutable route: Recommending Approval, Reviewed By, Noted By, then Approved By.
 4. Only the employees in the first non-empty stage receive a direct **View RFA** email link and see the RFA under **For My Action**.
 5. Each selected employee's action is appended to history. A stage advances only after every selected employee approves; then the next non-empty stage is activated and emailed.
+   Within **Approved By**, emails go out in order: Ma'am Tago (AVP for Finance) first; VP Raquel and VP Jenny (academic RFAs) once she approves; the President (at or above the threshold) last, once the VPs approve. Only the email timing is ordered: every Approved By official can open and act on the RFA as soon as the stage starts.
 6. After the final selected stage approves, status becomes `APPROVED` and the requester is notified. If every selectable stage is empty, the RFA completes without leaving a pending route.
 7. The requester or an administrator can move the RFA to `IMPLEMENTATION`, then `CLOSED` for audit filing.
 
