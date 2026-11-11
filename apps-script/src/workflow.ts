@@ -51,6 +51,30 @@ function getApprovedAssignments(rfa: RfaRecord, section: ApprovalSection): Sheet
   return approvalRows(rfa.RFA_ID).filter((row) => row.STEP === section && row.ACTION === 'APPROVED' && (!Number.isFinite(submittedAt) || Date.parse(String(row.TIMESTAMP || '')) >= submittedAt));
 }
 
+/**
+ * Email order within Approved By: Ma'am Tago (AVP for Finance) first, then the VPs,
+ * then the President last. Only the email timing follows this order; every assigned
+ * official can still open and act on the RFA as soon as the stage starts.
+ */
+function approvedByEmailTier(row: SheetRecord): number {
+  const id = String(row.APPROVER_USER_ID);
+  const tagoId = String(getSetting('APPROVED_MANDATORY_USER_IDS') || '').split(',')[0].trim();
+  if ((tagoId && id === tagoId) || nameMatches(String(row.APPROVER_NAME || ''), 'Ana Liza Tago')) return 0;
+  const presidentId = String(getSetting('PRESIDENT_USER_ID') || '').trim();
+  const presidentEmail = normalizeEmail(String(getSetting('PRESIDENT_EMAIL') || DEFAULT_OFFICIAL_EMAILS['Alessandra De Guzman-Valino']));
+  if ((presidentId && id === presidentId) || normalizeEmail(row.APPROVER_EMAIL) === presidentEmail || String(row.APPROVER_NAME || '').trim().toLowerCase() === 'alessandra de guzman-valino') return 2;
+  return 1;
+}
+
+/** The Approved By assignees still awaiting action in the earliest email tier that is not yet complete. */
+function approvedByCurrentEmailTier(rfa: RfaRecord): { tier: number; rows: SheetRecord[] } {
+  const approvedIds = new Set(getApprovedAssignments(rfa, 'APPROVED_BY').map((row) => String(row.APPROVER_USER_ID)));
+  const pending = getAssignmentsBySection(rfa.RFA_ID, 'APPROVED_BY').filter((row) => !approvedIds.has(String(row.APPROVER_USER_ID)));
+  if (!pending.length) return { tier: -1, rows: [] };
+  const tier = Math.min(...pending.map(approvedByEmailTier));
+  return { tier, rows: pending.filter((row) => approvedByEmailTier(row) === tier) };
+}
+
 function getRfa(id: string): RfaRecord {
   const record = findBy<RfaRecord>('RFA', 'RFA_ID', id);
   if (!record) businessError('RFA was not found.', 'NOT_FOUND');
@@ -194,9 +218,10 @@ function routeLegacy(rfa: RfaRecord, actor: SessionUser, startIndex: number): Rf
 
 function notifyAssignedStage(rfa: RfaRecord, actor: SessionUser, section: ApprovalSection): void {
   const approvedEmails = new Set(getApprovedAssignments(rfa, section).map((row) => normalizeEmail(row.APPROVER_EMAIL)));
-  getAssignmentsBySection(rfa.RFA_ID, section)
-    .filter((row) => !approvedEmails.has(normalizeEmail(row.APPROVER_EMAIL)))
-    .forEach((row) => notify('APPROVAL_REQUIRED', { FULL_NAME: row.APPROVER_NAME, EMAIL: row.APPROVER_EMAIL } as UserRecord, rfa, actor, `This RFA is awaiting your approval action for the ${section} section.`));
+  const recipients = section === 'APPROVED_BY'
+    ? approvedByCurrentEmailTier(rfa).rows
+    : getAssignmentsBySection(rfa.RFA_ID, section).filter((row) => !approvedEmails.has(normalizeEmail(row.APPROVER_EMAIL)));
+  recipients.forEach((row) => notify('APPROVAL_REQUIRED', { FULL_NAME: row.APPROVER_NAME, EMAIL: row.APPROVER_EMAIL } as UserRecord, rfa, actor, `This RFA is awaiting your approval action for the ${section} section.`));
 }
 
 function completeAssignedWorkflow(rfa: RfaRecord, actor: SessionUser): RfaRecord {
@@ -945,6 +970,7 @@ export function decideRfa(user: SessionUser, rfaId: string, action: 'APPROVED' |
     if (!matrixAssigned && headId !== user.USER_ID) businessError('Only the involved department head may approve this assignment.', 'FORBIDDEN');
   }
   if (isAssignmentWorkflow(rfa) && assignmentSection && getApprovedAssignments(rfa, assignmentSection).some((row) => String(row.APPROVER_USER_ID) === user.USER_ID)) businessError('You have already acted on this RFA section.', 'CONFLICT');
+  const emailTierBefore = isAssignmentWorkflow(rfa) && assignmentSection === 'APPROVED_BY' ? approvedByCurrentEmailTier(rfa).tier : -1;
   if (action !== 'APPROVED' && remarks.trim().length < 3) businessError('A reason is required for return or disapproval.');
   appendApproval(rfa, rfa.CURRENT_STEP, user, action, remarks.trim());
   const previous = rfa.STATUS;
@@ -976,7 +1002,11 @@ export function decideRfa(user: SessionUser, rfaId: string, action: 'APPROVED' |
     const approvedCounts = sections.reduce((counts, section) => ({ ...counts, [section]: getApprovedAssignments(rfa, section).length }), {} as Record<string, number>);
     // All stages are AND: every assigned approver (including every recommending head) must approve.
     const next = nextAssignedStageAfterAction(assignedCounts, approvedCounts, sections.indexOf(assignmentSection), sections);
-    if (next === assignmentSection) return rfa;
+    if (next === assignmentSection) {
+      // Approved By email order: once a tier finishes (Tago, then the VPs), email the next one.
+      if (assignmentSection === 'APPROVED_BY' && approvedByCurrentEmailTier(rfa).tier !== emailTierBefore) notifyAssignedStage(rfa, user, assignmentSection);
+      return rfa;
+    }
     return routeAssigned(rfa, user, sections.indexOf(assignmentSection) + 1);
   }
   const matrix = orderedMatrix(all<MatrixRecord>('APPROVAL_MATRIX').filter((row) => row.DEPARTMENT_ID === rfa.DEPARTMENT_ID));

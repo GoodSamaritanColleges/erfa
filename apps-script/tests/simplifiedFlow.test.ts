@@ -206,6 +206,31 @@ describe('official matrix — 12 scenarios', () => {
     expect(status(draft.RFA_ID)).toBe('APPROVED');
   });
 
+  it('Approved By emails go out in order: Ma\'am Tago, then the VPs, then the President', async () => {
+    const { notify } = await import('../src/notifications');
+    seedOfficial({ requestingDeptId: 'acad', isAcademic: true, heads: { acad: ['acadHead'] } });
+    const req = requesterFor('acad');
+    const draft = createRfa(req, input({ requestedAmount: '60000', budgetAllocation: 60000 }));
+    submitRfa(req, draft.RFA_ID);
+    acted(draft.RFA_ID, userById('acadHead'));
+    const emailedTo = () => vi.mocked(notify).mock.calls.filter((c) => c[0] === 'APPROVAL_REQUIRED').map((c) => (c[1] as { EMAIL: string }).EMAIL).sort();
+    vi.mocked(notify).mockClear();
+    acted(draft.RFA_ID, userById('ofelia'));
+    expect(emailedTo()).toEqual(['ana@example.edu']);
+    // Only the email order changes: a VP can still act before Ma'am Tago, with no extra emails.
+    expect((detailRfa(userById('raquel'), draft.RFA_ID).permissions as { canDecide: boolean }).canDecide).toBe(true);
+    vi.mocked(notify).mockClear();
+    acted(draft.RFA_ID, userById('raquel'));
+    expect(emailedTo()).toEqual([]);
+    acted(draft.RFA_ID, userById('ana'));
+    expect(emailedTo()).toEqual(['jennelyn@example.edu']);
+    vi.mocked(notify).mockClear();
+    acted(draft.RFA_ID, userById('jennelyn'));
+    expect(emailedTo()).toEqual(['president@example.edu']);
+    acted(draft.RFA_ID, userById('president'));
+    expect(status(draft.RFA_ID)).toBe('APPROVED');
+  });
+
   it('5. Department with two heads: both heads must approve recommending', () => {
     seedOfficial({ requestingDeptId: 'dual', isAcademic: false, heads: { dual: ['dualHead1', 'dualHead2'] } });
     const req = requesterFor('dual');
