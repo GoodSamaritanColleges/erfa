@@ -6,7 +6,7 @@ Create a Web application OAuth 2.0 client in the institution's Google Cloud proj
 
 ## 2. Apps Script and database
 
-Run `pnpm install` and `pnpm --filter @erfa/apps-script build`. Create a standalone Apps Script project, add `apps-script/dist/Code.js`, and replace the manifest with `apps-script/dist/appsscript.json`. From the editor:
+Run `pnpm install` and `pnpm --filter @erfa/apps-script build`. Create a standalone Apps Script project, add `apps-script/dist/Code.js`, and replace the manifest with `apps-script/dist/appsscript.json`. Alternatively, with clasp logged in and `apps-script/.clasp.json` linked to the project (see `.clasp.json.example`), `pnpm --filter @erfa/apps-script push` builds and uploads both files; then publish a new version of the existing Web App deployment with `clasp create-deployment -i <deploymentId> -d "<description>"` so the `/exec` URL stays the same. From the editor:
 
 1. Run `setupDatabase()` and grant the requested Sheets, Drive, Mail, and external-request scopes.
 2. Open the returned spreadsheet URL.
