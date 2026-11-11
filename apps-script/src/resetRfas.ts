@@ -81,7 +81,8 @@ function trashAttachments(attachmentRows: Row[]): { files: number; folders: numb
       const rfaFolders = years.next().getFolders();
       while (rfaFolders.hasNext()) {
         const folder = rfaFolders.next();
-        if (!/^RFA-\d{4}-\d+$/.test(folder.getName())) continue;
+        // Numbered RFA folders and unsubmitted draft folders (DRAFT-<id>).
+        if (!/^(RFA-\d{4}-\d+|DRAFT-.+)$/.test(folder.getName())) continue;
         folder.setName(`${folder.getName()} (pilot, removed)`);
         folder.setTrashed(true);
         folders += 1;

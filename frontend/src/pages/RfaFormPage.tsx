@@ -189,7 +189,7 @@ export function RfaFormPage() {
     <Link className="back-link" to={existing ? `/rfa/${existing.RFA_ID}` : '/rfas'}><ArrowLeft size={16} /> Back</Link>
     <header className="page-header">
       <div>
-        <span className="eyebrow orange">{existing ? existing.RFA_NUMBER : 'NEW REQUEST'}</span>
+        <span className="eyebrow orange">{existing?.RFA_NUMBER || (existing ? 'DRAFT · NUMBER GIVEN WHEN SUBMITTED' : 'NEW REQUEST · NUMBER GIVEN WHEN SUBMITTED')}</span>
         <h1>{existing?.STATUS === 'RETURNED' ? 'Revise and resubmit RFA' : existing ? 'Edit RFA draft' : 'Request for Approval'}</h1>
         <p>This digital form preserves the fields and approval terminology of the institutional RFA.</p>
       </div>

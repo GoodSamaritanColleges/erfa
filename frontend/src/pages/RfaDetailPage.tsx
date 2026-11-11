@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { Dialog, ErrorNotice, Spinner, StatusBadge, SuccessNotice } from '../components';
-import { date, dateTime, displayName, expenseClassificationLabel, money, schoolYearLabel, stepLabel } from '../format';
+import { date, dateTime, displayName, expenseClassificationLabel, money, rfaNumberLabel, schoolYearLabel, stepLabel } from '../format';
 import type { Approval, ApprovalStep, Attachment, Rfa, RfaDetail } from '../types';
 
 const legacySteps: ApprovalStep[] = ['PREPARED_BY', 'RECOMMENDING_APPROVAL', 'REVIEWED_AND_NOTED', 'APPROVED_BY'];
@@ -89,7 +89,7 @@ export function RfaDetailPage() {
       {detail.archived && <div className="notice archived-notice" role="status">Archived record · {detail.archived.label}. This RFA is kept for reference and can no longer be changed.</div>}
       <header className="detail-header">
         <div>
-          <span className="eyebrow orange">{rfa.RFA_NUMBER}</span>
+          <span className="eyebrow orange">{rfaNumberLabel(rfa.RFA_NUMBER)}</span>
           <h1>{rfa.REQUEST_TITLE || 'Untitled draft'}</h1>
           <div className="detail-meta">
             <StatusBadge status={rfa.STATUS} />
@@ -122,7 +122,7 @@ export function RfaDetailPage() {
         <img src={`${import.meta.env.BASE_URL}gsc-logo.png`} alt="Good Samaritan Colleges" />
         <div>
           <b>REQUEST FOR APPROVAL (RFA) FORM</b>
-          <span>{rfa.RFA_NUMBER}</span>
+          <span>{rfaNumberLabel(rfa.RFA_NUMBER)}</span>
         </div>
       </header>
 

@@ -150,7 +150,7 @@ export function RfaTable({ rfas, review = false, schoolYear = '' }: { rfas: Rfa[
       </thead>
       <tbody>
         {rfas.map((rfa) => <tr key={rfa.RFA_ID}>
-          <td data-label="RFA Number"><b>{rfa.RFA_NUMBER}</b></td>
+          <td data-label="RFA Number">{rfa.RFA_NUMBER ? <b>{rfa.RFA_NUMBER}</b> : <span className="draft-number">Draft</span>}</td>
           <td data-label="Request">
             <span className="cell-primary">{rfa.REQUEST_TITLE || 'Untitled draft'}</span>
             <small>{rfa.REQUESTED_BY}</small>

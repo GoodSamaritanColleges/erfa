@@ -819,3 +819,6 @@ td[data-label="RFA Number"] > b, td[data-label="Date Filed"] { white-space: nowr
 
 /* Official approval roles: short description under each picker */
 .role-field small { display: block; margin-top: .3rem; color: var(--muted); font-size: var(--text-xs); line-height: 1.4; }
+
+/* Unsubmitted drafts have no RFA number yet */
+.draft-number { display: inline-block; padding: .1rem .5rem; border-radius: 999px; background: #f2f4f7; color: #475467; font-size: var(--text-xs); font-weight: 650; }

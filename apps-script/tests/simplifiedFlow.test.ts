@@ -554,22 +554,44 @@ describe('official roles: the person can change, the role stays the same', () =>
 });
 
 describe('RFA numbering', () => {
-  it('uses one shared counter for everyone: sequential, never duplicated, fixed at draft time', () => {
-    settings.set('LAST_RFA_YEAR', String(new Date().getFullYear()));
-    settings.set('LAST_RFA_SEQUENCE', '0');
+  it('gives numbers at submission from one shared counter: in submit order, no gaps, no duplicates', () => {
     const year = new Date().getFullYear();
+    settings.set('LAST_RFA_YEAR', String(year));
+    settings.set('LAST_RFA_SEQUENCE', '0');
     const it1 = requesterFor('it');
-    const hr1 = { ...requesterFor('hr'), USER_ID: 'hrRequester', EMAIL: 'hr.requester@example.edu' } as SessionUser;
     const first = createRfa(it1, input({}));
-    const second = createRfa(hr1, input({}));
+    const neverSent = createRfa(it1, input({}));
     const third = createRfa(it1, input({}));
-    expect([first.RFA_NUMBER, second.RFA_NUMBER, third.RFA_NUMBER]).toEqual([`RFA-${year}-0001`, `RFA-${year}-0002`, `RFA-${year}-0003`]);
-    // Submitting later, in a different order, does not change any number.
+    // Drafts have no number and use none up.
+    expect([first.RFA_NUMBER, neverSent.RFA_NUMBER, third.RFA_NUMBER]).toEqual(['', '', '']);
+    expect(settings.get('LAST_RFA_SEQUENCE')).toBe('0');
+
+    // Numbers follow the order RFAs are actually submitted.
     submitRfa(it1, third.RFA_ID);
     submitRfa(it1, first.RFA_ID);
-    const numbers = (sheets.get('RFA') || []).map((row) => String(row.RFA_NUMBER));
-    expect(new Set(numbers).size).toBe(numbers.length);
-    expect(numbers).toEqual(expect.arrayContaining([`RFA-${year}-0001`, `RFA-${year}-0002`, `RFA-${year}-0003`]));
-    expect(settings.get('LAST_RFA_SEQUENCE')).toBe('3');
+    const numberOf = (id: string) => String((sheets.get('RFA') || []).find((row) => row.RFA_ID === id)?.RFA_NUMBER);
+    expect(numberOf(third.RFA_ID)).toBe(`RFA-${year}-0001`);
+    expect(numberOf(first.RFA_ID)).toBe(`RFA-${year}-0002`);
+    expect(numberOf(neverSent.RFA_ID)).toBe('');
+
+    // A rejected submit does not use a number.
+    expect(() => submitRfa(it1, first.RFA_ID)).toThrow();
+    expect(settings.get('LAST_RFA_SEQUENCE')).toBe('2');
+
+    // The approval route rows carry the new number.
+    const routeNumbers = (sheets.get('RFA_APPROVALS') || []).filter((row) => row.RFA_ID === first.RFA_ID).map((row) => String(row.RFA_NUMBER));
+    expect(routeNumbers.length).toBeGreaterThan(0);
+    expect(new Set(routeNumbers)).toEqual(new Set([`RFA-${year}-0002`]));
+  });
+
+  it('keeps the same number when a returned RFA is resubmitted', () => {
+    const req = requesterFor('it');
+    const draft = createRfa(req, input({}));
+    submitRfa(req, draft.RFA_ID);
+    const numbered = String((sheets.get('RFA') || []).find((row) => row.RFA_ID === draft.RFA_ID)?.RFA_NUMBER);
+    expect(numbered).toMatch(/^RFA-\d{4}-\d{4}$/);
+    decideRfa(userById('itHead'), draft.RFA_ID, 'RETURNED', 'Please attach the quotation.');
+    submitRfa(req, draft.RFA_ID, true);
+    expect(String((sheets.get('RFA') || []).find((row) => row.RFA_ID === draft.RFA_ID)?.RFA_NUMBER)).toBe(numbered);
   });
 });

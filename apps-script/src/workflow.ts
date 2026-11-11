@@ -177,6 +177,45 @@ function nextNumber(): string {
   return formatRfaNumber(year, sequence);
 }
 
+/** Drive folder name for a draft's attachments until it receives its RFA number. */
+function draftFolderName(rfa: RfaRecord): string { return `DRAFT-${rfa.RFA_ID}`; }
+
+/**
+ * RFA numbers are given when an RFA is first submitted, so unsubmitted drafts never use up
+ * a number and numbers follow the order RFAs were actually sent. Called only after the
+ * submission has passed validation; a returned RFA keeps its number when resubmitted.
+ */
+function assignNumberOnSubmit(rfa: RfaRecord): void {
+  if (rfa.RFA_NUMBER) return;
+  rfa.RFA_NUMBER = nextNumber();
+  updateBy('RFA', 'RFA_ID', rfa.RFA_ID, { RFA_NUMBER: rfa.RFA_NUMBER });
+  moveDraftAttachments(rfa);
+}
+
+/** Rename the draft's attachment folder to the new RFA number, in that number's year folder. */
+function moveDraftAttachments(rfa: RfaRecord): void {
+  try {
+    const rootId = getSetting('ATTACHMENT_ROOT_FOLDER_ID');
+    if (!rootId) return;
+    const root = DriveApp.getFolderById(rootId);
+    const years = root.getFolders();
+    while (years.hasNext()) {
+      const yearFolder = years.next();
+      const drafts = yearFolder.getFoldersByName(draftFolderName(rfa));
+      if (!drafts.hasNext()) continue;
+      const folder = drafts.next();
+      folder.setName(rfa.RFA_NUMBER);
+      const targetYear = rfa.RFA_NUMBER.split('-')[1];
+      if (targetYear && yearFolder.getName() !== targetYear) {
+        const existing = root.getFoldersByName(targetYear);
+        folder.moveTo(existing.hasNext() ? existing.next() : root.createFolder(targetYear));
+      }
+      folderCache.delete(`rfa:${draftFolderName(rfa)}`);
+      return;
+    }
+  } catch { /* Attachments open from their own file IDs; the folder name is only for tidiness. */ }
+}
+
 function appendApproval(rfa: RfaRecord, step: string, actor: Pick<UserRecord, 'USER_ID' | 'FULL_NAME' | 'EMAIL'>, action: string, remarks = ''): void {
   insert('RFA_APPROVALS', {
     APPROVAL_ID: newId('apr'), RFA_ID: rfa.RFA_ID, RFA_NUMBER: rfa.RFA_NUMBER, STEP: step,
@@ -790,7 +829,7 @@ export function createRfa(user: SessionUser, payload: Record<string, unknown>): 
   const timestamp = nowIso();
   const involvedNames = resolved.involvedDepartmentNames.join(', ');
   const record: RfaRecord = {
-    RFA_ID: newId('rfa'), RFA_NUMBER: nextNumber(), DATE_FILED: timestamp.slice(0, 10),
+    RFA_ID: newId('rfa'), RFA_NUMBER: '', DATE_FILED: timestamp.slice(0, 10),
     DEPARTMENT_ID: department.DEPARTMENT_ID, DEPARTMENT_NAME: department.DEPARTMENT_NAME,
     REQUESTED_BY: user.FULL_NAME, REQUESTER_EMAIL: normalizeEmail(user.EMAIL), POSITION: user.POSITION,
     REQUEST_TITLE: String(clean.requestTitle), PURPOSE: String(clean.purpose), BUDGET_ALLOCATION: Number(clean.budgetAllocation),
@@ -919,6 +958,8 @@ export function updateRfa(user: SessionUser, payload: Record<string, unknown>): 
 export function submitRfa(user: SessionUser, rfaId: string, resubmit = false): RfaRecord {
   const rfa = getRfa(rfaId);
   assertOwnerEditable(user, rfa);
+  if (resubmit && rfa.STATUS !== 'RETURNED') businessError('Only a returned RFA can be resubmitted.');
+  if (!resubmit && rfa.STATUS !== 'DRAFT') businessError('Only a draft RFA can be submitted.');
   validateRfaInput({ requestTitle: rfa.REQUEST_TITLE, purpose: rfa.PURPOSE, budgetAllocation: rfa.BUDGET_ALLOCATION, targetDate: rfa.TARGET_DATE, justification: rfa.JUSTIFICATION }, true);
   if (toBoolean(rfa.IS_BUDGET_REQUEST)) financialRfaFields(user, { isBudgetRequest: true, fiscalYear: rfa.FISCAL_YEAR, expenseCategoryId: rfa.EXPENSE_CATEGORY_ID, requestedAmount: Number(rfa.REQUESTED_AMOUNT) / 100, expenseClassification: rfa.EXPENSE_CLASSIFICATION }, true);
   // Official workflow requires OPEX/CAPEX + strict official assignments at submit time.
@@ -930,6 +971,7 @@ export function submitRfa(user: SessionUser, rfaId: string, resubmit = false): R
     void rejectedAssignments;
     const selections = officialSelectionsFromRfa(rfa);
     const resolved = resolveOfficialAssignments(rfa.DEPARTMENT_ID, selections, Number(rfa.REQUESTED_AMOUNT), rfa.REQUESTER_EMAIL, user.USER_ID, true);
+    assignNumberOnSubmit(rfa);
     saveAssignments(rfa, resolved.assignments, APPROVAL_SECTIONS);
     audit('OPTIONAL_APPROVERS_RESOLVED', user, rfa.RFA_ID, '', '', JSON.stringify({ ...selections, isAcademic: isAcademicDepartment(findBy<DepartmentRecord>('DEPARTMENTS', 'DEPARTMENT_ID', rfa.DEPARTMENT_ID) as DepartmentRecord), thresholdPhp: getThresholdCents() / 100, amountPhp: Number(rfa.REQUESTED_AMOUNT) / 100, needsPresident: Number(rfa.REQUESTED_AMOUNT) >= getThresholdCents() }), {});
   }
@@ -937,10 +979,10 @@ export function submitRfa(user: SessionUser, rfaId: string, resubmit = false): R
     validateExpenseClassification(rfa.EXPENSE_CLASSIFICATION);
     const notedByNa = notedByNotApplicable(auditRows(rfa.RFA_ID));
     const resolved = resolveFixedAssignments(rfa.DEPARTMENT_ID, String(rfa.INVOLVED_DEPARTMENT_ID || ''), notedByNa, rfa.REQUESTER_EMAIL, user.USER_ID, true);
+    assignNumberOnSubmit(rfa);
     saveAssignments(rfa, resolved.assignments, V2_APPROVAL_SECTIONS);
   }
-  if (resubmit && rfa.STATUS !== 'RETURNED') businessError('Only a returned RFA can be resubmitted.');
-  if (!resubmit && rfa.STATUS !== 'DRAFT') businessError('Only a draft RFA can be submitted.');
+  assignNumberOnSubmit(rfa);
 
   const previous = rfa.STATUS;
   const timestamp = nowIso();
@@ -1197,7 +1239,8 @@ export function detailRfa(user: SessionUser, rfaId: string, schoolYearHint = 0):
 function rfaFolder(rfa: RfaRecord): GoogleAppsScript.Drive.Folder {
   const rootId = getSetting('ATTACHMENT_ROOT_FOLDER_ID');
   if (!rootId) businessError('Attachment storage is not configured. Run setupDatabase().', 'CONFIGURATION_REQUIRED');
-  const cacheKey = `rfa:${rfa.RFA_NUMBER}`;
+  const folderName = rfa.RFA_NUMBER || draftFolderName(rfa);
+  const cacheKey = `rfa:${folderName}`;
   const cached = folderCache.get(cacheKey);
   if (cached) return cached;
   const year = rfa.RFA_NUMBER.split('-')[1] || new Date().getFullYear().toString();
@@ -1213,8 +1256,8 @@ function rfaFolder(rfa: RfaRecord): GoogleAppsScript.Drive.Folder {
     // Ensure yearFolder still accessible; if cached we still need rfa subfolder
   }
   // yearFolder is now resolved; ensure we have a reference to its parent root only if needed
-  const rfaFolders = yearFolder.getFoldersByName(rfa.RFA_NUMBER);
-  const folder = rfaFolders.hasNext() ? rfaFolders.next() : yearFolder.createFolder(rfa.RFA_NUMBER);
+  const rfaFolders = yearFolder.getFoldersByName(folderName);
+  const folder = rfaFolders.hasNext() ? rfaFolders.next() : yearFolder.createFolder(folderName);
   folderCache.set(cacheKey, folder);
   return folder;
 }

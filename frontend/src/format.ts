@@ -31,6 +31,9 @@ export const dateInputValue = (value: string): string => /^(\d{4}-\d{2}-\d{2})(?
 
 /** Canonical FY representation used by the backend and all budget-facing UI. */
 export const fiscalYearPattern = '[0-9]{4}';
+/** RFA numbers are given at submission; drafts have none yet. */
+export const rfaNumberLabel = (rfaNumber?: string): string => rfaNumber || 'Draft';
+
 export const isFiscalYear = (value: string): boolean => /^[0-9]{4}$/.test(value);
 
 // School years run June to May and are named by their first year: 2026 = SY 2026–2027.
