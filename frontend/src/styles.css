@@ -816,3 +816,6 @@ td[data-label="RFA Number"] > b, td[data-label="Date Filed"] { white-space: nowr
 .tick-option.checked .tick-box { background: var(--navy); border-color: var(--navy); color: #fff; }
 @media (max-width: 620px) { .tick-group { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .tick-option, .tick-box { transition: none; } }
+
+/* Official approval roles: short description under each picker */
+.role-field small { display: block; margin-top: .3rem; color: var(--muted); font-size: var(--text-xs); line-height: 1.4; }

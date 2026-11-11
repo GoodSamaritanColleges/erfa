@@ -78,11 +78,6 @@ export const STEP_STATUS: Record<ApprovalStep, RfaStatus> = {
   APPROVED_BY: 'PENDING_AUTHORITY_APPROVAL'
 };
 
-export const CONFIRMED_APPROVER_EMAILS: Record<string, string> = {
-  'Raquel Baquiran': 'vp.finance@example.edu',
-  'Alessandra De Guzman-Valino': 'president@example.edu'
-};
-
 export const DEFAULT_SETTINGS = [
   ['APP_NAME', 'eRFA', 'Application display name'],
   ['GOOGLE_CLIENT_ID', '', 'OAuth web client ID used to verify Google ID tokens'],
@@ -95,14 +90,14 @@ export const DEFAULT_SETTINGS = [
   ['LAST_RFA_SEQUENCE', '0', 'Internal numbering state'],
   ['SCHOOL_YEAR_START_MONTH', '6', 'First month of the school year (1-12). Used for yearly archives: 6 = June to May.'],
   ['PRESIDENT_THRESHOLD_PHP', '50000', 'Presidential approval threshold in PHP (inclusive)'],
-  ['REVIEWED_MANDATORY_USER_ID', '', 'Reviewed and Noted By mandatory approver user ID (Ofelia Hocson)'],
-  ['APPROVED_MANDATORY_USER_IDS', '', 'Approved By mandatory approver user IDs, comma-separated (Ana Liza Tago, Raquel Baquiran)'],
-  ['VP_ACADEMIC_USER_ID', '', 'VP for Academic Affairs user ID (Jennelyn De Guzman)'],
-  ['PRESIDENT_USER_ID', '', 'President user ID (Alessandra De Guzman-Valino)'],
-  ['PRINCIPAL_USER_ID', '', 'JHS/SHS Principal user ID (Noliver Garcia)'],
-  ['PROCUREMENT_USER_ID', '', 'Procurement Clerk user ID (Marjorie Valdez)'],
-  ['VP_ADMIN_FINANCE_EMAIL', 'vp.finance@example.edu', 'Confirmed email for Raquel Baquiran - VP for Admin and Finance (separate account)'],
-  ['PRESIDENT_EMAIL', 'president@example.edu', 'Confirmed email for Alessandra De Guzman-Valino - President (separate account)']
+  ['REVIEWED_MANDATORY_USER_ID', '', 'Role: Reviewed and Noted By (mandatory) - user ID'],
+  ['APPROVED_MANDATORY_USER_IDS', '', 'Roles: Approved By - AVP for Finance (first), VP for Admin and Finance (second) - user IDs, in this order'],
+  ['VP_ACADEMIC_USER_ID', '', 'Role: VP for Academic Affairs - user ID'],
+  ['PRESIDENT_USER_ID', '', 'Role: President - user ID'],
+  ['PRINCIPAL_USER_ID', '', 'Role: JHS/SHS Principal - user ID'],
+  ['PROCUREMENT_USER_ID', '', 'Role: Procurement - user ID'],
+  ['VP_ADMIN_FINANCE_EMAIL', 'vp.finance@example.edu', 'Email of the VP for Admin and Finance role (used only while that role is unassigned; follows Approval settings)'],
+  ['PRESIDENT_EMAIL', 'president@example.edu', 'Email of the President role (used only while that role is unassigned; follows Approval settings)']
 ] as const;
 
 export const ALLOWED_ATTACHMENT_TYPES = [

@@ -53,17 +53,14 @@ function getApprovedAssignments(rfa: RfaRecord, section: ApprovalSection): Sheet
 }
 
 /**
- * Email order within Approved By: Ma'am Tago (AVP for Finance) first, then the VPs,
+ * Email order within Approved By: the AVP for Finance role first, then the VPs,
  * then the President last. Only the email timing follows this order; every assigned
  * official can still open and act on the RFA as soon as the stage starts.
  */
 function approvedByEmailTier(row: SheetRecord): number {
-  const id = String(row.APPROVER_USER_ID);
-  const tagoId = String(getSetting('APPROVED_MANDATORY_USER_IDS') || '').split(',')[0].trim();
-  if ((tagoId && id === tagoId) || nameMatches(String(row.APPROVER_NAME || ''), 'Ana Liza Tago')) return 0;
-  const presidentId = String(getSetting('PRESIDENT_USER_ID') || '').trim();
-  const presidentEmail = normalizeEmail(String(getSetting('PRESIDENT_EMAIL') || DEFAULT_OFFICIAL_EMAILS['Alessandra De Guzman-Valino']));
-  if ((presidentId && id === presidentId) || normalizeEmail(row.APPROVER_EMAIL) === presidentEmail || String(row.APPROVER_NAME || '').trim().toLowerCase() === 'alessandra de guzman-valino') return 2;
+  const person = { id: String(row.APPROVER_USER_ID), name: String(row.APPROVER_NAME || ''), email: String(row.APPROVER_EMAIL || '') };
+  if (holdsRole('APPROVED_FIRST', person)) return 0;
+  if (holdsRole('PRESIDENT', person)) return 2;
   return 1;
 }
 
@@ -76,7 +73,7 @@ function approvedByCurrentEmailTier(rfa: RfaRecord): { tier: number; rows: Sheet
   return { tier, rows: pending.filter((row) => approvedByEmailTier(row) === tier) };
 }
 
-/** True while an earlier Approved By official (Ma'am Tago, then the VPs) has not yet approved ahead of this user. */
+/** True while an earlier Approved By official (AVP for Finance role, then the VPs) has not yet approved ahead of this user. */
 function notYetApprovedByTurn(rfa: RfaRecord, userId: string): boolean {
   if (rfa.CURRENT_STEP !== 'APPROVED_BY' || !isAssignmentWorkflow(rfa)) return false;
   const mine = getAssignmentsBySection(rfa.RFA_ID, 'APPROVED_BY').find((row) => String(row.APPROVER_USER_ID) === userId);
@@ -133,7 +130,7 @@ function nameMatches(candidate: string, fullName: string): boolean {
 /**
  * Who may open the institution-wide "All RFAs" register:
  *  - 'all'      administrators, both VPs, the President, the Reviewed and Noted
- *               official (Ma'am Ofel) and the Approved By officials (Ma'am Tago)
+ *               official and the Approved By officials (see OFFICIAL_ROLES)
  *  - 'approved' Procurement: approved, in-implementation and closed RFAs only
  *  - 'none'     everyone else (they see only their own RFAs and their approval queue)
  * Officials are recognised by their configured user ID or email; when a setting is
@@ -141,18 +138,10 @@ function nameMatches(candidate: string, fullName: string): boolean {
  */
 export function allRfasScope(user: SessionUser): 'all' | 'approved' | 'none' {
   if (toBoolean(user.IS_ADMIN)) return 'all';
-  const email = normalizeEmail(user.EMAIL);
-  const ids = new Set<string>();
-  const addIds = (key: string) => String(getSetting(key) || '').split(',').map((v) => v.trim()).filter(Boolean).forEach((v) => ids.add(v));
-  ['VP_ACADEMIC_USER_ID', 'PRESIDENT_USER_ID', 'REVIEWED_MANDATORY_USER_ID', 'APPROVED_MANDATORY_USER_IDS'].forEach(addIds);
-  if (ids.has(user.USER_ID)) return 'all';
-  const emails = [getSetting('VP_ADMIN_FINANCE_EMAIL'), getSetting('PRESIDENT_EMAIL'), ...Object.values(DEFAULT_OFFICIAL_EMAILS)].map((v) => normalizeEmail(String(v || ''))).filter(Boolean);
-  if (emails.includes(email)) return 'all';
-  const byName: Array<[string, string]> = [['VP_ACADEMIC_USER_ID', 'Jennelyn De Guzman'], ['REVIEWED_MANDATORY_USER_ID', 'Ofelia Hocson'], ['APPROVED_MANDATORY_USER_IDS', 'Ana Liza Tago']];
-  if (byName.some(([key, name]) => !String(getSetting(key) || '').trim() && nameMatches(String(user.FULL_NAME || ''), name))) return 'all';
-  // VP Admin & Finance and the President: exact full-name match only, as routing does, so the two accounts never swap.
-  const fullName = String(user.FULL_NAME || '').trim().toLowerCase();
-  if (['raquel baquiran', 'alessandra de guzman-valino'].includes(fullName)) return 'all';
+  const person = { id: user.USER_ID, name: String(user.FULL_NAME || ''), email: user.EMAIL };
+  if (ALL_RFAS_ROLES.some((role) => holdsRole(role, person))) return 'all';
+  // Any additional Approved By officials configured beyond the two named roles.
+  if (String(getSetting('APPROVED_MANDATORY_USER_IDS') || '').split(',').map((v) => v.trim()).filter(Boolean).includes(user.USER_ID)) return 'all';
   const procurementId = String(getSetting('PROCUREMENT_USER_ID') || '').trim();
   if ((procurementId && procurementId === user.USER_ID) || isProcurementUser(user)) return 'approved';
   return 'none';
@@ -383,60 +372,80 @@ function getThresholdCents(): number {
   try { return parsePresidentThresholdCents(getSetting('PRESIDENT_THRESHOLD_PHP') || '50000'); } catch { return 5_000_000; }
 }
 
-const DEFAULT_OFFICIAL_EMAILS: Record<string, string> = {
-  'Raquel Baquiran': 'vp.finance@example.edu',
-  'Alessandra De Guzman-Valino': 'president@example.edu'
+/**
+ * Official roles. Each role's FUNCTION is fixed (its approval stage, its place in the
+ * Approved By email order, All RFAs access); the PERSON is chosen in Administration ->
+ * Approval settings and stored as a user ID. Change the person there and everything follows.
+ * The legacy name/email below is used only while a role has not been assigned yet.
+ */
+export type OfficialRole = 'REVIEWED' | 'APPROVED_FIRST' | 'VP_FINANCE' | 'VP_ACADEMIC' | 'PRESIDENT' | 'PRINCIPAL';
+interface RoleDef { key: string; index?: number; label: string; legacyName: string; legacyEmailKey?: string; legacyEmail?: string; exactName?: boolean }
+export const OFFICIAL_ROLES: Record<OfficialRole, RoleDef> = {
+  REVIEWED: { key: 'REVIEWED_MANDATORY_USER_ID', label: 'Reviewed and Noted By (mandatory)', legacyName: 'Ofelia Hocson' },
+  APPROVED_FIRST: { key: 'APPROVED_MANDATORY_USER_IDS', index: 0, label: 'AVP for Finance (Approved By, emailed first)', legacyName: 'Ana Liza Tago' },
+  VP_FINANCE: { key: 'APPROVED_MANDATORY_USER_IDS', index: 1, label: 'VP for Admin and Finance (Approved By)', legacyName: 'Raquel Baquiran', legacyEmailKey: 'VP_ADMIN_FINANCE_EMAIL', legacyEmail: 'vp.finance@example.edu', exactName: true },
+  VP_ACADEMIC: { key: 'VP_ACADEMIC_USER_ID', label: 'VP for Academic Affairs (Approved By, academic departments)', legacyName: 'Jennelyn De Guzman' },
+  PRESIDENT: { key: 'PRESIDENT_USER_ID', label: 'President (Approved By, at or above the threshold)', legacyName: 'Alessandra De Guzman-Valino', legacyEmailKey: 'PRESIDENT_EMAIL', legacyEmail: 'president@example.edu', exactName: true },
+  PRINCIPAL: { key: 'PRINCIPAL_USER_ID', label: 'JHS/SHS Principal', legacyName: 'Noliver Garcia' }
 };
+const ALL_RFAS_ROLES: OfficialRole[] = ['REVIEWED', 'APPROVED_FIRST', 'VP_FINANCE', 'VP_ACADEMIC', 'PRESIDENT'];
 
-function findOfficialUser(settingKey: string, fullName: string, usersById: Map<string, UserRecord>, requesterEmail: string, requesterUserId: string, emailKey?: string): UserRecord | undefined {
-  const settingId = String(getSetting(settingKey) || '').trim();
-  if (settingId) {
-    const byId = usersById.get(settingId);
-    if (byId && isValidApprover(byId, requesterEmail, requesterUserId)) return byId;
-    if (byId && !isValidApprover(byId, requesterEmail, requesterUserId)) return undefined;
-    // Setting ID invalid → fall through to name/email lookup
+/** The user ID assigned to a role in Settings ('' when not assigned yet). */
+export function roleUserId(role: OfficialRole): string {
+  const def = OFFICIAL_ROLES[role];
+  const raw = String(getSetting(def.key) || '');
+  return def.index === undefined ? raw.trim() : (raw.split(',')[def.index] || '').trim();
+}
+
+function legacyEmail(role: OfficialRole): string {
+  const def = OFFICIAL_ROLES[role];
+  return normalizeEmail(String((def.legacyEmailKey && getSetting(def.legacyEmailKey)) || def.legacyEmail || ''));
+}
+
+/** True when this person holds the role: by user ID, or by the legacy name/email only while the role is unassigned. */
+export function holdsRole(role: OfficialRole, person: { id: string; name: string; email: string }): boolean {
+  const id = roleUserId(role);
+  if (id) return person.id === id;
+  return isLegacyHolder(role, person);
+}
+
+/** Matches the person who held this role before roles were assigned in Settings. */
+function isLegacyHolder(role: OfficialRole, person: { name: string; email: string }): boolean {
+  const def = OFFICIAL_ROLES[role];
+  const email = legacyEmail(role);
+  if (email && normalizeEmail(person.email) === email) return true;
+  return def.exactName ? person.name.trim().toLowerCase() === def.legacyName.toLowerCase() : nameMatches(person.name, def.legacyName);
+}
+
+/**
+ * True for someone listed in the Approval Matrix only because they used to hold an official
+ * role that Settings now assigns to a different person. Such entries are skipped so a change
+ * of person in Settings takes effect everywhere, while other department-specific matrix
+ * approvers are kept.
+ */
+function isReplacedOfficial(user: UserRecord): boolean {
+  const roles = Object.keys(OFFICIAL_ROLES) as OfficialRole[];
+  if (roles.some((role) => roleUserId(role) === user.USER_ID)) return false;
+  const person = { name: String(user.FULL_NAME || ''), email: String(user.EMAIL || '') };
+  return roles.some((role) => Boolean(roleUserId(role)) && isLegacyHolder(role, person));
+}
+
+/** The user holding the role who may approve this request, or undefined. */
+function resolveOfficial(role: OfficialRole, usersById: Map<string, UserRecord>, requesterEmail: string, requesterUserId: string): UserRecord | undefined {
+  const id = roleUserId(role);
+  if (id) {
+    const assigned = usersById.get(id);
+    return assigned && isValidApprover(assigned, requesterEmail, requesterUserId) ? assigned : undefined;
   }
-  // Confirmed-email lookup takes precedence over name so format variations
-  // (e.g. "BAQUIRAN, RAQUEL L.") still resolve, and the two confirmed accounts stay distinct.
-  if (emailKey || DEFAULT_OFFICIAL_EMAILS[fullName]) {
-    const configured = emailKey ? String(getSetting(emailKey) || '').trim() : '';
-    const emailToTry = normalizeEmail(configured || DEFAULT_OFFICIAL_EMAILS[fullName] || '');
-    if (emailToTry) {
-      for (const candidate of usersById.values()) {
-        if (normalizeEmail(candidate.EMAIL) === emailToTry && isValidApprover(candidate, requesterEmail, requesterUserId)) return candidate;
-      }
-      // If custom email configured but no matching user, do not fall back to a swapped name match
-      // for Raquel/President (prevents interchanging the two accounts).
-      if (configured && (fullName === 'Raquel Baquiran' || fullName === 'Alessandra De Guzman-Valino')) {
-        // fall through to name lookup only if no email-registered user exists at all;
-        // name lookup below may still match the correct account.
-      }
-    }
-  }
-  const target = fullName.trim().toLowerCase();
-  for (const candidate of usersById.values()) {
-    if (String(candidate.FULL_NAME || '').trim().toLowerCase() === target && isValidApprover(candidate, requesterEmail, requesterUserId)) return candidate;
-  }
-  // Loose name fallback: surname-first formats ("BAQUIRAN, RAQUEL L.") — only if email lookup didn't already disambiguate
-  // Matches when first+last tokens match loosely, still requiring valid approver.
-  for (const candidate of usersById.values()) {
-    if (!isValidApprover(candidate, requesterEmail, requesterUserId)) continue;
-    const candidateName = String(candidate.FULL_NAME || '').trim().toLowerCase();
-    const parts = target.split(/\s+/).filter(Boolean);
-    if (parts.length >= 2 && candidateName.includes(parts[0]) && candidateName.includes(parts[1])) {
-      // For Raquel/President, require email match to avoid swapping similar names
-      if (fullName === 'Raquel Baquiran') {
-        if (normalizeEmail(candidate.EMAIL) === 'vp.finance@example.edu' || normalizeEmail(candidate.EMAIL) === normalizeEmail(String(getSetting('VP_ADMIN_FINANCE_EMAIL') || ''))) return candidate;
-        continue;
-      }
-      if (fullName === 'Alessandra De Guzman-Valino') {
-        if (normalizeEmail(candidate.EMAIL) === 'president@example.edu' || normalizeEmail(candidate.EMAIL) === normalizeEmail(String(getSetting('PRESIDENT_EMAIL') || ''))) return candidate;
-        continue;
-      }
-      return candidate;
-    }
-  }
-  return undefined;
+  // Role not assigned yet: confirmed email first (keeps the two separate accounts apart), then name.
+  const def = OFFICIAL_ROLES[role];
+  const candidates = [...usersById.values()].filter((u) => isValidApprover(u, requesterEmail, requesterUserId));
+  const email = legacyEmail(role);
+  const byEmail = email ? candidates.find((u) => normalizeEmail(u.EMAIL) === email) : undefined;
+  if (byEmail) return byEmail;
+  const exact = candidates.find((u) => String(u.FULL_NAME || '').trim().toLowerCase() === def.legacyName.toLowerCase());
+  if (exact || def.exactName) return exact;
+  return candidates.find((u) => nameMatches(String(u.FULL_NAME || ''), def.legacyName));
 }
 
 function addDistinct(list: EligibleApprover[], candidates: EligibleApprover[]): void {
@@ -566,6 +575,7 @@ function resolveOfficialAssignments(
     for (const row of rows) {
       const c = usersById.get(String(row.APPROVER_USER_ID));
       if (!c || !isValidApprover(c, requester, requesterUserId)) continue;
+      if (isReplacedOfficial(c)) continue; // role now held by someone else (set in Approval settings)
       if (seen.has(c.USER_ID)) continue;
       seen.add(c.USER_ID);
       out.push(toEligible(c, deptNameMap));
@@ -588,12 +598,12 @@ function resolveOfficialAssignments(
   // Mandatory: matrix REVIEWED_AND_NOTED takes precedence, then setting, then name lookup
   let mandatoryReviewed = resolveMatrix('REVIEWED_AND_NOTED');
   if (!mandatoryReviewed.length) {
-    const official = findOfficialUser('REVIEWED_MANDATORY_USER_ID', 'Ofelia Hocson', usersById, requester, requesterUserId);
+    const official = resolveOfficial('REVIEWED', usersById, requester, requesterUserId);
     if (official) mandatoryReviewed = [toEligible(official, deptNameMap)];
   }
   // If matrix contains REVIEWED_BY/NOTED_BY from V2-era config for this dept, do not mix; official stage only uses REVIEWED_AND_NOTED.
   addDistinct(reviewed, mandatoryReviewed);
-  if (strict && !mandatoryReviewed.length) businessError('Reviewed and Noted By mandatory approver (Ofelia Hocson) is not configured. An administrator must configure it before submission.', 'CONFIGURATION_REQUIRED');
+  if (strict && !mandatoryReviewed.length) businessError('Reviewed and Noted By mandatory approver is not configured. An administrator must assign it in Approval settings before submission.', 'CONFIGURATION_REQUIRED');
 
   // Optional: Other Department Heads (all heads per involved dept — all must approve)
   const involvedNames: string[] = [];
@@ -613,8 +623,8 @@ function resolveOfficialAssignments(
   // Optional: Principal (JHS/SHS only)
   if (selections.includePrincipal) {
     if (!isJhsOrShsDepartment(requestingDept)) businessError('The JHS/SHS Principal is only available for Junior High School or Senior High School departments.', 'FORBIDDEN');
-    const principal = findOfficialUser('PRINCIPAL_USER_ID', 'Noliver Garcia', usersById, requester, requesterUserId);
-    if (strict && !principal) businessError('JHS/SHS Principal (Noliver Garcia) is not configured.', 'CONFIGURATION_REQUIRED');
+    const principal = resolveOfficial('PRINCIPAL', usersById, requester, requesterUserId);
+    if (strict && !principal) businessError('The JHS/SHS Principal is not configured. An administrator must assign it in Approval settings.', 'CONFIGURATION_REQUIRED');
     if (principal) addDistinct(reviewed, [toEligible(principal, deptNameMap)]);
   }
   // Procurement Clerk removed from the workflow — never assigned.
@@ -623,38 +633,27 @@ function resolveOfficialAssignments(
   // --- Stage 3: Approved By ---
   const approved: EligibleApprover[] = [];
   const mandatoryApproved = resolveMatrix('APPROVED_BY');
-  // Supplement with settings mandatory IDs if matrix is empty or incomplete (both Ana and Raquel expected when configured via settings)
-  const settingMandatory = String(getSetting('APPROVED_MANDATORY_USER_IDS') || '').split(',').map((s) => s.trim()).filter(Boolean);
-  for (const id of settingMandatory) {
-    const c = usersById.get(id);
-    if (c && isValidApprover(c, requester, requesterUserId) && !mandatoryApproved.some((e) => e.USER_ID === c.USER_ID)) mandatoryApproved.push(toEligible(c, deptNameMap));
+  // The two Approved By roles (AVP for Finance, VP for Admin and Finance), then any extra configured IDs.
+  for (const role of ['APPROVED_FIRST', 'VP_FINANCE'] as OfficialRole[]) {
+    const official = resolveOfficial(role, usersById, requester, requesterUserId);
+    if (official) addDistinct(mandatoryApproved, [toEligible(official, deptNameMap)]);
   }
-  // Confirmed Raquel account (vp.finance@example.edu) fallback — distinct from President.
-  if (!mandatoryApproved.some((e) => normalizeEmail(e.EMAIL) === normalizeEmail(String(getSetting('VP_ADMIN_FINANCE_EMAIL') || 'vp.finance@example.edu')))) {
-    const raquel = findOfficialUser('APPROVED_MANDATORY_USER_IDS', 'Raquel Baquiran', usersById, requester, requesterUserId, 'VP_ADMIN_FINANCE_EMAIL');
-    if (raquel) addDistinct(mandatoryApproved, [toEligible(raquel, deptNameMap)]);
-  }
-  // Ana Liza Tago is always an approver (AVP for Finance) — fallback by name when matrix omits her.
-  if (!mandatoryApproved.some((e) => e.FULL_NAME.trim().toLowerCase() === 'ana liza tago')) {
-    const ana = findOfficialUser('APPROVED_MANDATORY_USER_IDS', 'Ana Liza Tago', usersById, requester, requesterUserId);
-    if (ana) addDistinct(mandatoryApproved, [toEligible(ana, deptNameMap)]);
-  }
-  if (!mandatoryApproved.length) {
-    // Name-based fallback only when neither matrix nor settings are configured, to give a clear config error in strict mode
-    // Do not silently invent approvers; leave empty so strict fails.
+  for (const id of String(getSetting('APPROVED_MANDATORY_USER_IDS') || '').split(',').map((v) => v.trim()).filter(Boolean).slice(2)) {
+    const extra = usersById.get(id);
+    if (extra && isValidApprover(extra, requester, requesterUserId)) addDistinct(mandatoryApproved, [toEligible(extra, deptNameMap)]);
   }
   addDistinct(approved, mandatoryApproved);
-  if (strict && !mandatoryApproved.length) businessError('Approved By mandatory approvers (Ana Liza Tago, Raquel Baquiran) are not configured. An administrator must configure them before submission.', 'CONFIGURATION_REQUIRED');
+  if (strict && !mandatoryApproved.length) businessError('Approved By mandatory approvers are not configured. An administrator must assign them in Approval settings before submission.', 'CONFIGURATION_REQUIRED');
 
   if (isAcademicDepartment(requestingDept)) {
-    const vp = findOfficialUser('VP_ACADEMIC_USER_ID', 'Jennelyn De Guzman', usersById, requester, requesterUserId);
-    if (strict && !vp) businessError('VP for Academic Affairs (Jennelyn De Guzman) is not configured for this academic department RFA.', 'CONFIGURATION_REQUIRED');
+    const vp = resolveOfficial('VP_ACADEMIC', usersById, requester, requesterUserId);
+    if (strict && !vp) businessError('The VP for Academic Affairs is not configured for this academic department RFA. An administrator must assign it in Approval settings.', 'CONFIGURATION_REQUIRED');
     if (vp) addDistinct(approved, [toEligible(vp, deptNameMap)]);
   }
   const threshold = getThresholdCents();
   if (Number(requestedAmountCents) >= threshold) {
-    const president = findOfficialUser('PRESIDENT_USER_ID', 'Alessandra De Guzman-Valino', usersById, requester, requesterUserId, 'PRESIDENT_EMAIL');
-    if (strict && !president) businessError('President (Alessandra De Guzman-Valino) is not configured for this above-threshold RFA.', 'CONFIGURATION_REQUIRED');
+    const president = resolveOfficial('PRESIDENT', usersById, requester, requesterUserId);
+    if (strict && !president) businessError('The President is not configured for this above-threshold RFA. An administrator must assign it in Approval settings.', 'CONFIGURATION_REQUIRED');
     if (president) addDistinct(approved, [toEligible(president, deptNameMap)]);
   }
   assignments.APPROVED_BY = approved;
@@ -760,6 +759,7 @@ export function fixedRoutePreview(user: SessionUser): Record<string, unknown> {
     isAcademic: isAcademicDepartment(department as DepartmentRecord),
     isJhsOrShs: isJhsOrShsDepartment(department as DepartmentRecord),
     presidentThresholdPhp: getThresholdCents() / 100,
+    principalName: resolveOfficial('PRINCIPAL', usersById, user.EMAIL, user.USER_ID)?.FULL_NAME || '',
     alternateCandidates
   };
 }
@@ -1014,7 +1014,7 @@ export function decideRfa(user: SessionUser, rfaId: string, action: 'APPROVED' |
     // All stages are AND: every assigned approver (including every recommending head) must approve.
     const next = nextAssignedStageAfterAction(assignedCounts, approvedCounts, sections.indexOf(assignmentSection), sections);
     if (next === assignmentSection) {
-      // Approved By email order: once a tier finishes (Tago, then the VPs), email the next one.
+      // Approved By email order: once a tier finishes (AVP for Finance, then the VPs), email the next one.
       if (assignmentSection === 'APPROVED_BY' && approvedByCurrentEmailTier(rfa).tier !== emailTierBefore) notifyAssignedStage(rfa, user, assignmentSection);
       return rfa;
     }
@@ -1181,7 +1181,7 @@ export function detailRfa(user: SessionUser, rfaId: string, schoolYearHint = 0):
     attachments: attachmentRows(rfaId).map(({ DRIVE_FILE_ID: _hidden, ...attachment }) => attachment),
     audit: history.map(({ METADATA_JSON: _metadata, ...entry }) => entry),
     notedByNotApplicable: notedByNotApplicable(history),
-    // Approved By email order per approver user ID: 0 = Ma'am Tago, 1 = VPs, 2 = President.
+    // Approved By email order per approver user ID: 0 = AVP for Finance, 1 = VPs, 2 = President.
     approvedByOrder: Object.fromEntries(approvals.filter((row) => row.STEP === 'APPROVED_BY' && row.ACTION === '').map((row) => [String(row.APPROVER_USER_ID), approvedByEmailTier(row)])),
     financial: financialDetail(rfa),
     permissions: {

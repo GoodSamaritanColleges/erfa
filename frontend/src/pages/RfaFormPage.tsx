@@ -45,6 +45,7 @@ type FixedRoutePreview = {
   requestingHeadCount?: number;
   isAcademic?: boolean;
   isJhsOrShs?: boolean;
+  principalName?: string;
   presidentThresholdPhp?: number;
   alternateCandidates?: EligibleApprover[];
 };
@@ -174,7 +175,7 @@ export function RfaFormPage() {
   const reviewedPreviewNames = (() => {
     const base = (fixedRoute?.assignments?.REVIEWED_AND_NOTED ?? []).map((p) => p.FULL_NAME);
     const extra = selectedInvolvedHeads.map((h) => h.name);
-    const principal = form.includePrincipal && fixedRoute?.isJhsOrShs ? ['Noliver Garcia'] : [];
+    const principal = form.includePrincipal && fixedRoute?.isJhsOrShs ? [fixedRoute.principalName || 'JHS/SHS Principal'] : [];
     return Array.from(new Set([...base, ...extra, ...principal]));
   })();
   const amount = Number(form.requestedAmount || 0);

@@ -25,9 +25,7 @@ export function adminData(user: SessionUser): Record<string, unknown> {
       vpAcademicUserId: getSetting('VP_ACADEMIC_USER_ID') || '',
       presidentUserId: getSetting('PRESIDENT_USER_ID') || '',
       principalUserId: getSetting('PRINCIPAL_USER_ID') || '',
-      procurementUserId: getSetting('PROCUREMENT_USER_ID') || '',
-      vpAdminFinanceEmail: getSetting('VP_ADMIN_FINANCE_EMAIL') || 'vp.finance@example.edu',
-      presidentEmail: getSetting('PRESIDENT_EMAIL') || 'president@example.edu'
+      procurementUserId: getSetting('PROCUREMENT_USER_ID') || ''
     },
     audit: allTail<SheetRecord>('RFA_AUDIT', 500).reverse(), notifications: allTail<SheetRecord>('NOTIFICATIONS', 500).reverse()
   };
@@ -71,22 +69,19 @@ export function saveApprovalSettings(actor: SessionUser, payload: Record<string,
     parsePresidentThresholdCents(thresholdRaw);
     setSetting('PRESIDENT_THRESHOLD_PHP', String(Number(thresholdRaw.replace(/,/g, ''))), 'Presidential approval threshold in PHP (inclusive)');
   }
-  // Confirmed email accounts must stay distinct.
-  const raquelEmail = normalizeEmail(String(payload.vpAdminFinanceEmail || '').trim() || getSetting('VP_ADMIN_FINANCE_EMAIL') || 'vp.finance@example.edu');
-  const presidentEmail = normalizeEmail(String(payload.presidentEmail || '').trim() || getSetting('PRESIDENT_EMAIL') || 'president@example.edu');
-  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailPattern.test(raquelEmail)) throw new Error('Raquel Baquiran email is invalid.');
-  if (!emailPattern.test(presidentEmail)) throw new Error('President email is invalid.');
-  if (raquelEmail === presidentEmail) throw new Error('Raquel Baquiran and President emails are separate accounts and must not be interchanged.');
-  setSetting('VP_ADMIN_FINANCE_EMAIL', raquelEmail, 'Confirmed email for Raquel Baquiran - VP for Admin and Finance (separate account)');
-  setSetting('PRESIDENT_EMAIL', presidentEmail, 'Confirmed email for Alessandra De Guzman-Valino - President (separate account)');
+  // Each official role is a fixed function; the person is whoever is selected here.
+  // APPROVED_MANDATORY_USER_IDS is positional: [0] AVP for Finance (emailed first), [1] VP for Admin and Finance.
+  const approvedIds = String(payload.approvedMandatoryUserIds ?? '').split(',').map((s) => s.trim());
+  const presidentId = String(payload.presidentUserId || '').trim();
+  const approvedRoleHolders = [approvedIds[0], approvedIds[1], presidentId].filter(Boolean);
+  if (new Set(approvedRoleHolders).size !== approvedRoleHolders.length) throw new Error('One person cannot hold two Approved By roles. Choose a different person for AVP for Finance, VP for Admin and Finance, and President.');
   const setters: Array<[string, string, string]> = [
-    ['REVIEWED_MANDATORY_USER_ID', String(payload.reviewedMandatoryUserId || ''), 'Reviewed and Noted By mandatory approver user ID (Ofelia Hocson)'],
-    ['APPROVED_MANDATORY_USER_IDS', String(payload.approvedMandatoryUserIds || ''), 'Approved By mandatory approver user IDs, comma-separated'],
-    ['VP_ACADEMIC_USER_ID', String(payload.vpAcademicUserId || ''), 'VP for Academic Affairs user ID'],
-    ['PRESIDENT_USER_ID', String(payload.presidentUserId || ''), 'President user ID'],
-    ['PRINCIPAL_USER_ID', String(payload.principalUserId || ''), 'JHS/SHS Principal user ID'],
-    ['PROCUREMENT_USER_ID', String(payload.procurementUserId || ''), 'Procurement Clerk user ID']
+    ['REVIEWED_MANDATORY_USER_ID', String(payload.reviewedMandatoryUserId || ''), 'Role: Reviewed and Noted By (mandatory) - user ID'],
+    ['APPROVED_MANDATORY_USER_IDS', approvedIds.some(Boolean) ? approvedIds.join(',') : '', 'Roles: Approved By - AVP for Finance (first), VP for Admin and Finance (second) - user IDs, in this order'],
+    ['VP_ACADEMIC_USER_ID', String(payload.vpAcademicUserId || ''), 'Role: VP for Academic Affairs - user ID'],
+    ['PRESIDENT_USER_ID', presidentId, 'Role: President - user ID'],
+    ['PRINCIPAL_USER_ID', String(payload.principalUserId || ''), 'Role: JHS/SHS Principal - user ID'],
+    ['PROCUREMENT_USER_ID', String(payload.procurementUserId || ''), 'Role: Procurement - user ID']
   ];
   for (const [key, value, description] of setters) {
     const trimmed = value.trim();
@@ -99,7 +94,12 @@ export function saveApprovalSettings(actor: SessionUser, payload: Record<string,
     }
     setSetting(key, trimmed, description);
   }
-  audit('APPROVAL_SETTINGS_CHANGED', actor, '', '', '', 'approval settings updated', {});
+  // Keep the older email settings in step with whoever now holds those roles, so nothing
+  // keeps pointing at a previous person.
+  const emailOf = (id: string) => (id ? normalizeEmail(String(findBy<UserRecord>('USERS', 'USER_ID', id)?.EMAIL || '')) : '');
+  if (emailOf(approvedIds[1] || '')) setSetting('VP_ADMIN_FINANCE_EMAIL', emailOf(approvedIds[1] || ''), 'Email of the VP for Admin and Finance role (follows Approval settings)');
+  if (emailOf(presidentId)) setSetting('PRESIDENT_EMAIL', emailOf(presidentId), 'Email of the President role (follows Approval settings)');
+  audit('APPROVAL_SETTINGS_CHANGED', actor, '', '', '', 'approval settings updated', { reviewed: String(payload.reviewedMandatoryUserId || ''), approved: approvedIds.join(','), vpAcademic: String(payload.vpAcademicUserId || ''), president: presidentId, principal: String(payload.principalUserId || '') });
   return adminData(actor);
 }
 

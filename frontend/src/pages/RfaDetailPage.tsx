@@ -288,7 +288,7 @@ function WorkflowStep({ step, index, rfa, approvals, current, notApplicable }: {
 const WAITING_FOR_TIER = ['Waiting for AVP approval', 'Waiting for VP approval'];
 
 /**
- * Approved By emails go out in order (Ma'am Tago, then the VPs, then the President).
+ * Approved By emails go out in order (AVP for Finance role, then the VPs, then the President).
  * Returns, per approver user ID, the waiting label for officials not yet emailed.
  */
 function approvedByWaiting(rfa: Rfa, approvals: Approval[], order: Record<string, number> = {}): Map<string, string> {

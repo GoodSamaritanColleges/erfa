@@ -509,3 +509,46 @@ describe('My RFAs and All RFAs visibility', () => {
     expect(() => listAllRfas(userById('itHead'), {})).toThrow('do not have access');
   });
 });
+
+describe('official roles: the person can change, the role stays the same', () => {
+  function addUser(user: SessionUser) {
+    sheets.set('USERS', [...((sheets.get('USERS') || []) as SheetRecord[]), user as unknown as SheetRecord]);
+    users.push(user as unknown as SheetRecord);
+  }
+
+  it('routes Approved By to the newly assigned AVP for Finance and moves access and email order with the role', () => {
+    addUser(namedUser('newAvp', 'Maria Santos'));
+    settings.set('APPROVED_MANDATORY_USER_IDS', 'newAvp,raquel');
+    const req = requesterFor('it');
+    const draft = createRfa(req, input({}));
+    submitRfa(req, draft.RFA_ID);
+    expect(assignmentsFor(draft.RFA_ID, 'APPROVED_BY')).toEqual(expect.arrayContaining(['newAvp', 'raquel']));
+    expect(assignmentsFor(draft.RFA_ID, 'APPROVED_BY')).not.toContain('ana');
+    expect(allRfasScope(userById('newAvp'))).toBe('all');
+    expect(allRfasScope(userById('ana'))).toBe('none'); // previous holder loses the role's access
+    // The new holder is emailed first in Approved By, exactly as the role says.
+    acted(draft.RFA_ID, userById('itHead'));
+    acted(draft.RFA_ID, userById('ofelia'));
+    expect(() => acted(draft.RFA_ID, userById('raquel'))).toThrow();
+    acted(draft.RFA_ID, userById('newAvp'));
+    acted(draft.RFA_ID, userById('raquel'));
+    expect(status(draft.RFA_ID)).toBe('APPROVED');
+  });
+
+  it('a replaced President or Reviewed and Noted official no longer routes or sees All RFAs', () => {
+    addUser(namedUser('newPresident', 'Jose Rizal'));
+    addUser(namedUser('newReviewer', 'Andres Bonifacio'));
+    settings.set('PRESIDENT_USER_ID', 'newPresident');
+    settings.set('REVIEWED_MANDATORY_USER_ID', 'newReviewer');
+    const req = requesterFor('it');
+    const draft = createRfa(req, input({ requestedAmount: '60000', budgetAllocation: 60000 }));
+    submitRfa(req, draft.RFA_ID);
+    expect(assignmentsFor(draft.RFA_ID, 'REVIEWED_AND_NOTED')).toContain('newReviewer');
+    expect(assignmentsFor(draft.RFA_ID, 'REVIEWED_AND_NOTED')).not.toContain('ofelia');
+    expect(assignmentsFor(draft.RFA_ID, 'APPROVED_BY')).toContain('newPresident');
+    expect(assignmentsFor(draft.RFA_ID, 'APPROVED_BY')).not.toContain('president');
+    expect(allRfasScope(userById('president'))).toBe('none');
+    expect(allRfasScope(userById('ofelia'))).toBe('none');
+    expect(allRfasScope(userById('newPresident'))).toBe('all');
+  });
+});

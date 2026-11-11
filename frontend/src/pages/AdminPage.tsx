@@ -56,7 +56,7 @@ export function AdminPage() {
       {tab !== 'logs' && <header className="panel-header">
         <div>
           <h2>{tab === 'users' ? 'Registered users' : tab === 'departments' ? 'Departments & heads' : 'Official approval matrix'}</h2>
-          <p>{tab === 'matrix' ? 'Recommending, Reviewed and Noted, and Approved By from this matrix per department. Mandatory officials: Ofelia (Reviewed and Noted), Ana and Raquel (Approved). Conditionals and threshold are set below.' : tab === 'departments' ? 'Set department heads (multiple per department allowed) and academic classification.' : 'No public registration or destructive deletion.'}</p>
+          <p>{tab === 'matrix' ? 'Department-specific approvers. The official roles (Reviewed and Noted By, Approved By, VPs, President, Principal) are assigned once in Official Approval Roles below and apply to every department.' : tab === 'departments' ? 'Set department heads (multiple per department allowed) and academic classification.' : 'No public registration or destructive deletion.'}</p>
         </div>
         <button className="button primary" onClick={() => setEditing('new')}><Plus size={16}/> Add {tab === 'users' ? 'User' : tab === 'departments' ? 'Department' : 'Route'}</button>
       </header>}
@@ -194,7 +194,7 @@ function DepartmentsTable({ departments, users, heads, edit, onSaved, onError }:
 }
 
 function ApprovalSettingsPanel({ data, onSaved, onError }: { data: AdminData; onSaved: () => void; onError: (e: string) => void }) {
-  const settings = data.settings ?? { presidentThresholdPhp: '50000', reviewedMandatoryUserId: '', approvedMandatoryUserIds: '', vpAcademicUserId: '', presidentUserId: '', principalUserId: '', vpAdminFinanceEmail: 'vp.finance@example.edu', presidentEmail: 'president@example.edu' };
+  const settings = data.settings ?? { presidentThresholdPhp: '50000', reviewedMandatoryUserId: '', approvedMandatoryUserIds: '', vpAcademicUserId: '', presidentUserId: '', principalUserId: '' };
   const [form, setForm] = useState(settings);
   const [saving, setSaving] = useState(false);
   useEffect(() => { setForm(settings); }, [JSON.stringify(settings)]);
@@ -206,37 +206,33 @@ function ApprovalSettingsPanel({ data, onSaved, onError }: { data: AdminData; on
     finally { setSaving(false); }
   }
   const approverOptions = data.users.filter((u) => u.ACTIVE && u.CAN_APPROVE_RFA);
-  const userSelect = (key: keyof typeof form, label: string) => (
-    <label className="field"><span>{label}</span>
-      <SearchableSelect
-        value={String(form[key] ?? '')}
-        options={approverOptions.map((u) => ({ value: u.USER_ID, label: `${u.FULL_NAME} - ${u.EMAIL}` }))}
-        placeholder="Search name or email…"
-        onChange={(v) => set(key, v)}
-      />
+  const options = approverOptions.map((u) => ({ value: u.USER_ID, label: `${u.FULL_NAME} - ${u.EMAIL}` }));
+  const roleField = (label: string, help: string, value: string, onChange: (v: string) => void) => (
+    <label className="field role-field"><span>{label}</span>
+      <SearchableSelect value={value} options={options} placeholder="Search name or email…" onChange={onChange} />
+      <small>{help}</small>
     </label>
   );
-  const approvedIds = String(form.approvedMandatoryUserIds ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  // Positional: [0] AVP for Finance, [1] VP for Admin and Finance. Clearing one never shifts the other.
+  const approvedIds = String(form.approvedMandatoryUserIds ?? '').split(',').map((s) => s.trim());
   const setApprovedId = (slot: number, userId: string) => {
-    const next = [...approvedIds];
-    if (userId) next[slot] = userId; else next.splice(slot, 1);
-    set('approvedMandatoryUserIds', next.filter(Boolean).join(','));
+    const next = [approvedIds[0] ?? '', approvedIds[1] ?? '', ...approvedIds.slice(2)];
+    next[slot] = userId;
+    set('approvedMandatoryUserIds', next.some(Boolean) ? next.join(',') : '');
   };
   return <section className="form-card" style={{ marginTop: '1rem' }}>
-    <h3>Official Approval Settings</h3>
-    <p className="muted">Mandatory approvers remain fixed unless explicitly reconfigured here or in the Approval Matrix: Ofelia Hocson (Reviewed and Noted), Ana Liza Tago and Raquel Baquiran (Approved). Threshold is inclusive.</p>
+    <h3>Official Approval Roles</h3>
+    <p className="muted">Each role keeps the same job in every RFA. To change who holds a role, pick the new person and save: routing, the Approved By email order, and All RFAs access move to them, and the previous person no longer has them. Leave a role empty only while it is vacant.</p>
     <div className="form-grid">
-      <label className="field"><span>Presidential threshold (PHP)</span><input inputMode="decimal" value={form.presidentThresholdPhp} onChange={(e) => set('presidentThresholdPhp', e.target.value)} /></label>
-      {userSelect('reviewedMandatoryUserId', 'Reviewed and Noted mandatory (Ofelia Hocson)')}
-      <label className="field"><span>Approved mandatory — Ma'am Tago (Ana Liza Tago)</span><SearchableSelect value={approvedIds[0] ?? ''} options={approverOptions.map((u) => ({ value: u.USER_ID, label: `${u.FULL_NAME} - ${u.EMAIL}` }))} placeholder="Search name or email…" onChange={(v) => setApprovedId(0, v)} /><small>Always together with VP Raquel below.</small></label>
-      <label className="field"><span>Approved mandatory — VP Raquel (Raquel Baquiran)</span><SearchableSelect value={approvedIds[1] ?? ''} options={approverOptions.map((u) => ({ value: u.USER_ID, label: `${u.FULL_NAME} - ${u.EMAIL}` }))} placeholder="Search name or email…" onChange={(v) => setApprovedId(1, v)} /><small>Always together with Ma'am Tago.</small></label>
-      {userSelect('vpAcademicUserId', 'VP Academic (Jennelyn De Guzman)')}
-      {userSelect('presidentUserId', 'President (Alessandra De Guzman-Valino)')}
-      {userSelect('principalUserId', 'JHS/SHS Principal (Noliver Garcia)')}
-      <label className="field"><span>Raquel Baquiran email — VP Admin and Finance (separate account)</span><input type="email" value={form.vpAdminFinanceEmail ?? 'vp.finance@example.edu'} onChange={(e) => set('vpAdminFinanceEmail', e.target.value)} /></label>
-      <label className="field"><span>President email — Alessandra De Guzman-Valino (separate account)</span><input type="email" value={form.presidentEmail ?? 'president@example.edu'} onChange={(e) => set('presidentEmail', e.target.value)} /></label>
-      <p className="muted">Confirmed emails are preconfigured. Do not interchange them. Other approver emails will be supplied later and remain unconfigured until set here or via Users. Procurement is view-only by department (PPU) — no approver to set.</p>
+      <label className="field role-field"><span>Presidential threshold (PHP)</span><input inputMode="decimal" value={form.presidentThresholdPhp} onChange={(e) => set('presidentThresholdPhp', e.target.value)} /><small>Requests at or above this amount also go to the President.</small></label>
+      {roleField('Reviewed and Noted By (mandatory)', 'Reviews every RFA after the department head.', String(form.reviewedMandatoryUserId ?? ''), (v) => set('reviewedMandatoryUserId', v))}
+      {roleField('AVP for Finance (Approved By)', 'Approves every RFA; emailed first in Approved By.', approvedIds[0] ?? '', (v) => setApprovedId(0, v))}
+      {roleField('VP for Admin and Finance (Approved By)', 'Approves every RFA, after the AVP for Finance.', approvedIds[1] ?? '', (v) => setApprovedId(1, v))}
+      {roleField('VP for Academic Affairs (Approved By)', 'Approves RFAs from academic departments.', String(form.vpAcademicUserId ?? ''), (v) => set('vpAcademicUserId', v))}
+      {roleField('President (Approved By)', 'Approves RFAs at or above the threshold; emailed last.', String(form.presidentUserId ?? ''), (v) => set('presidentUserId', v))}
+      {roleField('JHS/SHS Principal (Reviewed and Noted By)', 'Added when a JHS/SHS request includes the Principal.', String(form.principalUserId ?? ''), (v) => set('principalUserId', v))}
     </div>
+    <p className="muted">One person cannot hold two Approved By roles. Procurement is view-only by department (PPU); there is no approver to set.</p>
     <button className="button primary" disabled={saving} onClick={() => void save()}>Save approval settings</button>
   </section>;
 }
@@ -359,7 +355,7 @@ function AdminForm({ tab, editing, data, onSaved, onError }: { tab: Tab; editing
     </>}
     {tab === 'matrix' && <>
       <label className="field"><span>Department</span><select required value={String(form.DEPARTMENT_ID ?? '')} onChange={(e) => set('DEPARTMENT_ID',e.target.value)}><option value="">Select department</option>{data.departments.filter((d) => d.ACTIVE).map((d) => <option key={d.DEPARTMENT_ID} value={d.DEPARTMENT_ID}>{d.DEPARTMENT_NAME}</option>)}</select></label>
-      <label className="field"><span>Approval Step</span><select value={String(form.APPROVAL_STEP ?? 'REVIEWED_AND_NOTED')} onChange={(e) => set('APPROVAL_STEP',e.target.value)}><option value="REVIEWED_AND_NOTED">Reviewed and Noted By (mandatory Ofelia)</option><option value="APPROVED_BY">Approved By</option><option value="RECOMMENDING_APPROVAL">Recommending Approval</option><option value="REVIEWED_BY">Reviewed By (legacy V2)</option><option value="NOTED_BY">Noted By (legacy V2)</option><option value="INVOLVED_DEPARTMENT_HEAD">Involved Department Head (legacy V2)</option></select></label>
+      <label className="field"><span>Approval Step</span><select value={String(form.APPROVAL_STEP ?? 'REVIEWED_AND_NOTED')} onChange={(e) => set('APPROVAL_STEP',e.target.value)}><option value="REVIEWED_AND_NOTED">Reviewed and Noted By</option><option value="APPROVED_BY">Approved By</option><option value="RECOMMENDING_APPROVAL">Recommending Approval</option><option value="REVIEWED_BY">Reviewed By (legacy V2)</option><option value="NOTED_BY">Noted By (legacy V2)</option><option value="INVOLVED_DEPARTMENT_HEAD">Involved Department Head (legacy V2)</option></select></label>
       <label className="field"><span>Sequence</span><input required min="1" type="number" value={Number(form.SEQUENCE ?? 1)} onChange={(e) => set('SEQUENCE',Number(e.target.value))}/></label>
       <label className="field"><span>Approver</span><select required value={String(form.APPROVER_USER_ID ?? '')} onChange={(e) => set('APPROVER_USER_ID',e.target.value)}><option value="">Select approver</option>{data.users.filter((u) => u.ACTIVE && u.CAN_APPROVE_RFA).map((u) => <option key={u.USER_ID} value={u.USER_ID}>{u.FULL_NAME} - {u.EMAIL}</option>)}</select></label>
       <Checkbox label="Active" checked={Boolean(form.ACTIVE ?? true)} set={(v) => set('ACTIVE',v)}/>
