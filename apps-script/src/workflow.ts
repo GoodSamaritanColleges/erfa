@@ -75,6 +75,15 @@ function approvedByCurrentEmailTier(rfa: RfaRecord): { tier: number; rows: Sheet
   return { tier, rows: pending.filter((row) => approvedByEmailTier(row) === tier) };
 }
 
+/** True while an earlier Approved By official (Ma'am Tago, then the VPs) has not yet approved ahead of this user. */
+function notYetApprovedByTurn(rfa: RfaRecord, userId: string): boolean {
+  if (rfa.CURRENT_STEP !== 'APPROVED_BY' || !isAssignmentWorkflow(rfa)) return false;
+  const mine = getAssignmentsBySection(rfa.RFA_ID, 'APPROVED_BY').find((row) => String(row.APPROVER_USER_ID) === userId);
+  if (!mine) return false;
+  const { tier } = approvedByCurrentEmailTier(rfa);
+  return tier >= 0 && approvedByEmailTier(mine) > tier;
+}
+
 function getRfa(id: string): RfaRecord {
   const record = findBy<RfaRecord>('RFA', 'RFA_ID', id);
   if (!record) businessError('RFA was not found.', 'NOT_FOUND');
@@ -970,6 +979,7 @@ export function decideRfa(user: SessionUser, rfaId: string, action: 'APPROVED' |
     if (!matrixAssigned && headId !== user.USER_ID) businessError('Only the involved department head may approve this assignment.', 'FORBIDDEN');
   }
   if (isAssignmentWorkflow(rfa) && assignmentSection && getApprovedAssignments(rfa, assignmentSection).some((row) => String(row.APPROVER_USER_ID) === user.USER_ID)) businessError('You have already acted on this RFA section.', 'CONFLICT');
+  if (notYetApprovedByTurn(rfa, user.USER_ID)) businessError('This RFA is not yet your turn: an earlier Approved By official must approve first. You will be emailed when it is.', 'FORBIDDEN');
   const emailTierBefore = isAssignmentWorkflow(rfa) && assignmentSection === 'APPROVED_BY' ? approvedByCurrentEmailTier(rfa).tier : -1;
   if (action !== 'APPROVED' && remarks.trim().length < 3) businessError('A reason is required for return or disapproval.');
   appendApproval(rfa, rfa.CURRENT_STEP, user, action, remarks.trim());
@@ -1107,7 +1117,8 @@ export function listForApproval(user: SessionUser, approvals?: SheetRecord[], re
       const key = `${rfa.RFA_ID}:${section}`;
       if (!assigned.has(key)) return false;
       const submittedAt = Date.parse(String(rfa.SUBMITTED_AT || ''));
-      return !(approvedAt.get(key) || []).some((timestamp) => !Number.isFinite(submittedAt) || Date.parse(timestamp) >= submittedAt);
+      if ((approvedAt.get(key) || []).some((timestamp) => !Number.isFinite(submittedAt) || Date.parse(timestamp) >= submittedAt)) return false;
+      return !notYetApprovedByTurn(rfa, user.USER_ID);
     }
     return normalizeEmail(rfa.CURRENT_APPROVER_EMAIL) === normalizeEmail(user.EMAIL);
   });
@@ -1133,7 +1144,7 @@ export function detailRfa(user: SessionUser, rfaId: string): Record<string, unkn
   // canEdit: requester or admin, and RFA is in DRAFT or RETURNED status
   const canEdit = (normalizeEmail(rfa.REQUESTER_EMAIL) === normalizeEmail(user.EMAIL) || toBoolean(user.IS_ADMIN)) && ['DRAFT', 'RETURNED'].includes(rfa.STATUS);
   // An administrator may view any RFA but can decide only when explicitly assigned.
-  const canDecide = isCurrentSectionHead && normalizeEmail(rfa.REQUESTER_EMAIL) !== normalizeEmail(user.EMAIL) && toBoolean(user.CAN_APPROVE_RFA);
+  const canDecide = isCurrentSectionHead && !notYetApprovedByTurn(rfa, user.USER_ID) && normalizeEmail(rfa.REQUESTER_EMAIL) !== normalizeEmail(user.EMAIL) && toBoolean(user.CAN_APPROVE_RFA);
   const canImplement = (toBoolean(user.CAN_IMPLEMENT_RFA) || toBoolean(user.IS_ADMIN)) && rfa.STATUS === 'APPROVED';
   const canClose = (toBoolean(user.CAN_IMPLEMENT_RFA) || toBoolean(user.IS_ADMIN)) && ['APPROVED', 'IMPLEMENTATION'].includes(rfa.STATUS);
 

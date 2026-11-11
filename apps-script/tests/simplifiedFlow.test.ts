@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { commitApprovedFinancialRfa, expenseMonitoringReport, financialDetail, financialRfaFields, summarizeBudget } from '../src/budget';
-import { allRfasScope, createRfa, decideRfa, detailRfa, listAllRfas, listRfas, submitRfa, transitionCloseout } from '../src/workflow';
+import { allRfasScope, createRfa, decideRfa, detailRfa, listAllRfas, listForApproval, listRfas, submitRfa, transitionCloseout } from '../src/workflow';
 import type { BudgetTransactionRecord, DepartmentBudgetRecord, RfaRecord, SessionUser, SheetRecord } from '../src/types';
 
 const sheets = new Map<string, SheetRecord[]>();
@@ -218,16 +218,23 @@ describe('official matrix — 12 scenarios', () => {
     acted(draft.RFA_ID, userById('ofelia'));
     expect(emailedTo()).toEqual(['ana@example.edu']);
     expect(detailRfa(userById('ana'), draft.RFA_ID).approvedByOrder).toEqual({ ana: 0, raquel: 1, jennelyn: 1, president: 2 });
-    // Only the email order changes: a VP can still act before Ma'am Tago, with no extra emails.
-    expect((detailRfa(userById('raquel'), draft.RFA_ID).permissions as { canDecide: boolean }).canDecide).toBe(true);
+    // VPs and the President cannot act, and do not see it in For My Action, until their turn.
+    const canDecide = (id: string) => (detailRfa(userById(id), draft.RFA_ID).permissions as { canDecide: boolean }).canDecide;
+    const inQueue = (id: string) => listForApproval(userById(id)).some((r) => r.RFA_ID === draft.RFA_ID);
+    expect(canDecide('ana')).toBe(true); expect(inQueue('ana')).toBe(true);
+    expect(canDecide('raquel')).toBe(false); expect(inQueue('raquel')).toBe(false);
+    expect(inQueue('president')).toBe(false);
+    expect(() => acted(draft.RFA_ID, userById('raquel'))).toThrow(/not yet your turn/);
     vi.mocked(notify).mockClear();
-    acted(draft.RFA_ID, userById('raquel'));
-    expect(emailedTo()).toEqual([]);
     acted(draft.RFA_ID, userById('ana'));
-    expect(emailedTo()).toEqual(['jennelyn@example.edu']);
+    expect(emailedTo()).toEqual(['jennelyn@example.edu', 'raquel@example.edu']);
+    expect(inQueue('raquel')).toBe(true); expect(inQueue('jennelyn')).toBe(true);
+    expect(inQueue('president')).toBe(false); expect(canDecide('president')).toBe(false);
+    acted(draft.RFA_ID, userById('raquel'));
     vi.mocked(notify).mockClear();
     acted(draft.RFA_ID, userById('jennelyn'));
     expect(emailedTo()).toEqual(['president@example.edu']);
+    expect(inQueue('president')).toBe(true);
     acted(draft.RFA_ID, userById('president'));
     expect(status(draft.RFA_ID)).toBe('APPROVED');
   });
