@@ -96,7 +96,7 @@ export function RfaListPage({ mode = 'mine' }: { mode?: ListMode }) {
       </label>
       <label>
         <span className="sr-only">Fiscal year</span>
-        <input value={fiscalYear} onChange={(e) => setFiscalYear(e.target.value)} placeholder="Fiscal year (e.g. 2026)" inputMode="numeric" aria-label="Fiscal year" />
+        <input value={fiscalYear} onChange={(e) => setFiscalYear(e.target.value)} placeholder="School year start (e.g. 2026)" inputMode="numeric" aria-label="Fiscal year" />
       </label>
     </div>}
     <section className={`panel flush${loading && rfas.length ? ' is-refreshing' : ''}`} aria-busy={loading}>

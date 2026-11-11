@@ -1,3 +1,4 @@
+import { currentSchoolYear } from './archive';
 import { expenseMonitoringReport } from './budget';
 import { toBoolean } from './core';
 import { dashboardRfas } from './workflow';
@@ -8,7 +9,7 @@ export function dashboardHome(user: SessionUser): Record<string, unknown> {
   const result = dashboardRfas(user);
   let expenseMonitoring: Record<string, unknown> | null = null;
   if (toBoolean(user.IS_ADMIN)) {
-    try { expenseMonitoring = expenseMonitoringReport(user, { fiscalYear: String(new Date().getFullYear()) }); }
+    try { expenseMonitoring = expenseMonitoringReport(user, { fiscalYear: String(currentSchoolYear()) }); }
     catch { expenseMonitoring = null; }
   }
   // `budget` retained as a deprecated alias for backward compatibility.

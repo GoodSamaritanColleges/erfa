@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, fileToBase64 } from '../api';
 import { useAuth } from '../auth';
 import { ErrorNotice, Spinner } from '../components';
-import { dateInputValue, displayName, fiscalYearPattern, isFiscalYear, money } from '../format';
+import { currentSchoolYear, dateInputValue, displayName, isFiscalYear, money, schoolYearLabel } from '../format';
 import type { ApprovalAssignments, ApprovalSection, Department, EligibleApprover, EmployeeDirectory, Rfa, RfaDetail } from '../types';
 
 interface FormState {
@@ -24,7 +24,7 @@ interface FormState {
 }
 const blank: FormState = {
   requestTitle: '', purpose: '', budgetAllocation: '', targetDate: '', justification: '',
-  fiscalYear: String(new Date().getFullYear()), requestedAmount: '', expenseClassification: '',
+  fiscalYear: String(currentSchoolYear()), requestedAmount: '', expenseClassification: '',
   purchaseRequest: false, involvedDepartmentIds: [], recommendingAlternateUserId: '',
   includePrincipal: false, includeProcurement: false
 };
@@ -78,7 +78,7 @@ export function RfaFormPage() {
       setForm({
         requestTitle: rfa.REQUEST_TITLE, purpose: rfa.PURPOSE, budgetAllocation: String(rfa.BUDGET_ALLOCATION || ''),
         targetDate: dateInputValue(rfa.TARGET_DATE), justification: rfa.JUSTIFICATION,
-        fiscalYear: rfa.FISCAL_YEAR || String(new Date().getFullYear()), requestedAmount: requested,
+        fiscalYear: rfa.FISCAL_YEAR || String(currentSchoolYear()), requestedAmount: requested,
         expenseClassification: rfa.EXPENSE_CLASSIFICATION || '',
         purchaseRequest: Boolean(rfa.PURCHASE_REQUEST ?? financial?.purchaseRequest),
         involvedDepartmentIds: involvedIds,
@@ -119,7 +119,7 @@ export function RfaFormPage() {
       if (!usesLegacyWorkflow && !isV2Edit) {
         if (!form.expenseClassification) throw new Error('Expense Classification is required: select OPEX or CAPEX.');
         if (!['OPEX', 'CAPEX'].includes(form.expenseClassification)) throw new Error('Expense Classification must be OPEX or CAPEX.');
-        if (!isFiscalYear(form.fiscalYear)) throw new Error('Fiscal Year must be a four-digit year.');
+        if (!isFiscalYear(form.fiscalYear)) throw new Error('The school year could not be determined. Please reload and try again.');
         if (!form.requestedAmount || Number(form.requestedAmount) <= 0) throw new Error('Requested Amount is required.');
         if (form.includePrincipal && fixedRoute && !fixedRoute.isJhsOrShs) throw new Error('The JHS/SHS Principal is only available for Junior High School or Senior High School departments.');
       }
@@ -215,7 +215,7 @@ export function RfaFormPage() {
       <section className="form-card">
         <div className="section-title"><span>02</span><div><h2>Expense information</h2><p>Classify the requested expense. No department budget balance is required to submit.</p></div></div>
         <div className="form-grid">
-          <label className="field"><span>Fiscal Year <b>*</b></span><input required inputMode="numeric" maxLength={4} pattern={fiscalYearPattern} title="Enter a four-digit fiscal year, for example 2026." value={form.fiscalYear} onChange={(e) => set('fiscalYear', e.target.value)} /></label>
+          <div className="readonly school-year-field"><span>School Year</span><b>{schoolYearLabel(form.fiscalYear)}</b><small>Set automatically from the filing date (June to May).</small></div>
           <label className="field"><span>Requested Amount (PHP) <b>*</b></span><input required min="0.01" step="0.01" type="number" value={form.requestedAmount} onChange={(e) => set('requestedAmount', e.target.value)} placeholder="0.00" /></label>
           <label className="field"><span>Expense Classification <b>*</b></span>
             <select required value={form.expenseClassification} onChange={(e) => set('expenseClassification', e.target.value)}>

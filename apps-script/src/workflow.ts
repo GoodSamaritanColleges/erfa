@@ -783,7 +783,7 @@ export function createRfa(user: SessionUser, payload: Record<string, unknown>): 
   }
   const expenseClassification = validateExpenseClassification(payload.expenseClassification);
   const selections = parseOfficialSelections(payload, department.DEPARTMENT_ID);
-  const financial = financialRfaFields(user, { ...payload, isBudgetRequest: true, expenseClassification, involvedDepartmentId: selections.involvedDepartmentIds[0] || '', involvedDepartmentIds: selections.involvedDepartmentIds.join(',') }, false) as Pick<RfaRecord, 'IS_BUDGET_REQUEST' | 'EXPENSE_CATEGORY_ID' | 'REQUESTED_AMOUNT' | 'APPROVED_AMOUNT' | 'ACTUAL_AMOUNT' | 'FISCAL_YEAR' | 'ACTUAL_EXPENSE_RECORDED_AT' | 'EXPENSE_CLASSIFICATION' | 'INVOLVED_DEPARTMENT_ID' | 'INVOLVED_DEPARTMENT_NAME' | 'PURCHASE_REQUEST' | 'RECOMMENDING_ALTERNATE_USER_ID' | 'RECOMMENDING_ALTERNATE_NAME' | 'INCLUDE_PRINCIPAL' | 'INCLUDE_PROCUREMENT' | 'INVOLVED_DEPARTMENT_IDS'>;
+  const financial = financialRfaFields(user, { ...payload, dateFiled: new Date(), isBudgetRequest: true, expenseClassification, involvedDepartmentId: selections.involvedDepartmentIds[0] || '', involvedDepartmentIds: selections.involvedDepartmentIds.join(',') }, false) as Pick<RfaRecord, 'IS_BUDGET_REQUEST' | 'EXPENSE_CATEGORY_ID' | 'REQUESTED_AMOUNT' | 'APPROVED_AMOUNT' | 'ACTUAL_AMOUNT' | 'FISCAL_YEAR' | 'ACTUAL_EXPENSE_RECORDED_AT' | 'EXPENSE_CLASSIFICATION' | 'INVOLVED_DEPARTMENT_ID' | 'INVOLVED_DEPARTMENT_NAME' | 'PURCHASE_REQUEST' | 'RECOMMENDING_ALTERNATE_USER_ID' | 'RECOMMENDING_ALTERNATE_NAME' | 'INCLUDE_PRINCIPAL' | 'INCLUDE_PROCUREMENT' | 'INVOLVED_DEPARTMENT_IDS'>;
   // Validate applicabilities softly at draft (strict at submit)
   if (selections.includePrincipal && !isJhsOrShsDepartment(department)) businessError('The JHS/SHS Principal is only available for Junior High School or Senior High School departments.', 'FORBIDDEN');
   const resolved = resolveOfficialAssignments(department.DEPARTMENT_ID, selections, Number(financial.REQUESTED_AMOUNT), user.EMAIL, user.USER_ID, false);
@@ -837,7 +837,7 @@ export function updateRfa(user: SessionUser, payload: Record<string, unknown>): 
       const dept = findBy<DepartmentRecord>('DEPARTMENTS', 'DEPARTMENT_ID', rfa.DEPARTMENT_ID);
       if (!isJhsOrShsDepartment(dept)) businessError('The JHS/SHS Principal is only available for Junior High School or Senior High School departments.', 'FORBIDDEN');
     }
-    const financial = financialRfaFields(user, { ...payload, isBudgetRequest: true, expenseClassification, involvedDepartmentId: selections.involvedDepartmentIds[0] || '', involvedDepartmentIds: selections.involvedDepartmentIds.join(',') }, false);
+    const financial = financialRfaFields(user, { ...payload, dateFiled: rfa.DATE_FILED || new Date(), isBudgetRequest: true, expenseClassification, involvedDepartmentId: selections.involvedDepartmentIds[0] || '', involvedDepartmentIds: selections.involvedDepartmentIds.join(',') }, false);
     const resolved = resolveOfficialAssignments(rfa.DEPARTMENT_ID, selections, Number(financial.REQUESTED_AMOUNT), rfa.REQUESTER_EMAIL, user.USER_ID, false);
     const updates = {
       REQUEST_TITLE: clean.requestTitle, PURPOSE: clean.purpose, BUDGET_ALLOCATION: clean.budgetAllocation,

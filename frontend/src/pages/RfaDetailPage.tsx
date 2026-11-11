@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { Dialog, ErrorNotice, Spinner, StatusBadge, SuccessNotice } from '../components';
-import { date, dateTime, displayName, expenseClassificationLabel, money, stepLabel } from '../format';
+import { date, dateTime, displayName, expenseClassificationLabel, money, schoolYearLabel, stepLabel } from '../format';
 import type { Approval, ApprovalStep, Attachment, Rfa, RfaDetail } from '../types';
 
 const legacySteps: ApprovalStep[] = ['PREPARED_BY', 'RECOMMENDING_APPROVAL', 'REVIEWED_AND_NOTED', 'APPROVED_BY'];
@@ -138,7 +138,7 @@ export function RfaDetailPage() {
 
       <DocumentSection title="Expense Information">
         <section className="request-grid two">
-          <Fact label="Fiscal Year" value={financial?.fiscalYear || rfa.FISCAL_YEAR || '—'} />
+          <Fact label="School Year" value={schoolYearLabel(financial?.fiscalYear || rfa.FISCAL_YEAR || '')} />
           <Fact label="Expense Classification" value={expenseClassificationLabel(rfa.EXPENSE_CLASSIFICATION || financial?.expenseClassification)} />
           <Fact label="Requested Amount" value={money(financial?.requestedAmount ?? (rfa.REQUESTED_AMOUNT ? rfa.REQUESTED_AMOUNT / 100 : rfa.BUDGET_ALLOCATION))} />
           <Fact label="Purchase Request" value={rfa.PURCHASE_REQUEST || financial?.purchaseRequest ? 'Yes' : 'No'} />

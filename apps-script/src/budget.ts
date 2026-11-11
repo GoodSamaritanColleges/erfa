@@ -2,7 +2,7 @@ import { audit } from './audit';
 import { requireCapability } from './auth';
 import { centavosToPhp, parseCentavos, toBoolean } from './core';
 import { all, findBy, insert, newId, nowIso, resetPerRequestCache, updateBy } from './store';
-import { rfasWithArchives } from './archive';
+import { currentSchoolYear, rfasWithArchives, schoolYearLabel, schoolYearOf } from './archive';
 import type { BudgetTransactionRecord, DepartmentBudgetRecord, DepartmentRecord, ExpenseCategoryRecord, RfaRecord, SessionUser } from './types';
 
 export type ExpenseClassification = 'OPEX' | 'CAPEX';
@@ -21,8 +21,9 @@ const active = (transaction: BudgetTransactionRecord) => transaction.STATUS !== 
 function failure(message: string, code = 'INVALID_OPERATION'): never { const error = new Error(message) as Error & { code?: string }; error.code = code; throw error; }
 function year(value: unknown, defaultToCurrentYear = true): string {
   const supplied = String(value ?? '').trim();
-  const result = supplied || (defaultToCurrentYear ? String(new Date().getFullYear()) : '');
-  if (!/^\d{4}$/.test(result)) failure('Fiscal year must be a four-digit year.');
+  // Years are school years (June to May by default), named by their first year: 2026 = SY 2026-2027.
+  const result = supplied || (defaultToCurrentYear ? String(currentSchoolYear()) : '');
+  if (!/^\d{4}$/.test(result)) failure('School year must be a four-digit year, for example 2026 for SY 2026-2027.');
   return result;
 }
 function budgetFor(departmentId: string, fiscalYear: string): DepartmentBudgetRecord | undefined { return all<DepartmentBudgetRecord>('DEPARTMENT_BUDGETS').find((item) => item.DEPARTMENT_ID === departmentId && String(item.FISCAL_YEAR) === fiscalYear && item.STATUS !== 'INACTIVE'); }
@@ -66,7 +67,11 @@ export function financialRfaFields(user: SessionUser, payload: Record<string, un
   if (!isFinancial) return { IS_BUDGET_REQUEST: false, EXPENSE_CATEGORY_ID: '', REQUESTED_AMOUNT: 0, APPROVED_AMOUNT: 0, ACTUAL_AMOUNT: 0, FISCAL_YEAR: '', ACTUAL_EXPENSE_RECORDED_AT: '', EXPENSE_CLASSIFICATION: '', INVOLVED_DEPARTMENT_ID: '', INVOLVED_DEPARTMENT_NAME: '', PURCHASE_REQUEST: false, RECOMMENDING_ALTERNATE_USER_ID: '', RECOMMENDING_ALTERNATE_NAME: '', INCLUDE_PRINCIPAL: false, INCLUDE_PROCUREMENT: false, INVOLVED_DEPARTMENT_IDS: '' };
   // Fiscal year remains required for an expense-monitoring RFA but no longer
   // requires a pre-configured department budget (budget-allocation model removed).
-  const fiscalYear = year(payload.fiscalYear, required ? false : true);
+  // The school year is set automatically from the filing date when one is supplied
+  // (June 2026 to May 2027 = 2026). Anything filed after the school year ends goes to the next one.
+  const fiscalYear = payload.dateFiled !== undefined
+    ? String(schoolYearOf(payload.dateFiled) || currentSchoolYear())
+    : year(payload.fiscalYear, required ? false : true);
   const categoryId = String(payload.expenseCategoryId || '').trim();
   const amount = parseCentavos(payload.requestedAmount, 'Requested amount');
   if (categoryId && !findBy<ExpenseCategoryRecord>('EXPENSE_CATEGORIES', 'CATEGORY_ID', categoryId)) failure('The historical expense category was not found.', 'INVALID_CATEGORY');
@@ -207,7 +212,7 @@ export function saveBudget(user: SessionUser, payload: Record<string, unknown>):
   const amount = parseCentavos(payload.allocatedAmount, 'Allocated amount'); const timestamp = nowIso();
   const budget: DepartmentBudgetRecord = { BUDGET_ID: newId('bdg'), DEPARTMENT_ID: departmentId, FISCAL_YEAR: fiscalYear, ORIGINAL_ALLOCATED_AMOUNT: amount, ALLOW_OVER_BUDGET: toBoolean(payload.allowOverBudget), STATUS: 'ACTIVE', CREATED_BY: user.EMAIL, CREATED_AT: timestamp, UPDATED_BY: user.EMAIL, UPDATED_AT: timestamp };
   insert('DEPARTMENT_BUDGETS', budget); writeTransaction(user, budget, 'ALLOCATION', amount, 'Initial department budget allocation.');
-  audit('BUDGET_CREATED', user, '', '', '', `FY ${fiscalYear} budget created for ${department.DEPARTMENT_NAME}.`, { budgetId: budget.BUDGET_ID, amountCentavos: amount }); return publicSummary(budget);
+  audit('BUDGET_CREATED', user, '', '', '', `${schoolYearLabel(Number(fiscalYear))} budget created for ${department.DEPARTMENT_NAME}.`, { budgetId: budget.BUDGET_ID, amountCentavos: amount }); return publicSummary(budget);
 }
 
 export function adjustBudget(user: SessionUser, payload: Record<string, unknown>): Record<string, unknown> {
@@ -269,7 +274,7 @@ export interface ExpenseMonitoringFilters {
 
 export function normalizeExpenseMonitoringFilters(payload: Record<string, unknown>): ExpenseMonitoringFilters {
   const rawFy = String(payload.fiscalYear ?? '').trim();
-  const fiscalYear = rawFy === '' ? String(new Date().getFullYear()) : year(rawFy, false);
+  const fiscalYear = rawFy === '' ? String(currentSchoolYear()) : year(rawFy, false);
   const expenseClassification = String(payload.expenseClassification ?? payload.classification ?? '').trim().toUpperCase();
   if (expenseClassification && expenseClassification !== 'OPEX' && expenseClassification !== 'CAPEX') failure('Expense Classification must be OPEX or CAPEX.');
   return {
@@ -342,5 +347,5 @@ export function expenseMonitoringReport(user: SessionUser, payload: Record<strin
   const filters = normalizeExpenseMonitoringFilters(payload);
   const departments = all<DepartmentRecord>('DEPARTMENTS').filter((item) => toBoolean(item.ACTIVE));
   const { deptRows, detailRows, totals } = aggregateDepartmentExpenses(rfasWithArchives(filters.fiscalYear), filters);
-  return { fiscalYear: filters.fiscalYear, filters, departments, deptRows, rows: detailRows, totals };
+  return { fiscalYear: filters.fiscalYear, schoolYearLabel: schoolYearLabel(Number(filters.fiscalYear)), filters, departments, deptRows, rows: detailRows, totals };
 }

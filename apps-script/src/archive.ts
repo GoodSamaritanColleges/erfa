@@ -24,13 +24,19 @@ const ARCHIVE_SHEETS: SheetName[] = ['RFA', ...LINKED_SHEETS];
 export interface ArchiveRecord extends SheetRecord { SCHOOL_YEAR: number; LABEL: string; SPREADSHEET_ID: string; RFA_COUNT: number; FISCAL_YEARS: string }
 
 function startMonth(): number {
-  const month = Number(getSetting('SCHOOL_YEAR_START_MONTH') || 6);
+  // A missing or unreadable setting must never break a page: fall back to June.
+  let month = 6;
+  try { month = Number(getSetting('SCHOOL_YEAR_START_MONTH') || 6); } catch { month = 6; }
   return month >= 1 && month <= 12 ? Math.floor(month) : 6;
 }
 
+// Manila is UTC+8 all year (no daylight saving), so a fixed offset gives the local date.
+const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000;
+function manilaDate(value: Date): string { return new Date(value.getTime() + MANILA_OFFSET_MS).toISOString().slice(0, 10); }
+
 /** First calendar year of the school year a date falls in (June 2026 to May 2027 is 2026). */
 export function schoolYearOf(value: unknown, month = startMonth()): number {
-  const text = value instanceof Date ? Utilities.formatDate(value, 'Asia/Manila', 'yyyy-MM-dd') : String(value ?? '').slice(0, 10);
+  const text = value instanceof Date ? manilaDate(value) : String(value ?? '').slice(0, 10);
   const [y, m] = text.split('-').map(Number);
   if (!y || !m) return 0;
   return m >= month ? y : y - 1;
@@ -41,7 +47,7 @@ export function schoolYearLabel(startYear: number, month = startMonth()): string
 }
 
 export function currentSchoolYear(): number {
-  return schoolYearOf(Utilities.formatDate(new Date(), 'Asia/Manila', 'yyyy-MM-dd'));
+  return schoolYearOf(new Date());
 }
 
 // --- Reading archives (memoized per request) ---

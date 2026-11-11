@@ -22,3 +22,13 @@ describe('display formatting', () => {
     expect(isFiscalYear('')).toBe(false);
   });
 });
+
+describe('school years (June to May)', () => {
+  it('files May under the old school year and June under the new one', async () => {
+    const { schoolYearOf, schoolYearLabel } = await import('./format');
+    expect(schoolYearOf('2027-05-31')).toBe(2026);
+    expect(schoolYearOf('2027-06-01')).toBe(2027);
+    expect(schoolYearOf(new Date('2027-05-31T16:30:00Z'))).toBe(2027); // already June 1 in Manila
+    expect(schoolYearLabel(2026)).toBe('SY 2026–2027');
+  });
+});

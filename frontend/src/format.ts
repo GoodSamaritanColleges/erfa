@@ -33,6 +33,26 @@ export const dateInputValue = (value: string): string => /^(\d{4}-\d{2}-\d{2})(?
 export const fiscalYearPattern = '[0-9]{4}';
 export const isFiscalYear = (value: string): boolean => /^[0-9]{4}$/.test(value);
 
+// School years run June to May and are named by their first year: 2026 = SY 2026–2027.
+// An RFA's school year is set automatically from its filing date.
+const SCHOOL_YEAR_START_MONTH = 6;
+export function schoolYearOf(value: Date | string = new Date()): number {
+  const text = value instanceof Date ? new Date(value.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10) : String(value).slice(0, 10);
+  const [year, month] = text.split('-').map(Number);
+  if (!year || !month) return 0;
+  return month >= SCHOOL_YEAR_START_MONTH ? year : year - 1;
+}
+export const currentSchoolYear = (): number => schoolYearOf(new Date());
+export const schoolYearLabel = (start: number | string): string => {
+  const year = Number(start);
+  return year ? `SY ${year}–${year + 1}` : '—';
+};
+/** Next school year, the current one, then the previous five, for report pickers. */
+export function schoolYearOptions(): Array<{ value: string; label: string }> {
+  const current = currentSchoolYear();
+  return Array.from({ length: 7 }, (_, index) => current + 1 - index).map((year) => ({ value: String(year), label: schoolYearLabel(year) }));
+}
+
 export const money = (value: number | string): string => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(value || 0));
 export const date = (value: string): string => value ? new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium' }).format(new Date(value.length === 10 ? `${value}T00:00:00` : value)) : '—';
 export const dateTime = (value: string): string => value ? new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '—';

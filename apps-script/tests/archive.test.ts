@@ -90,6 +90,9 @@ describe('school years', () => {
     expect(schoolYearOf('2026-05-31')).toBe(2025);
     expect(schoolYearOf('2026-06-01')).toBe(2026);
     expect(schoolYearLabel(2025)).toBe('SY 2025–2026');
+    // Dates are read in Manila time: 16:30 UTC on May 31 is already June 1 in Manila.
+    expect(schoolYearOf(new Date('2026-05-31T15:30:00Z'))).toBe(2025);
+    expect(schoolYearOf(new Date('2026-05-31T16:30:00Z'))).toBe(2026);
     settings.set('SCHOOL_YEAR_START_MONTH', '1');
     expect(schoolYearOf('2026-05-31')).toBe(2026);
     expect(schoolYearLabel(2026)).toBe('SY 2026');

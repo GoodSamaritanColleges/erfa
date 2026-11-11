@@ -9,11 +9,13 @@ vi.mock('../auth', () => ({
 }));
 
 describe('RfaFormPage expense classification', () => {
-  it('renders the canonical four-digit HTML pattern accepted by the backend', () => {
+  it('shows the school year automatically instead of asking for a fiscal year', () => {
     const html = renderToStaticMarkup(<MemoryRouter initialEntries={['/rfa/new']}><RfaFormPage /></MemoryRouter>);
 
-    expect(html).toContain('pattern="[0-9]{4}"');
-    expect(html).toContain('title="Enter a four-digit fiscal year, for example 2026."');
+    expect(html).toContain('School Year');
+    expect(html).toMatch(/SY \d{4}–\d{4}/);
+    expect(html).toContain('Set automatically from the filing date');
+    expect(html).not.toContain('Fiscal Year');
   });
 
   it('requires OPEX or CAPEX classification without a budget-balance gate', () => {
