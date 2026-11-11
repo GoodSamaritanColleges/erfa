@@ -50,10 +50,10 @@ export const schoolYearLabel = (start: number | string): string => {
   const year = Number(start);
   return year ? `SY ${year}–${year + 1}` : '—';
 };
-/** Next school year, the current one, then the previous five, for report pickers. */
+/** Next school year, the current one, then the previous two (older years are archived out of the app). */
 export function schoolYearOptions(): Array<{ value: string; label: string }> {
   const current = currentSchoolYear();
-  return Array.from({ length: 7 }, (_, index) => current + 1 - index).map((year) => ({ value: String(year), label: schoolYearLabel(year) }));
+  return Array.from({ length: 4 }, (_, index) => current + 1 - index).map((year) => ({ value: String(year), label: schoolYearLabel(year) }));
 }
 
 export const money = (value: number | string): string => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(value || 0));

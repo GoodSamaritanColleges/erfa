@@ -27,13 +27,28 @@ Everything else (React, router, icons, the Inter font) ships inside the website 
 1. Run `pnpm install --frozen-lockfile` and `pnpm check` (typecheck, lint, tests, build). All should pass.
 2. Sign in on the live site with an admin and an approver account; open the dashboard, My RFAs, For My Action and one RFA.
 3. In the database spreadsheet, check the `NOTIFICATIONS` sheet for `FAILED` emails.
-4. Run the yearly archive (below) so the main database only holds the current school year.
-5. Make a backup copy of the database spreadsheet (File → Make a copy).
+4. Confirm the June archive ran (admins receive an email; the maintenance panel shows the last archive date).
+5. Check **Administration → Logs → Automatic maintenance** shows **On** with a recent backup.
 6. Confirm the Google Cloud OAuth consent screen is still **In production** and **External** (needed for approvers from other domains).
+
+## Automatic maintenance (backups and yearly archive)
+
+Switch it on once: in the Apps Script editor run **`installAutomaticMaintenance`** and allow the permission Google asks for (scheduled jobs). It makes a first backup straight away. From then on, with nothing to click:
+
+| When | What |
+|---|---|
+| 1st of every month, 2 AM (Manila) | Full copy of the database into **eRFA Backups/<year>** next to the database in Drive. Backups are never deleted. |
+| June 15, 3 AM (15th of the school-year start month) | Yearly archive of the school year that ended (always backs up first). |
+
+- Admins get an email after each run and an alert if one fails.
+- **Administration → Logs → Automatic maintenance** shows On/Off, the last and next backup, the next archive, and links to recent backups. It warns if no backup ran for 35 days.
+- **`backupNow`** in the editor makes an extra copy any time (before an import or big change). The archive and the post-pilot reset also save a copy to the same folder first.
+- The app shows the current school year and the previous **2** (setting `VISIBLE_PAST_SCHOOL_YEARS`). Older school years disappear from the app but stay in their archive spreadsheets and in the monthly backups.
+- The schedules run as the script owner. If that account is removed, they stop: keep a second owner on the Apps Script project.
 
 ## End of each school year: archive
 
-The school year runs June to May by default (setting `SCHOOL_YEAR_START_MONTH`, 6 = June). Shortly after a school year ends:
+The school year runs June to May by default (setting `SCHOOL_YEAR_START_MONTH`, 6 = June). This runs automatically on June 15 once automatic maintenance is on. To run it by hand instead, shortly after a school year ends:
 
 1. In the Apps Script editor, run **`previewArchiveNow`**. It lists how many finished RFAs from past school years would be archived and changes nothing.
 2. Run **`archivePastSchoolYearsNow`**. It:

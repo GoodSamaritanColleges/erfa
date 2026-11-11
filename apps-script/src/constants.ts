@@ -15,6 +15,7 @@ export const SHEETS = {
   SETTINGS: ['KEY', 'VALUE', 'DESCRIPTION', 'UPDATED_AT'],
   DEPARTMENT_BUDGETS: ['BUDGET_ID', 'DEPARTMENT_ID', 'FISCAL_YEAR', 'ORIGINAL_ALLOCATED_AMOUNT', 'ALLOW_OVER_BUDGET', 'STATUS', 'CREATED_BY', 'CREATED_AT', 'UPDATED_BY', 'UPDATED_AT'],
   EXPENSE_CATEGORIES: ['CATEGORY_ID', 'CATEGORY_NAME', 'DESCRIPTION', 'ACTIVE', 'CREATED_BY', 'CREATED_AT', 'UPDATED_BY', 'UPDATED_AT'],
+  BACKUPS: ['BACKUP_DATE', 'FILE_NAME', 'FILE_ID', 'URL', 'REASON'],
   ARCHIVES: ['SCHOOL_YEAR', 'LABEL', 'SPREADSHEET_ID', 'RFA_COUNT', 'FISCAL_YEARS', 'ARCHIVED_AT', 'ARCHIVED_BY'],
   BUDGET_TRANSACTIONS: ['TRANSACTION_ID', 'BUDGET_ID', 'DEPARTMENT_ID', 'FISCAL_YEAR', 'RFA_ID', 'CATEGORY_ID', 'TRANSACTION_TYPE', 'AMOUNT', 'DESCRIPTION', 'REFERENCE', 'STATUS', 'CREATED_BY', 'CREATED_AT', 'UPDATED_BY', 'UPDATED_AT']
 } as const;
@@ -88,6 +89,8 @@ export const DEFAULT_SETTINGS = [
   ['EMAIL_ENABLED', 'TRUE', 'Send real email notifications through MailApp'],
   ['LAST_RFA_YEAR', '0', 'Internal numbering state'],
   ['LAST_RFA_SEQUENCE', '0', 'Internal numbering state'],
+  ['VISIBLE_PAST_SCHOOL_YEARS', '2', 'How many past school years stay visible in the app. Older years are kept in Drive (archives and backups) but hidden.'],
+  ['AUTO_MAINTENANCE', 'OFF', 'ON after installAutomaticMaintenance: monthly backup on the 1st, yearly archive on the 15th of the school-year start month.'],
   ['SCHOOL_YEAR_START_MONTH', '6', 'First month of the school year (1-12). Used for yearly archives: 6 = June to May.'],
   ['PRESIDENT_THRESHOLD_PHP', '50000', 'Presidential approval threshold in PHP (inclusive)'],
   ['REVIEWED_MANDATORY_USER_ID', '', 'Role: Reviewed and Noted By (mandatory) - user ID'],

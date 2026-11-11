@@ -90,7 +90,7 @@ describe('resetRfas', () => {
 
     expect(settings.get('LAST_RFA_SEQUENCE')).toBe('0');
     expect(settings.get('LAST_RFA_YEAR')).toBe('2026');
-    expect(result.backup.backupId).toContain('backup before RFA reset');
+    expect(result.backup.backupId).toContain('(before RFA reset)');
     expect(trashedFiles).toEqual(['drive1']);
     expect(trashedFolders).toEqual(['RFA-2026-0001 (pilot, removed)']);
     expect(auditCalls[0][0]).toBe('RFAS_RESET');

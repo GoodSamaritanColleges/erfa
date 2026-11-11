@@ -1,5 +1,6 @@
 import { SHEETS } from './constants';
 import { audit } from './audit';
+import { backupDatabase } from './backup';
 import { getDatabase, getSetting, resetPerRequestCache, setSetting } from './store';
 import type { SessionUser } from './types';
 
@@ -55,12 +56,9 @@ export function keepOnly(name: SheetName, keep: (headers: string[], row: unknown
   return removed;
 }
 
-function backupDatabase(): { backupId: string; backupName: string } {
-  const db = getDatabase();
-  const stamp = Utilities.formatDate(new Date(), db.getSpreadsheetTimeZone() || 'Asia/Manila', 'yyyy-MM-dd HHmm');
-  const backupName = `eRFA Database - backup before RFA reset ${stamp}`;
-  const copy = DriveApp.getFileById(db.getId()).makeCopy(backupName);
-  return { backupId: copy.getId(), backupName };
+function backupBeforeReset(): { backupId: string; backupName: string } {
+  const copy = backupDatabase('before RFA reset');
+  return { backupId: copy.id, backupName: copy.name };
 }
 
 /** Move pilot attachment files and RFA folders to the Drive trash. Renaming first keeps
@@ -97,7 +95,7 @@ export function resetRfas(actor: Pick<SessionUser, 'FULL_NAME' | 'EMAIL'>): Reco
   if (!lock.tryLock(30000)) throw new Error('eRFA is busy. Try again in a minute.');
   try {
     const before = previewRfaReset();
-    const backup = backupDatabase();
+    const backup = backupBeforeReset();
 
     const { headers: attachmentHeaders, values: attachmentValues } = sheetRows('RFA_ATTACHMENTS');
     const attachmentRows = attachmentValues.map((row) => Object.fromEntries(attachmentHeaders.map((h, i) => [h, row[i]])));

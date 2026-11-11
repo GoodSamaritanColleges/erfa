@@ -5,6 +5,8 @@ import { all, setupSchema } from './store';
 import { beginPerformance, performanceSnapshot, timed } from './performance';
 import { previewRfaReset, resetRfas } from './resetRfas';
 import { archivePastSchoolYears, previewArchive } from './archive';
+import { backupDatabase } from './backup';
+import { installAutomaticMaintenance as installMaintenance, runMonthlyBackupJob, runYearlyArchiveJob } from './maintenance';
 
 function json(value: unknown): GoogleAppsScript.Content.TextOutput {
   const serialized = timed('serializationMs', () => JSON.stringify(value));
@@ -89,7 +91,27 @@ function archivePastSchoolYearsNow(): unknown {
   return result;
 }
 
+// Automatic maintenance. Run installAutomaticMaintenance ONCE from the editor (Google asks the
+// owner to allow scheduled jobs). After that: a backup on the 1st of every month (kept forever)
+// and the yearly archive on June 15, with admin emails. backupNow makes an extra copy any time.
+function installAutomaticMaintenance(): unknown {
+  setupSchema();
+  const result = installMaintenance();
+  console.log('[eRFA] Automatic maintenance installed:', JSON.stringify(result));
+  return result;
+}
+
+function backupNow(): unknown {
+  setupSchema();
+  const copy = backupDatabase('manual');
+  console.log('[eRFA] Backup saved:', JSON.stringify(copy));
+  return copy;
+}
+
+function runMonthlyBackup(): unknown { return runMonthlyBackupJob(); }
+function runYearlyArchive(): unknown { setupSchema(); return runYearlyArchiveJob(); }
+
 // The production bundle keeps implementation code inside an IIFE. Store only
 // intended Apps Script entry points here; build.mjs emits top-level forwarding
 // declarations so Apps Script can discover them in the editor and Web App.
-Object.assign(globalThis, { __erfaEntrypoints: { doGet, doPost, setupDatabase, bootstrapAdmin, cleanAllNow, previewRfaResetNow, resetAllRfasKeepAccounts, previewArchiveNow, archivePastSchoolYearsNow } });
+Object.assign(globalThis, { __erfaEntrypoints: { doGet, doPost, setupDatabase, bootstrapAdmin, cleanAllNow, previewRfaResetNow, resetAllRfasKeepAccounts, previewArchiveNow, archivePastSchoolYearsNow, installAutomaticMaintenance, backupNow, runMonthlyBackup, runYearlyArchive } });

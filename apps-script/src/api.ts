@@ -8,6 +8,7 @@ import { adjustBudget, adminBudgetManagement, adminBudgetOverview, adminBudgetSu
 import { getDatabase, resetPerRequestCache } from './store';
 import { resetWorkflowCache } from './workflow';
 import { archiveYears, resetArchiveCache } from './archive';
+import { maintenanceStatus } from './maintenance';
 import { allRfasScope, createRfa, dashboardRfas, decideRfa, detailRfa, downloadAttachment, eligibleApprovers, fixedRoutePreview, listDepartments, listAllRfas, listForApproval, listRfas, saveActualExpense, submitRfa, transitionCloseout, updateRfa, uploadAttachment } from './workflow';
 
 export interface ApiRequest { action: string; idToken?: string; payload?: Record<string, unknown>; performance?: boolean }
@@ -72,6 +73,7 @@ function dispatchRequest(request: ApiRequest): unknown {
     case 'admin.budget.report': return budgetReport(user, payload);
     case 'admin.budget.expenses': return departmentExpenseReport(user, payload);
     case 'admin.budget.detail': return departmentFinancialDetail(user, payload);
+    case 'admin.maintenance.status': requireCapability(user, 'IS_ADMIN'); return maintenanceStatus();
     case 'admin.database': requireCapability(user, 'IS_ADMIN'); return { spreadsheetId: getDatabase().getId(), spreadsheetUrl: getDatabase().getUrl() };
     default: throw Object.assign(new Error('Unknown API action.'), { code: 'NOT_FOUND' });
   }

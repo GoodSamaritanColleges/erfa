@@ -2,6 +2,7 @@ import { SHEETS } from './constants';
 import { audit } from './audit';
 import { all, getDatabase, getSetting, insert, normalizeCell, nowIso, resetPerRequestCache, updateBy } from './store';
 import { keepOnly, sheetRows } from './resetRfas';
+import { backupDatabase } from './backup';
 import type { RfaRecord, SessionUser, SheetRecord } from './types';
 
 /**
@@ -62,12 +63,32 @@ export function listArchives(): ArchiveRecord[] {
   return archiveListCache;
 }
 
+/** How many past school years stay visible in the app (Settings: VISIBLE_PAST_SCHOOL_YEARS, default 2). */
+export function visiblePastYears(): number {
+  let years = 2;
+  try { years = Number(getSetting('VISIBLE_PAST_SCHOOL_YEARS') || 2); } catch { years = 2; }
+  return Number.isFinite(years) && years >= 0 ? Math.floor(years) : 2;
+}
+
+/**
+ * Older school years are hidden from the app to keep it focused; their records stay safe in
+ * the archive spreadsheets and monthly backups in Drive. Archiving itself still sees every year.
+ */
+export function isVisibleSchoolYear(schoolYear: number): boolean {
+  return schoolYear >= currentSchoolYear() - visiblePastYears();
+}
+
+function visibleArchives(): ArchiveRecord[] {
+  return listArchives().filter((row) => isVisibleSchoolYear(Number(row.SCHOOL_YEAR)));
+}
+
 function archiveFor(schoolYear: number): ArchiveRecord | undefined {
   return listArchives().find((row) => Number(row.SCHOOL_YEAR) === schoolYear);
 }
 
 /** Rows of one sheet inside one school year's archive spreadsheet. */
 export function archivedRows<T extends SheetRecord>(schoolYear: number, name: SheetName): T[] {
+  if (!isVisibleSchoolYear(schoolYear)) return [];
   const key = `${schoolYear}:${name}`;
   const cached = archiveRowCache.get(key);
   if (cached) return cached.map((row) => ({ ...row })) as T[];
@@ -88,7 +109,7 @@ export function archivedRows<T extends SheetRecord>(schoolYear: number, name: Sh
 
 /** Main-database RFAs plus archived RFAs for the given fiscal year (or every archive if none given). */
 export function rfasWithArchives(fiscalYear = ''): RfaRecord[] {
-  const archived = listArchives()
+  const archived = visibleArchives()
     .filter((row) => !fiscalYear || String(row.FISCAL_YEARS || '').split(',').map((v) => v.trim()).includes(fiscalYear))
     .flatMap((row) => archivedRows<RfaRecord>(Number(row.SCHOOL_YEAR), 'RFA'));
   return [...all<RfaRecord>('RFA'), ...archived];
@@ -96,7 +117,7 @@ export function rfasWithArchives(fiscalYear = ''): RfaRecord[] {
 
 /** Locate an archived RFA, checking the hinted school year first. */
 export function findArchivedRfa(rfaId: string, schoolYearHint = 0): { schoolYear: number; rfa: RfaRecord } | null {
-  const years = listArchives().map((row) => Number(row.SCHOOL_YEAR));
+  const years = visibleArchives().map((row) => Number(row.SCHOOL_YEAR));
   const ordered = schoolYearHint && years.includes(schoolYearHint) ? [schoolYearHint, ...years.filter((y) => y !== schoolYearHint)] : years;
   for (const schoolYear of ordered) {
     const rfa = archivedRows<RfaRecord>(schoolYear, 'RFA').find((row) => row.RFA_ID === rfaId);
@@ -106,7 +127,7 @@ export function findArchivedRfa(rfaId: string, schoolYearHint = 0): { schoolYear
 }
 
 export function findArchivedAttachment(attachmentId: string): { schoolYear: number; attachment: SheetRecord } | null {
-  for (const archive of listArchives()) {
+  for (const archive of visibleArchives()) {
     const attachment = archivedRows<SheetRecord>(Number(archive.SCHOOL_YEAR), 'RFA_ATTACHMENTS').find((row) => row.ATTACHMENT_ID === attachmentId);
     if (attachment) return { schoolYear: Number(archive.SCHOOL_YEAR), attachment };
   }
@@ -115,7 +136,7 @@ export function findArchivedAttachment(attachmentId: string): { schoolYear: numb
 
 /** School years users can pick in My RFAs and All RFAs. */
 export function archiveYears(): Array<{ schoolYear: number; label: string; rfaCount: number }> {
-  return listArchives().map((row) => ({ schoolYear: Number(row.SCHOOL_YEAR), label: String(row.LABEL || schoolYearLabel(Number(row.SCHOOL_YEAR))), rfaCount: Number(row.RFA_COUNT || 0) }));
+  return visibleArchives().map((row) => ({ schoolYear: Number(row.SCHOOL_YEAR), label: String(row.LABEL || schoolYearLabel(Number(row.SCHOOL_YEAR))), rfaCount: Number(row.RFA_COUNT || 0) }));
 }
 
 // --- Writing archives ---
@@ -191,9 +212,7 @@ export function archivePastSchoolYears(actor: Pick<SessionUser, 'FULL_NAME' | 'E
     });
     if (!idsByYear.size) return { archived: {}, message: 'Nothing to archive: no finished RFAs from past school years.' };
 
-    const db = getDatabase();
-    const stamp = Utilities.formatDate(new Date(), db.getSpreadsheetTimeZone() || 'Asia/Manila', 'yyyy-MM-dd HHmm');
-    const backup = DriveApp.getFileById(db.getId()).makeCopy(`eRFA Database - backup before archive ${stamp}`);
+    const backup = backupDatabase('before archive');
 
     const allIds = new Set<string>();
     const archived: Record<string, number> = {};
@@ -220,8 +239,8 @@ export function archivePastSchoolYears(actor: Pick<SessionUser, 'FULL_NAME' | 'E
     SpreadsheetApp.flush();
     resetPerRequestCache();
     resetArchiveCache();
-    audit('SCHOOL_YEAR_ARCHIVED', actor, '', '', '', `Archived ${allIds.size} finished RFAs from past school years.`, { archived, backupId: backup.getId() });
-    return { archived, backup: backup.getName(), message: `Archived ${allIds.size} RFAs: ${Object.entries(archived).map(([k, v]) => `${k} (${v})`).join(', ')}. Backup: "${backup.getName()}".` };
+    audit('SCHOOL_YEAR_ARCHIVED', actor, '', '', '', `Archived ${allIds.size} finished RFAs from past school years.`, { archived, backupId: backup.id });
+    return { archived, backup: backup.name, message: `Archived ${allIds.size} RFAs: ${Object.entries(archived).map(([k, v]) => `${k} (${v})`).join(', ')}. Backup: "${backup.name}".` };
   } finally {
     lock.releaseLock();
   }

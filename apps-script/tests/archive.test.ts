@@ -138,6 +138,20 @@ describe('archivePastSchoolYears', () => {
     expect(ids(archive.rfasWithArchives('2019'))).toEqual(['old-pending', 'this-year']);
   });
 
+  it('hides school years older than the visible window from the app, but keeps the archive', async () => {
+    const archive = await import('../src/archive');
+    archive.resetArchiveCache();
+    archive.archivePastSchoolYears({ FULL_NAME: 'Admin', EMAIL: 'admin@x.edu' });
+    archive.resetArchiveCache();
+    expect(archive.archiveYears().map((y) => y.schoolYear)).toEqual([2025]); // within current + 2 past
+    settings.set('VISIBLE_PAST_SCHOOL_YEARS', '0'); // e.g. once SY 2025-2026 is more than the window back
+    archive.resetArchiveCache();
+    expect(archive.archiveYears()).toEqual([]);
+    expect(archive.findArchivedRfa('old-closed')).toBeNull();
+    expect(archive.archivedRows(2025, 'RFA')).toEqual([]);
+    expect(archivesSheet).toHaveLength(1); // the archive itself is untouched
+  });
+
   it('does nothing, not even a backup, when there is nothing to archive', async () => {
     main.set('RFA', [row('RFA', { RFA_ID: 'this-year', DATE_FILED: '2026-06-02', STATUS: 'CLOSED' })]);
     const { archivePastSchoolYears } = await import('../src/archive');

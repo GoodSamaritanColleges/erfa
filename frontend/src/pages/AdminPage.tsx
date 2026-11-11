@@ -2,7 +2,7 @@ import { Building2, GitBranch, Pencil, Plus, Users } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { api } from '../api';
 import { Dialog, ErrorNotice, Spinner, SuccessNotice } from '../components';
-import { dateTime, money, stepLabel } from '../format';
+import { date, dateTime, money, stepLabel } from '../format';
 import type { AdminData, Department, Matrix, User } from '../types';
 
 type Tab = 'users'|'departments'|'matrix'|'logs';
@@ -72,7 +72,7 @@ export function AdminPage() {
         <MatrixTable matrix={data.matrix} users={data.users} departments={data.departments} edit={setEditing} />
         <ApprovalSettingsPanel data={data} onSaved={() => { setSuccess('Approval settings saved.'); load(); }} onError={setError} />
       </>}
-      {tab === 'logs' && <Logs data={data} />}
+      {tab === 'logs' && <><MaintenancePanel /><Logs data={data} /></>}
     </section>
 
     {editing && <Dialog
@@ -191,6 +191,49 @@ function DepartmentsTable({ departments, users, heads, edit, onSaved, onError }:
       <p className="muted">Departments with two heads: either head may approve Recommending Approval. Departments with one head require selecting an alternate head on the RFA.</p>
     </section>}
   </>;
+}
+
+type MaintenanceStatus = {
+  enabled: boolean; lastBackupAt: string; lastArchiveAt: string; backupOverdue: boolean;
+  nextBackup: string; nextArchive: string; visibleFrom: string; visibleYears: number;
+  backups: Array<{ date: string; name: string; url: string; reason: string }>;
+};
+
+/** Automatic backups and yearly archive: whether they are on, recent backups, and what runs next. */
+function MaintenancePanel() {
+  const [status, setStatus] = useState<MaintenanceStatus | null>(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let alive = true;
+    api<MaintenanceStatus>('admin.maintenance.status').then((next) => { if (alive) setStatus(next); }).catch((e: Error) => { if (alive) setError(e.message); });
+    return () => { alive = false; };
+  }, []);
+  if (error) return <ErrorNotice message={error} />;
+  if (!status) return <Spinner label="Loading maintenance status" />;
+  const day = (value: string) => (value ? date(value) : '—');
+  return <section className="form-card maintenance-panel">
+    <div className="maintenance-head">
+      <div><h3>Automatic maintenance</h3><p className="muted">Monthly backups are kept forever in Drive (eRFA Backups, one folder per year). Each June the finished RFAs of the year that ended are archived. The app shows {status.visibleFrom} onward; older years stay safe in their archives and backups.</p></div>
+      <span className={`maintenance-state ${status.enabled ? 'on' : 'off'}`}>{status.enabled ? 'On' : 'Off'}</span>
+    </div>
+    {!status.enabled && <div className="notice error" role="alert">Automatic maintenance is not switched on yet. The script owner runs <b>installAutomaticMaintenance</b> once in the Apps Script editor.</div>}
+    {status.enabled && status.backupOverdue && <div className="notice error" role="alert">No backup in the last 35 days. Check the Apps Script owner's access and Drive storage, or run <b>backupNow</b> in the editor.</div>}
+    <div className="maintenance-facts">
+      <div><span>Last backup</span><b>{day(status.lastBackupAt)}</b></div>
+      <div><span>Next backup</span><b>{day(status.nextBackup)}</b></div>
+      <div><span>Next yearly archive</span><b>{day(status.nextArchive)}</b></div>
+      <div><span>Last archive</span><b>{day(status.lastArchiveAt)}</b></div>
+    </div>
+    {status.backups.length > 0 && <div className="table-wrap"><table>
+      <thead><tr><th>Backup</th><th>Saved</th><th>Type</th><th aria-label="Open" /></tr></thead>
+      <tbody>{status.backups.map((backup) => <tr key={backup.date + backup.name}>
+        <td data-label="Backup">{backup.name}</td>
+        <td data-label="Saved">{dateTime(backup.date)}</td>
+        <td data-label="Type">{backup.reason === 'Monthly' ? 'Monthly' : `Extra (${backup.reason})`}</td>
+        <td>{backup.url ? <a className="row-link" href={backup.url} target="_blank" rel="noreferrer">Open in Drive</a> : '—'}</td>
+      </tr>)}</tbody>
+    </table></div>}
+  </section>;
 }
 
 function ApprovalSettingsPanel({ data, onSaved, onError }: { data: AdminData; onSaved: () => void; onError: (e: string) => void }) {
