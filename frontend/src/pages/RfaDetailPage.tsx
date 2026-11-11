@@ -69,7 +69,8 @@ export function RfaDetailPage() {
   if (loading && !detail) return <Spinner label="Loading RFA" />;
   if (!detail) return <><ErrorNotice message={error || 'RFA was not found.'} /><button className="button secondary" onClick={() => navigate('/rfas')}>Back to My RFAs</button></>;
 
-  const { rfa, approvals, attachments, audit, permissions, financial, notedByNotApplicable } = detail;
+  const { rfa, approvals, attachments, audit, permissions, financial, notedByNotApplicable, approvedByOrder = {} } = detail;
+  const approvedByWaitingMap = rfa.CURRENT_STEP === 'APPROVED_BY' ? approvedByWaiting(rfa, approvals, approvedByOrder) : new Map<string, string>();
   const isLegacyAssignment = rfa.CURRENT_MATRIX_ID === 'RFA_ASSIGNMENTS_V1';
   const isOfficialWorkflow = rfa.CURRENT_MATRIX_ID === 'RFA_FIXED_V3' || approvals.some((a) => a.STEP === 'REVIEWED_AND_NOTED');
   const isFixedWorkflow = rfa.CURRENT_MATRIX_ID === 'RFA_FIXED_V2';
@@ -173,11 +174,11 @@ export function RfaDetailPage() {
 
       <section className="approval-signatures">
         <h2>Approval Signatures</h2>
-        <div>{steps.map((step) => <ApprovalSignature key={step} step={step} rfa={rfa} approvals={approvals} current={rfa.CURRENT_STEP === step} notApplicable={step === 'NOTED_BY' && notedByNotApplicable} />)}</div>
+        <div>{steps.map((step) => <ApprovalSignature key={step} step={step} rfa={rfa} approvals={approvals} current={rfa.CURRENT_STEP === step} notApplicable={step === 'NOTED_BY' && notedByNotApplicable} approvedByOrder={approvedByOrder} />)}</div>
       </section>
 
       <DocumentSection title="Approval History">
-        <HistoryTable approvals={approvals} status={rfa.STATUS} />
+        <HistoryTable approvals={approvals} status={rfa.STATUS} waiting={approvedByWaitingMap} />
       </DocumentSection>
 
       <section className="audit-section screen-only">
@@ -281,8 +282,26 @@ function WorkflowStep({ step, index, rfa, approvals, current, notApplicable }: {
   </div>;
 }
 
-function ApprovalSignature({ step, rfa, approvals, current, notApplicable }: { step: ApprovalStep; rfa: Rfa; approvals: Approval[]; current: boolean; notApplicable: boolean }) {
+const WAITING_FOR_TIER = ['Waiting for AVP approval', 'Waiting for VP approval'];
+
+/**
+ * Approved By emails go out in order (Ma'am Tago, then the VPs, then the President).
+ * Returns, per approver user ID, the waiting label for officials not yet emailed.
+ */
+function approvedByWaiting(rfa: Rfa, approvals: Approval[], order: Record<string, number> = {}): Map<string, string> {
+  const waiting = new Map<string, string>();
+  const approved = new Set(currentSubmissionActions(rfa, 'APPROVED_BY', approvals).filter((item) => item.ACTION === 'APPROVED').map((item) => item.APPROVER_USER_ID));
+  const pending = assignmentRows('APPROVED_BY', approvals).filter((row) => !approved.has(row.APPROVER_USER_ID) && row.APPROVER_USER_ID in order);
+  if (!pending.length) return waiting;
+  const firstTier = Math.min(...pending.map((row) => order[row.APPROVER_USER_ID]));
+  for (const row of pending) if (order[row.APPROVER_USER_ID] > firstTier) waiting.set(row.APPROVER_USER_ID, WAITING_FOR_TIER[firstTier] ?? 'Waiting for prior approver');
+  return waiting;
+}
+
+function ApprovalSignature({ step, rfa, approvals, current, notApplicable, approvedByOrder = {} }: { step: ApprovalStep; rfa: Rfa; approvals: Approval[]; current: boolean; notApplicable: boolean; approvedByOrder?: Record<string, number> }) {
   const assigned = assignmentRows(step, approvals);
+  if (step === 'APPROVED_BY') assigned.sort((a, b) => (approvedByOrder[a.APPROVER_USER_ID] ?? 1) - (approvedByOrder[b.APPROVER_USER_ID] ?? 1));
+  const waiting = step === 'APPROVED_BY' ? approvedByWaiting(rfa, approvals, approvedByOrder) : new Map<string, string>();
   const actions = new Map(currentSubmissionActions(rfa, step, approvals).map((item) => [item.APPROVER_USER_ID, item]));
   const fallback = [...currentSubmissionActions(rfa, step, approvals)].reverse()[0];
   return <div>
@@ -290,7 +309,7 @@ function ApprovalSignature({ step, rfa, approvals, current, notApplicable }: { s
     {notApplicable ? <strong>N/A</strong> : assigned.length > 0 ? <ul className="signature-assignees">
       {assigned.map((employee) => {
         const action = actions.get(employee.APPROVER_USER_ID);
-        return <li key={employee.APPROVAL_ID}><strong>{displayName(employee.APPROVER_NAME)}</strong><span>{action ? `${actionLabel(step, action.ACTION)} · ${dateTime(action.TIMESTAMP)}` : current ? 'Awaiting action' : 'Waiting for prior stage'}</span></li>;
+        return <li key={employee.APPROVAL_ID}><strong>{displayName(employee.APPROVER_NAME)}</strong><span>{action ? `${actionLabel(step, action.ACTION)} · ${dateTime(action.TIMESTAMP)}` : current ? (waiting.get(employee.APPROVER_USER_ID) ?? 'Awaiting action') : 'Waiting for prior stage'}</span></li>;
       })}
     </ul> : fallback
       ? <><strong>{fallback.ACTION === 'APPROVED' ? `${step === 'PREPARED_BY' ? 'Sent' : 'Approved'} electronically by ${displayName(fallback.APPROVER_NAME)}` : `${actionLabel(step, fallback.ACTION)} by ${displayName(fallback.APPROVER_NAME)}`}</strong><span>{dateTime(fallback.TIMESTAMP)}</span></>
@@ -312,7 +331,7 @@ function sameApprover(a: Approval, b: Approval): boolean {
   return Boolean(a.APPROVER_EMAIL) && a.APPROVER_EMAIL.toLowerCase() === (b.APPROVER_EMAIL || '').toLowerCase();
 }
 
-function HistoryTable({ approvals, status }: { approvals: Approval[]; status: string }) {
+function HistoryTable({ approvals, status, waiting = new Map<string, string>() }: { approvals: Approval[]; status: string; waiting?: Map<string, string> }) {
   const awaiting = status === 'SUBMITTED' || status.startsWith('PENDING_');
   // An assignment row (no action yet) is hidden once that approver has acted on the same step.
   const rows = approvals
@@ -320,7 +339,7 @@ function HistoryTable({ approvals, status }: { approvals: Approval[]; status: st
     .map((row, index) => ({ row, index }))
     .sort((a, b) => {
       const byStep = (HISTORY_STEP_ORDER.indexOf(a.row.STEP) + 1 || 99) - (HISTORY_STEP_ORDER.indexOf(b.row.STEP) + 1 || 99);
-      return byStep || String(a.row.TIMESTAMP).localeCompare(String(b.row.TIMESTAMP)) || a.index - b.index;
+      return byStep || (a.row.STEP === 'APPROVED_BY' && !a.row.ACTION && !b.row.ACTION ? Number(waiting.has(a.row.APPROVER_USER_ID)) - Number(waiting.has(b.row.APPROVER_USER_ID)) : 0) || String(a.row.TIMESTAMP).localeCompare(String(b.row.TIMESTAMP)) || a.index - b.index;
     })
     .map(({ row }) => row);
   return rows.length ? <div className="table-wrap">
@@ -329,11 +348,12 @@ function HistoryTable({ approvals, status }: { approvals: Approval[]; status: st
       <tbody>{rows.map((approval) => {
         const acted = Boolean(approval.ACTION);
         const sent = approval.STEP === 'PREPARED_BY' && approval.ACTION === 'APPROVED';
-        const label = acted ? actionLabel(approval.STEP, approval.ACTION) : awaiting ? 'Pending' : 'Not reached';
+        const waitingLabel = !acted && awaiting && approval.STEP === 'APPROVED_BY' ? waiting.get(approval.APPROVER_USER_ID) : undefined;
+        const label = acted ? actionLabel(approval.STEP, approval.ACTION) : waitingLabel ?? (awaiting ? 'Pending' : 'Not reached');
         return <tr key={approval.APPROVAL_ID}>
           <td data-label="Step">{stepLabel(approval.STEP)}</td>
           <td data-label="Approver">{approval.APPROVER_NAME ? displayName(approval.APPROVER_NAME) : 'System'}</td>
-          <td data-label="Action"><span className={`history-action history-action-${sent ? 'sent' : acted ? approval.ACTION.toLowerCase() : awaiting ? 'pending' : 'idle'}`}>{label}</span></td>
+          <td data-label="Action"><span className={`history-action history-action-${sent ? 'sent' : acted ? approval.ACTION.toLowerCase() : waitingLabel ? 'idle' : awaiting ? 'pending' : 'idle'}`}>{label}</span></td>
           <td data-label="Remarks">{approval.REMARKS || '—'}</td>
           <td data-label={acted ? 'Date and Time' : 'Assigned'}>{acted ? dateTime(approval.TIMESTAMP) : <span className="history-muted">Assigned {dateTime(approval.TIMESTAMP)}</span>}</td>
         </tr>;

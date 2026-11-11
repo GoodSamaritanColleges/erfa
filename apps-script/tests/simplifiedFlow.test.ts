@@ -217,6 +217,7 @@ describe('official matrix — 12 scenarios', () => {
     vi.mocked(notify).mockClear();
     acted(draft.RFA_ID, userById('ofelia'));
     expect(emailedTo()).toEqual(['ana@example.edu']);
+    expect(detailRfa(userById('ana'), draft.RFA_ID).approvedByOrder).toEqual({ ana: 0, raquel: 1, jennelyn: 1, president: 2 });
     // Only the email order changes: a VP can still act before Ma'am Tago, with no extra emails.
     expect((detailRfa(userById('raquel'), draft.RFA_ID).permissions as { canDecide: boolean }).canDecide).toBe(true);
     vi.mocked(notify).mockClear();

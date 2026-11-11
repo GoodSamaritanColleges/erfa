@@ -1143,6 +1143,8 @@ export function detailRfa(user: SessionUser, rfaId: string): Record<string, unkn
     attachments: attachmentRows(rfaId).map(({ DRIVE_FILE_ID: _hidden, ...attachment }) => attachment),
     audit: history.map(({ METADATA_JSON: _metadata, ...entry }) => entry),
     notedByNotApplicable: notedByNotApplicable(history),
+    // Approved By email order per approver user ID: 0 = Ma'am Tago, 1 = VPs, 2 = President.
+    approvedByOrder: Object.fromEntries(approvals.filter((row) => row.STEP === 'APPROVED_BY' && row.ACTION === '').map((row) => [String(row.APPROVER_USER_ID), approvedByEmailTier(row)])),
     financial: financialDetail(rfa),
     permissions: {
       canEdit,
