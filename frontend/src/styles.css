@@ -800,3 +800,19 @@ td[data-label="RFA Number"] > b, td[data-label="Date Filed"] { white-space: nowr
 
 /* Automatic school year on the RFA form */
 .school-year-field small { display: block; margin-top: .15rem; color: var(--muted); font-size: var(--text-xs); }
+
+/* Tick options (single choice), e.g. OPEX / CAPEX */
+.tick-group { grid-column: 1 / -1; margin: 0; padding: 0; border: 0; min-width: 0; display: grid; grid-template-columns: 1fr 1fr; gap: .65rem; }
+.tick-group legend { padding: 0; margin-bottom: .4rem; font-size: var(--text-sm); font-weight: 600; color: #344054; }
+.tick-group legend b { color: var(--red); }
+.tick-option { position: relative; display: flex; align-items: flex-start; gap: .7rem; padding: .8rem .9rem; border: 1px solid #cbd3de; border-radius: var(--radius); background: #fff; cursor: pointer; transition: border-color .15s, background .15s, box-shadow .15s; }
+.tick-option:hover { border-color: var(--pp-secondary); }
+.tick-option input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.tick-option:focus-within { box-shadow: 0 0 0 3px rgba(36,95,163,.14); border-color: var(--blue); }
+.tick-box { flex-shrink: 0; width: 20px; height: 20px; margin-top: 1px; display: grid; place-items: center; border: 1.5px solid #98a2b3; border-radius: 5px; background: #fff; color: transparent; transition: background .15s, border-color .15s, color .15s; }
+.tick-text b { display: block; font-size: var(--text-sm); color: var(--ink); }
+.tick-text small { display: block; margin-top: .1rem; font-size: var(--text-xs); color: var(--muted); line-height: 1.4; }
+.tick-option.checked { border-color: var(--navy); background: var(--pp-tint); box-shadow: inset 0 0 0 1px var(--navy); }
+.tick-option.checked .tick-box { background: var(--navy); border-color: var(--navy); color: #fff; }
+@media (max-width: 620px) { .tick-group { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { .tick-option, .tick-box { transition: none; } }

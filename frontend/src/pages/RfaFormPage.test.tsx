@@ -24,6 +24,9 @@ describe('RfaFormPage expense classification', () => {
     expect(html).toContain('Expense Classification');
     expect(html).toContain('OPEX');
     expect(html).toContain('CAPEX');
+    // Single-choice tick options instead of a dropdown
+    expect(html.match(/<input type="radio"[^>]*name="expenseClassification"/g)).toHaveLength(2);
+    expect(html).not.toContain('Select classification');
     expect(html).not.toContain('Remaining');
     expect(html).not.toContain('purchase request');
     expect(html).not.toContain('Alternate Department Head');

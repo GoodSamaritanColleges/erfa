@@ -1,4 +1,4 @@
-import { ArrowLeft, FileText, Paperclip, Save, Send, X } from 'lucide-react';
+import { ArrowLeft, Check, FileText, Paperclip, Save, Send, X } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, fileToBase64 } from '../api';
@@ -117,7 +117,7 @@ export function RfaFormPage() {
     try {
       const isV2Edit = existing?.CURRENT_MATRIX_ID === fixedV2Marker;
       if (!usesLegacyWorkflow && !isV2Edit) {
-        if (!form.expenseClassification) throw new Error('Expense Classification is required: select OPEX or CAPEX.');
+        if (!form.expenseClassification) throw new Error('Expense Classification is required: tick OPEX or CAPEX.');
         if (!['OPEX', 'CAPEX'].includes(form.expenseClassification)) throw new Error('Expense Classification must be OPEX or CAPEX.');
         if (!isFiscalYear(form.fiscalYear)) throw new Error('The school year could not be determined. Please reload and try again.');
         if (!form.requestedAmount || Number(form.requestedAmount) <= 0) throw new Error('Requested Amount is required.');
@@ -217,13 +217,17 @@ export function RfaFormPage() {
         <div className="form-grid">
           <div className="readonly school-year-field"><span>School Year</span><b>{schoolYearLabel(form.fiscalYear)}</b><small>Set automatically from the filing date (June to May).</small></div>
           <label className="field"><span>Requested Amount (PHP) <b>*</b></span><input required min="0.01" step="0.01" type="number" value={form.requestedAmount} onChange={(e) => set('requestedAmount', e.target.value)} placeholder="0.00" /></label>
-          <label className="field"><span>Expense Classification <b>*</b></span>
-            <select required value={form.expenseClassification} onChange={(e) => set('expenseClassification', e.target.value)}>
-              <option value="">Select classification</option>
-              <option value="OPEX">OPEX — Operating Expenditure</option>
-              <option value="CAPEX">CAPEX — Capital Expenditure</option>
-            </select>
-          </label>
+          <fieldset className="tick-group">
+            <legend>Expense Classification <b>*</b></legend>
+            {[
+              { value: 'OPEX', title: 'OPEX', text: 'Operating Expenditure: supplies, services, events, repairs' },
+              { value: 'CAPEX', title: 'CAPEX', text: 'Capital Expenditure: equipment, furniture, construction' }
+            ].map((option) => <label key={option.value} className={`tick-option${form.expenseClassification === option.value ? ' checked' : ''}`}>
+              <input type="radio" name="expenseClassification" value={option.value} required checked={form.expenseClassification === option.value} onChange={() => set('expenseClassification', option.value)} />
+              <span className="tick-box" aria-hidden><Check size={14} /></span>
+              <span className="tick-text"><b>{option.title}</b><small>{option.text}</small></span>
+            </label>)}
+          </fieldset>
         </div>
         <p className="muted">Amounts are monitored by department as Total OPEX + Total CAPEX. Presidential approval is {needsPresident ? 'required' : 'not required'} at {money(threshold)} threshold (amount: {money(amount || 0)}).</p>
         {isAcademic && <p className="muted">Academic department: VP for Academic Affairs is automatically included in Approved By.</p>}
