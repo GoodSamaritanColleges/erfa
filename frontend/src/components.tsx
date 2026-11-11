@@ -1,9 +1,10 @@
 import { AlertTriangle, BarChart3, Files, CheckCircle2, FilePlus2, FileText, Home, ListTodo, LoaderCircle, LogOut, Settings2, ShieldCheck, Wallet, X } from 'lucide-react';
-import { Suspense, type ReactNode } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Suspense, useEffect, useState, type ReactNode } from 'react';
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
+import { api } from './api';
 import { useAuth } from './auth';
 import { statusLabel } from './format';
-import type { RfaStatus } from './types';
+import type { Rfa, RfaStatus } from './types';
 
 export function Spinner({ label = 'Loading' }: { label?: string }) {
   return <div className="spinner-wrap" role="status"><LoaderCircle className="spin" /><span>{label}...</span></div>;
@@ -22,6 +23,38 @@ export function PageFallback() {
 
 function initials(name: string): string {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase() ?? '').join('') || '?';
+}
+
+const PENDING_REFRESH_MS = 120_000;
+
+/**
+ * Number of RFAs waiting for this user's decision. Refreshes on every page change
+ * (served from the 30-second read cache, so this is cheap), when the tab regains focus,
+ * and every 2 minutes while the tab is visible. Any approve/return/disapprove clears the
+ * read cache, so the count updates on the next page the user opens.
+ */
+function usePendingCount(enabled: boolean, pathname: string): number {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    if (!enabled) { setCount(0); return; }
+    let alive = true;
+    const load = () => {
+      if (document.visibilityState === 'hidden') return;
+      api<Rfa[]>('rfa.forApproval').then((rows) => { if (alive) setCount(Array.isArray(rows) ? rows.length : 0); }).catch(() => undefined);
+    };
+    load();
+    const timer = window.setInterval(load, PENDING_REFRESH_MS);
+    const onVisible = () => { if (document.visibilityState === 'visible') load(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => { alive = false; window.clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); window.removeEventListener('focus', onVisible); };
+  }, [enabled, pathname]);
+  return count;
+}
+
+function CountBubble({ count, className = '' }: { count: number; className?: string }) {
+  if (count <= 0) return null;
+  return <span className={`count-bubble ${className}`} aria-hidden>{count > 99 ? '99+' : count}</span>;
 }
 
 export function StatusBadge({ status }: { status: RfaStatus | string }) {
@@ -48,7 +81,13 @@ export function Dialog({ title, children, onClose }: { title: string; children: 
 export function Layout() {
   const { user, signOut } = useAuth();
   const { pathname } = useLocation();
+  const pending = usePendingCount(Boolean(user?.CAN_APPROVE_RFA), pathname);
+  useEffect(() => {
+    const base = 'eRFA | Electronic Request for Approval';
+    document.title = pending > 0 ? `(${pending}) ${base}` : base;
+  }, [pending]);
   if (!user) return null;
+  const pendingLabel = pending > 0 ? `${pending} request${pending === 1 ? '' : 's'} awaiting your action` : '';
   const canSeeAll = user.ALL_RFAS_SCOPE === 'all' || user.ALL_RFAS_SCOPE === 'approved';
   const pageTitle = pathname === '/' ? 'Dashboard' : pathname === '/rfas' ? 'My RFAs' : pathname === '/all-rfas' ? 'All RFAs' : pathname === '/rfa/new' ? 'Create RFA' : pathname === '/approvals' ? 'For My Action' : pathname === '/admin' ? 'Administration' : pathname.startsWith('/admin/expense-monitoring') || pathname.startsWith('/admin/budgets') ? 'Expense Monitoring' : pathname.startsWith('/admin/expense-reports') || pathname.startsWith('/admin/budget-reports') ? 'Expense Reports' : pathname.startsWith('/rfa/') ? 'RFA Detail' : 'Electronic Request for Approval';
 
@@ -64,7 +103,7 @@ export function Layout() {
         <NavLink to="/rfas"><ListTodo /> My RFAs</NavLink>
         {canSeeAll && <NavLink to="/all-rfas"><Files /> All RFAs</NavLink>}
         {user.CAN_CREATE_RFA && <NavLink to="/rfa/new"><FilePlus2 /> Create RFA</NavLink>}
-        {user.CAN_APPROVE_RFA && <NavLink to="/approvals"><ShieldCheck /> For My Action</NavLink>}
+        {user.CAN_APPROVE_RFA && <NavLink to="/approvals" aria-label={pendingLabel ? `For My Action, ${pendingLabel}` : undefined}><ShieldCheck /> For My Action<CountBubble count={pending} className="nav-count" /></NavLink>}
         {user.IS_ADMIN && <span className="sidebar-nav-label">Administration</span>}
         {user.IS_ADMIN && <NavLink to="/admin" end><Settings2 /> Administration</NavLink>}
         {user.IS_ADMIN && <NavLink to="/admin/expense-monitoring"><Wallet /> Expense Monitoring</NavLink>}
@@ -73,7 +112,7 @@ export function Layout() {
 
       <div className="sidebar-footer">
         <div className="sidebar-user">
-          <span className="avatar" aria-hidden>{initials(user.FULL_NAME)}</span>
+          <span className="avatar-wrap"><span className="avatar" aria-hidden>{initials(user.FULL_NAME)}</span><CountBubble count={pending} className="avatar-count" /></span>
           <div>
             <b>{user.FULL_NAME}</b>
             <small>{user.POSITION || user.DEPARTMENT_NAME || user.EMAIL}</small>
@@ -91,7 +130,9 @@ export function Layout() {
         </div>
         <div className="content-header-right">
           <span className="content-header-user" title={user.FULL_NAME}>{user.FULL_NAME}</span>
-          <span className="avatar small" aria-hidden>{initials(user.FULL_NAME)}</span>
+          {pending > 0
+            ? <Link to="/approvals" className="avatar-wrap avatar-link" title={pendingLabel} aria-label={pendingLabel}><span className="avatar small" aria-hidden>{initials(user.FULL_NAME)}</span><CountBubble count={pending} className="avatar-count" /></Link>
+            : <span className="avatar-wrap"><span className="avatar small" aria-hidden>{initials(user.FULL_NAME)}</span></span>}
         </div>
       </header>
 
@@ -109,7 +150,7 @@ export function Layout() {
       <NavLink to="/rfas"><ListTodo />My RFAs</NavLink>
       {canSeeAll && <NavLink to="/all-rfas"><Files />All RFAs</NavLink>}
       {user.CAN_CREATE_RFA && <NavLink to="/rfa/new"><FilePlus2 />Create</NavLink>}
-      {user.CAN_APPROVE_RFA && <NavLink to="/approvals"><ShieldCheck />Action</NavLink>}
+      {user.CAN_APPROVE_RFA && <NavLink to="/approvals" aria-label={pendingLabel ? `For My Action, ${pendingLabel}` : undefined}><span className="mobile-icon-wrap"><ShieldCheck /><CountBubble count={pending} className="mobile-count" /></span>Action</NavLink>}
       {user.IS_ADMIN && <NavLink to="/admin" end><Settings2 />Admin</NavLink>}
       {user.IS_ADMIN && <NavLink to="/admin/expense-monitoring"><Wallet />Expenses</NavLink>}
       {user.IS_ADMIN && <NavLink to="/admin/expense-reports"><BarChart3 />Reports</NavLink>}

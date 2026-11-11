@@ -769,3 +769,17 @@ td[data-label="RFA Number"] > b, td[data-label="Date Filed"] { white-space: nowr
 .sidebar-brand { min-height: 104px; padding: 1.1rem 1rem; justify-content: center; }
 .sidebar-brand img { width: 100%; max-width: 244px; }
 @media (max-width: 1200px) { .sidebar-brand img { max-width: 220px; } }
+
+/* Awaiting-action count bubbles */
+.count-bubble { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: #d92d20; color: #fff; font-size: .7rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; box-shadow: 0 0 0 2px #fff; }
+.nav-count { margin-left: auto; box-shadow: none; }
+.avatar-wrap { position: relative; display: inline-flex; flex-shrink: 0; }
+.avatar-link { text-decoration: none; border-radius: 50%; }
+.avatar-link:hover { text-decoration: none; }
+.avatar-link:hover .avatar { box-shadow: 0 0 0 3px var(--pp-tint); }
+.avatar-count { position: absolute; top: -6px; right: -8px; min-width: 18px; height: 18px; padding: 0 5px; font-size: .65rem; animation: bubble-in .25s ease-out; }
+.mobile-icon-wrap { position: relative; display: inline-flex; }
+.mobile-count { position: absolute; top: -7px; right: -12px; min-width: 17px; height: 17px; padding: 0 4px; font-size: .62rem; }
+@keyframes bubble-in { from { transform: scale(.4); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .avatar-count { animation: none; } }
+@media print { .count-bubble { display: none; } }
