@@ -133,7 +133,7 @@ export function Empty({ title, text }: { title: string; text: string }) {
   </div>;
 }
 
-export function RfaTable({ rfas, review = false }: { rfas: Rfa[]; review?: boolean }) {
+export function RfaTable({ rfas, review = false, schoolYear = '' }: { rfas: Rfa[]; review?: boolean; schoolYear?: string }) {
   return <div className="table-wrap">
     <table>
       <thead>
@@ -160,7 +160,7 @@ export function RfaTable({ rfas, review = false }: { rfas: Rfa[]; review?: boole
           {review && <td data-label="Current Step">{rfa.CURRENT_STEP ? stepLabel(rfa.CURRENT_STEP) : '—'}</td>}
           <td data-label="Status"><StatusBadge status={rfa.STATUS} /></td>
           <td data-label="Date Filed">{date(rfa.DATE_FILED)}</td>
-          <td><Link className="row-link" to={`/rfa/${rfa.RFA_ID}`}>{review ? 'Review' : 'View'} <ArrowRight size={14} /></Link></td>
+          <td><Link className="row-link" to={`/rfa/${rfa.RFA_ID}${schoolYear ? `?sy=${schoolYear}` : ''}`}>{review ? 'Review' : 'View'} <ArrowRight size={14} /></Link></td>
         </tr>)}
       </tbody>
     </table>

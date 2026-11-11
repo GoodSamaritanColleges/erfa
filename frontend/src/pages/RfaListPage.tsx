@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, peek } from '../api';
 import { useAuth } from '../auth';
 import { ErrorNotice } from '../components';
-import type { Rfa } from '../types';
+import type { ArchiveYear, Rfa } from '../types';
 import { Empty, RfaTable } from './DashboardPage';
 
 type ListMode = 'mine' | 'approvals' | 'all';
@@ -27,6 +27,8 @@ export function RfaListPage({ mode = 'mine' }: { mode?: ListMode }) {
   const [status, setStatus] = useState('');
   const [expenseClassification, setExpenseClassification] = useState('');
   const [fiscalYear, setFiscalYear] = useState('');
+  const [schoolYear, setSchoolYear] = useState('');
+  const [archives, setArchives] = useState<ArchiveYear[]>(() => peek<ArchiveYear[]>('rfa.archives') ?? []);
   const [loading, setLoading] = useState(() => !peek<Rfa[]>(action, emptyFilters));
   const [error, setError] = useState('');
   const previousQuery = useRef(query);
@@ -35,7 +37,7 @@ export function RfaListPage({ mode = 'mine' }: { mode?: ListMode }) {
     let current = true;
     const delay = query === previousQuery.current ? 0 : 250;
     previousQuery.current = query;
-    const payload = approvalsOnly ? {} : { query, status, expenseClassification, fiscalYear };
+    const payload = approvalsOnly ? {} : { query, status, expenseClassification, fiscalYear, ...(schoolYear ? { schoolYear } : {}) };
     const known = peek<Rfa[]>(action, payload);
     if (known) setRfas(known);
     setLoading(true);
@@ -46,7 +48,15 @@ export function RfaListPage({ mode = 'mine' }: { mode?: ListMode }) {
         .finally(() => { if (current) setLoading(false); });
     }, delay);
     return () => { current = false; clearTimeout(timer); };
-  }, [query, status, expenseClassification, fiscalYear, approvalsOnly, action]);
+  }, [query, status, expenseClassification, fiscalYear, schoolYear, approvalsOnly, action]);
+
+  // Past school years that were archived; loaded once and cached for the visit.
+  useEffect(() => {
+    if (approvalsOnly) return;
+    let current = true;
+    api<ArchiveYear[]>('rfa.archives').then((rows) => { if (current) setArchives(Array.isArray(rows) ? rows : []); }).catch(() => undefined);
+    return () => { current = false; };
+  }, [approvalsOnly]);
 
   return <>
     <header className="page-header">
@@ -57,7 +67,14 @@ export function RfaListPage({ mode = 'mine' }: { mode?: ListMode }) {
       </div>
     </header>
     <ErrorNotice message={error} />
-    {!approvalsOnly && <div className="filters">
+    {!approvalsOnly && <div className={`filters${archives.length ? ' with-year' : ''}`}>
+      {archives.length > 0 && <label>
+        <span className="sr-only">School year</span>
+        <select value={schoolYear} onChange={(e) => setSchoolYear(e.target.value)} aria-label="School year">
+          <option value="">Current school year</option>
+          {archives.map((year) => <option key={year.schoolYear} value={String(year.schoolYear)}>{year.label}</option>)}
+        </select>
+      </label>}
       <label className="search-field">
         <Search size={16} />
         <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="RFA number, title, requester, department, or OPEX/CAPEX" aria-label="Search RFAs" />
@@ -86,7 +103,7 @@ export function RfaListPage({ mode = 'mine' }: { mode?: ListMode }) {
       {loading && !rfas.length
         ? <ListSkeleton />
         : rfas.length
-          ? <RfaTable rfas={rfas} review={approvalsOnly} />
+          ? <RfaTable rfas={rfas} review={approvalsOnly} schoolYear={schoolYear} />
           : <Empty title={copy.empty} text={copy.emptyText} />}
     </section>
   </>;

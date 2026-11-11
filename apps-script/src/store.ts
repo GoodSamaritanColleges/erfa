@@ -90,7 +90,7 @@ export function setupSchema(): { spreadsheetId: string; spreadsheetUrl: string; 
   return { spreadsheetId: db.getId(), spreadsheetUrl: db.getUrl(), sheets: Object.keys(SHEETS), attachmentFolderId };
 }
 
-function normalizeCell(value: unknown, header = ''): string | number | boolean {
+export function normalizeCell(value: unknown, header = ''): string | number | boolean {
   // Sheets returns date-only cells as Date objects. Format TARGET_DATE in the
   // spreadsheet timezone so an HTML date remains YYYY-MM-DD without UTC drift.
   if (value instanceof Date && header === 'TARGET_DATE') return Utilities.formatDate(value, getDatabase().getSpreadsheetTimeZone(), 'yyyy-MM-dd');

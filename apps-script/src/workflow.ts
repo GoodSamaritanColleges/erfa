@@ -2,6 +2,7 @@ import { ALLOWED_ATTACHMENT_TYPES, APPROVAL_SECTIONS, ASSIGNMENT_WORKFLOW_MARKER
 import { audit } from './audit';
 import { commitApprovedFinancialRfa, financialDetail, financialRfaFields, recordActualExpense } from './budget';
 import { formatRfaNumber, isJhsOrShsDepartment, nextAssignedSection, nextAssignedStageAfterAction, normalizeEmail, orderedMatrix, parsePresidentThresholdCents, selectNextApprover, toBoolean, validateExpenseClassification, validateRfaInput } from './core';
+import { archivedRows, findArchivedAttachment, findArchivedRfa, schoolYearLabel } from './archive';
 import { notify } from './notifications';
 import { all, clearPendingRfaAssignments, findBy, getAssignmentsBySection, getSetting, insert, newId, nowIso, saveRfaSectionAssignments, setSetting, updateBy } from './store';
 import type { ApprovalSection, DepartmentHeadRecord, DepartmentRecord, EligibleApprover, MatrixRecord, RfaRecord, RfaSectionAssignments, SessionUser, SheetRecord, UserRecord } from './types';
@@ -1060,14 +1061,18 @@ export function saveActualExpense(user: SessionUser, rfaId: string, payload: Rec
 /** "My RFAs": only the requests this user filed — for every role, including administrators. */
 export function listRfas(user: SessionUser, filters: Record<string, unknown>, _approvals?: SheetRecord[], records?: RfaRecord[]): RfaRecord[] {
   const email = normalizeEmail(user.EMAIL);
-  return filterRfas((records ?? all<RfaRecord>('RFA')).filter((rfa) => normalizeEmail(rfa.REQUESTER_EMAIL) === email), filters);
+  const schoolYear = Number(filters.schoolYear || 0);
+  const source = schoolYear ? archivedRows<RfaRecord>(schoolYear, 'RFA') : (records ?? all<RfaRecord>('RFA'));
+  return filterRfas(source.filter((rfa) => normalizeEmail(rfa.REQUESTER_EMAIL) === email), filters);
 }
 
 /** "All RFAs": the institution-wide register, limited by allRfasScope(). */
 export function listAllRfas(user: SessionUser, filters: Record<string, unknown>): RfaRecord[] {
   const scope = allRfasScope(user);
   if (scope === 'none') businessError('You do not have access to the All RFAs register.', 'FORBIDDEN');
-  const records = all<RfaRecord>('RFA').filter((rfa) => rfa.STATUS !== 'DRAFT' && (scope === 'all' || APPROVED_STATUSES.includes(rfa.STATUS)));
+  const schoolYear = Number(filters.schoolYear || 0);
+  const source = schoolYear ? archivedRows<RfaRecord>(schoolYear, 'RFA') : all<RfaRecord>('RFA');
+  const records = source.filter((rfa) => rfa.STATUS !== 'DRAFT' && (scope === 'all' || APPROVED_STATUSES.includes(rfa.STATUS)));
   return filterRfas(records, filters);
 }
 
@@ -1130,7 +1135,29 @@ export function dashboardRfas(user: SessionUser): { rfas: RfaRecord[]; approvals
   return { rfas: listRfas(user, {}, approvals, records), approvals: listForApproval(user, approvals, records) };
 }
 
-export function detailRfa(user: SessionUser, rfaId: string): Record<string, unknown> {
+/** Read-only view of an RFA that was moved to a school-year archive. */
+function archivedDetail(user: SessionUser, rfaId: string, schoolYearHint: number): Record<string, unknown> {
+  const found = findArchivedRfa(rfaId, schoolYearHint);
+  if (!found) businessError('RFA was not found.', 'NOT_FOUND');
+  const { schoolYear, rfa } = found;
+  const approvals = archivedRows<SheetRecord>(schoolYear, 'RFA_APPROVALS').filter((row) => row.RFA_ID === rfaId);
+  const history = archivedRows<SheetRecord>(schoolYear, 'RFA_AUDIT').filter((row) => row.RFA_ID === rfaId);
+  assertView(user, rfa, approvals);
+  return {
+    rfa,
+    approvals,
+    attachments: archivedRows<SheetRecord>(schoolYear, 'RFA_ATTACHMENTS').filter((row) => row.RFA_ID === rfaId).map(({ DRIVE_FILE_ID: _hidden, ...attachment }) => attachment),
+    audit: history.map(({ METADATA_JSON: _metadata, ...entry }) => entry),
+    notedByNotApplicable: notedByNotApplicable(history),
+    approvedByOrder: {},
+    financial: financialDetail(rfa),
+    archived: { schoolYear, label: schoolYearLabel(schoolYear) },
+    permissions: { canEdit: false, canDecide: false, canImplement: false, canClose: false, canRecordActualExpense: false }
+  };
+}
+
+export function detailRfa(user: SessionUser, rfaId: string, schoolYearHint = 0): Record<string, unknown> {
+  if (!findBy<RfaRecord>('RFA', 'RFA_ID', rfaId)) return archivedDetail(user, rfaId, schoolYearHint);
   const rfa = getRfa(rfaId);
   const approvals = approvalRows(rfaId);
   const history = auditRows(rfaId);
@@ -1215,10 +1242,16 @@ export function uploadAttachment(user: SessionUser, payload: Record<string, unkn
 }
 
 export function downloadAttachment(user: SessionUser, attachmentId: string): SheetRecord {
-  const attachment = findBy<SheetRecord>('RFA_ATTACHMENTS', 'ATTACHMENT_ID', attachmentId);
-  if (!attachment) businessError('Attachment was not found.', 'NOT_FOUND');
-  const rfa = getRfa(String(attachment.RFA_ID));
-  assertView(user, rfa);
+  let attachment = findBy<SheetRecord>('RFA_ATTACHMENTS', 'ATTACHMENT_ID', attachmentId);
+  if (attachment) assertView(user, getRfa(String(attachment.RFA_ID)));
+  else {
+    const archived = findArchivedAttachment(attachmentId);
+    if (!archived) businessError('Attachment was not found.', 'NOT_FOUND');
+    attachment = archived.attachment;
+    const found = findArchivedRfa(String(attachment.RFA_ID), archived.schoolYear);
+    if (!found) businessError('Attachment was not found.', 'NOT_FOUND');
+    assertView(user, found.rfa, archivedRows<SheetRecord>(found.schoolYear, 'RFA_APPROVALS').filter((row) => row.RFA_ID === found.rfa.RFA_ID));
+  }
   const blob = DriveApp.getFileById(String(attachment.DRIVE_FILE_ID)).getBlob();
   return { fileName: attachment.FILE_NAME, mimeType: attachment.MIME_TYPE, base64: Utilities.base64Encode(blob.getBytes()) };
 }

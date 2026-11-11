@@ -4,6 +4,7 @@ import { cleanImportedData } from './admin';
 import { all, setupSchema } from './store';
 import { beginPerformance, performanceSnapshot, timed } from './performance';
 import { previewRfaReset, resetRfas } from './resetRfas';
+import { archivePastSchoolYears, previewArchive } from './archive';
 
 function json(value: unknown): GoogleAppsScript.Content.TextOutput {
   const serialized = timed('serializationMs', () => JSON.stringify(value));
@@ -69,7 +70,26 @@ function resetAllRfasKeepAccounts(): unknown {
   return result;
 }
 
+// End of each school year: run previewArchiveNow to see how many finished RFAs from past
+// school years would move, then archivePastSchoolYearsNow. A backup is made first; archived
+// RFAs stay viewable read-only under the School year picker. Safe to run again.
+function previewArchiveNow(): unknown {
+  setupSchema();
+  const counts = previewArchive();
+  console.log('[eRFA] Archive preview (finished RFAs per past school year):', JSON.stringify(counts));
+  return counts;
+}
+
+function archivePastSchoolYearsNow(): unknown {
+  setupSchema();
+  const admins = (all('USERS') as Array<{ IS_ADMIN?: unknown; EMAIL?: string; FULL_NAME?: string }>).filter((u) => String(u.IS_ADMIN).toUpperCase() === 'TRUE' || u.IS_ADMIN === true);
+  const actor = { FULL_NAME: admins[0]?.FULL_NAME || 'Administrator', EMAIL: admins[0]?.EMAIL || Session.getEffectiveUser().getEmail() };
+  const result = archivePastSchoolYears(actor);
+  console.log('[eRFA] Archive complete:', JSON.stringify(result));
+  return result;
+}
+
 // The production bundle keeps implementation code inside an IIFE. Store only
 // intended Apps Script entry points here; build.mjs emits top-level forwarding
 // declarations so Apps Script can discover them in the editor and Web App.
-Object.assign(globalThis, { __erfaEntrypoints: { doGet, doPost, setupDatabase, bootstrapAdmin, cleanAllNow, previewRfaResetNow, resetAllRfasKeepAccounts } });
+Object.assign(globalThis, { __erfaEntrypoints: { doGet, doPost, setupDatabase, bootstrapAdmin, cleanAllNow, previewRfaResetNow, resetAllRfasKeepAccounts, previewArchiveNow, archivePastSchoolYearsNow } });

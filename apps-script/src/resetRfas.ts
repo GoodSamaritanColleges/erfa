@@ -24,7 +24,7 @@ const CLEAR_RFA_LINKED: SheetName[] = ['RFA_AUDIT', 'BUDGET_TRANSACTIONS'];
 
 export interface RfaResetCounts { [sheet: string]: number }
 
-function sheetRows(name: SheetName): { sheet: GoogleAppsScript.Spreadsheet.Sheet | null; headers: string[]; values: unknown[][] } {
+export function sheetRows(name: SheetName): { sheet: GoogleAppsScript.Spreadsheet.Sheet | null; headers: string[]; values: unknown[][] } {
   const sheet = getDatabase().getSheetByName(name);
   const headers = [...SHEETS[name]] as string[];
   if (!sheet || sheet.getLastRow() < 2) return { sheet, headers, values: [] };
@@ -44,7 +44,7 @@ export function previewRfaReset(): RfaResetCounts {
 }
 
 /** Rewrite a sheet keeping only rows for which keep() is true. Returns rows removed. */
-function keepOnly(name: SheetName, keep: (headers: string[], row: unknown[]) => boolean): number {
+export function keepOnly(name: SheetName, keep: (headers: string[], row: unknown[]) => boolean): number {
   const { sheet, headers, values } = sheetRows(name);
   if (!sheet || values.length === 0) return 0;
   const kept = values.filter((row) => keep(headers, row));

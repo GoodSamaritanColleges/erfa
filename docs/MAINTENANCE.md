@@ -27,9 +27,23 @@ Everything else (React, router, icons, the Inter font) ships inside the website 
 1. Run `pnpm install --frozen-lockfile` and `pnpm check` (typecheck, lint, tests, build). All should pass.
 2. Sign in on the live site with an admin and an approver account; open the dashboard, My RFAs, For My Action and one RFA.
 3. In the database spreadsheet, check the `NOTIFICATIONS` sheet for `FAILED` emails.
-4. Check sheet size: Google Sheets allows 10 million cells per spreadsheet. At about 750 RFAs a year this is decades away; if it ever gets close, archive closed RFAs from older years into a copy.
+4. Run the yearly archive (below) so the main database only holds the current school year.
 5. Make a backup copy of the database spreadsheet (File → Make a copy).
 6. Confirm the Google Cloud OAuth consent screen is still **In production** and **External** (needed for approvers from other domains).
+
+## End of each school year: archive
+
+The school year runs June to May by default (setting `SCHOOL_YEAR_START_MONTH`, 6 = June). Shortly after a school year ends:
+
+1. In the Apps Script editor, run **`previewArchiveNow`**. It lists how many finished RFAs from past school years would be archived and changes nothing.
+2. Run **`archivePastSchoolYearsNow`**. It:
+   - makes a full backup copy of the database spreadsheet first;
+   - moves finished RFAs (Approved, Closed, Disapproved, Cancelled) filed in past school years, with their approval rows, attachment records, history and email logs, into one spreadsheet per school year named "eRFA Archive SY 2025–2026" (next to the database in Drive);
+   - checks each archive was written before removing those rows from the main database;
+   - keeps unfinished RFAs (draft, pending, returned, implementation), every budget ledger entry, accounts and settings.
+3. Users pick the year from the **School year** filter on My RFAs and All RFAs. Archived RFAs open read-only with their full history and attachments, with the same access rules. Expense reports for a fiscal year include its archived RFAs automatically.
+
+It is safe to run again: RFAs finished late are added to the right year's archive. Attachment files are never moved; they already live in per-year Drive folders. Do not edit or delete archive spreadsheets by hand; their IDs are listed in the `ARCHIVES` sheet.
 
 ## Updating packages (every 1–2 years, optional)
 

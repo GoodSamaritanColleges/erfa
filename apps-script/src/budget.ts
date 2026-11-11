@@ -2,6 +2,7 @@ import { audit } from './audit';
 import { requireCapability } from './auth';
 import { centavosToPhp, parseCentavos, toBoolean } from './core';
 import { all, findBy, insert, newId, nowIso, resetPerRequestCache, updateBy } from './store';
+import { rfasWithArchives } from './archive';
 import type { BudgetTransactionRecord, DepartmentBudgetRecord, DepartmentRecord, ExpenseCategoryRecord, RfaRecord, SessionUser } from './types';
 
 export type ExpenseClassification = 'OPEX' | 'CAPEX';
@@ -166,7 +167,7 @@ export function departmentExpenseReport(user: SessionUser, payload: Record<strin
     const summary = summarizeBudget(budget, byBudget.get(budget.BUDGET_ID));
     return total + summary.committed + summary.actualSpent;
   }, 0);
-  const rfaById = new Map(all<RfaRecord>('RFA').map((rfa) => [rfa.RFA_ID, rfa]));
+  const rfaById = new Map(rfasWithArchives(fiscalYear).map((rfa) => [rfa.RFA_ID, rfa]));
   const rows = [...expenses.entries()].flatMap(([rfaId, entry]) => {
     const rfa = rfaById.get(rfaId);
     const dateApproved = String(entry.transaction.CREATED_AT || '').slice(0, 10);
@@ -234,7 +235,7 @@ function reportData(payload: Record<string, unknown>, loadedTransactions?: Budge
     if (item.TRANSACTION_TYPE === 'COMMITMENT_RELEASE') { state.committed -= Number(item.AMOUNT); state.hasRelease = true; }
     transactionByRfa.set(item.RFA_ID, state);
   }
-  const rows = all<RfaRecord>('RFA').filter((rfa) => {
+  const rows = rfasWithArchives(fiscalYear).filter((rfa) => {
     if (!toBoolean(rfa.IS_BUDGET_REQUEST) || (fiscalYear && String(rfa.FISCAL_YEAR) !== fiscalYear) || (departmentId && rfa.DEPARTMENT_ID !== departmentId) || (categoryId && rfa.EXPENSE_CATEGORY_ID !== categoryId) || (status && rfa.STATUS !== status) || (fromDate && String(rfa.DATE_FILED) < fromDate) || (toDate && String(rfa.DATE_FILED) > toDate) || (query && ![rfa.RFA_NUMBER, rfa.PURPOSE, rfa.REQUEST_TITLE].join(' ').toLowerCase().includes(query))) return false;
     const state = transactionByRfa.get(rfa.RFA_ID);
     const financial = Number(rfa.ACTUAL_AMOUNT) > 0 ? 'ACTUAL_RECORDED' : state?.hasCommitment && !state.hasRelease ? 'COMMITTED' : 'UNCOMMITTED';
@@ -340,6 +341,6 @@ export function expenseMonitoringReport(user: SessionUser, payload: Record<strin
   requireCapability(user, 'IS_ADMIN');
   const filters = normalizeExpenseMonitoringFilters(payload);
   const departments = all<DepartmentRecord>('DEPARTMENTS').filter((item) => toBoolean(item.ACTIVE));
-  const { deptRows, detailRows, totals } = aggregateDepartmentExpenses(all<RfaRecord>('RFA'), filters);
+  const { deptRows, detailRows, totals } = aggregateDepartmentExpenses(rfasWithArchives(filters.fiscalYear), filters);
   return { fiscalYear: filters.fiscalYear, filters, departments, deptRows, rows: detailRows, totals };
 }

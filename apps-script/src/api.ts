@@ -7,6 +7,7 @@ import { importUsersFromList } from './importUsers';
 import { adjustBudget, adminBudgetManagement, adminBudgetOverview, adminBudgetSummary, adminExpenseCategories, budgetReport, departmentExpenseReport, departmentFinancialDetail, expenseMonitoringReport, requesterBudgetContext, saveBudget, saveCategory, setOverBudget } from './budget';
 import { getDatabase, resetPerRequestCache } from './store';
 import { resetWorkflowCache } from './workflow';
+import { archiveYears, resetArchiveCache } from './archive';
 import { allRfasScope, createRfa, dashboardRfas, decideRfa, detailRfa, downloadAttachment, eligibleApprovers, fixedRoutePreview, listDepartments, listAllRfas, listForApproval, listRfas, saveActualExpense, submitRfa, transitionCloseout, updateRfa, uploadAttachment } from './workflow';
 
 export interface ApiRequest { action: string; idToken?: string; payload?: Record<string, unknown>; performance?: boolean }
@@ -18,6 +19,7 @@ export function dispatch(request: ApiRequest): unknown {
 function dispatchRequest(request: ApiRequest): unknown {
   resetPerRequestCache();
   resetWorkflowCache();
+  resetArchiveCache();
   if (request.action === 'health') return { version: APP_VERSION, status: 'ok', timestamp: new Date().toISOString() };
   const user = timed('authenticationMs', () => authenticate(String(request.idToken ?? '')));
   const payload = request.payload ?? {};
@@ -29,7 +31,8 @@ function dispatchRequest(request: ApiRequest): unknown {
     case 'rfa.list': return listRfas(user, payload);
     case 'rfa.all': return listAllRfas(user, payload);
     case 'rfa.forApproval': return listForApproval(user);
-    case 'rfa.detail': return detailRfa(user, String(payload.rfaId ?? ''));
+    case 'rfa.detail': return detailRfa(user, String(payload.rfaId ?? ''), Number(payload.schoolYear || 0));
+    case 'rfa.archives': return archiveYears();
     case 'rfa.eligibleApprovers': return eligibleApprovers(user);
     case 'rfa.departments': return listDepartments(user);
     case 'rfa.fixedRoute': return fixedRoutePreview(user);

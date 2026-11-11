@@ -791,3 +791,9 @@ td[data-label="RFA Number"] > b, td[data-label="Date Filed"] { white-space: nowr
 .crash-panel > svg { width: 32px; height: 32px; color: var(--pp-secondary); margin: 0 auto .75rem; }
 .crash-panel h2 { margin-bottom: .4rem; }
 .crash-panel p { margin: 0 0 1.25rem; color: var(--muted); font-size: var(--text-sm); }
+
+/* School-year archive */
+.filters.with-year { grid-template-columns: minmax(180px, 1fr) minmax(240px, 2fr) repeat(3, minmax(140px, 1fr)); }
+@media (max-width: 1100px) { .filters.with-year { grid-template-columns: 1fr 1fr; } .filters.with-year .search-field { grid-column: 1 / -1; } }
+@media (max-width: 620px) { .filters.with-year { grid-template-columns: 1fr; } }
+.archived-notice { background: var(--pp-tint); color: var(--navy-3); border: 1px solid #c9dbf5; }

@@ -1,6 +1,6 @@
 import { ArrowLeft, Check, Download, Edit3, FileText, Printer, RotateCcw, Send, XCircle } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { Dialog, ErrorNotice, Spinner, StatusBadge, SuccessNotice } from '../components';
 import { date, dateTime, displayName, expenseClassificationLabel, money, stepLabel } from '../format';
@@ -14,6 +14,8 @@ const officialSteps: ApprovalStep[] = ['PREPARED_BY', 'RECOMMENDING_APPROVAL', '
 export function RfaDetailPage() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const schoolYear = Number(searchParams.get('sy') || 0);
   const [detail, setDetail] = useState<RfaDetail | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -24,11 +26,11 @@ export function RfaDetailPage() {
 
   const load = useCallback(() => {
     setLoading(true);
-    void api<RfaDetail>('rfa.detail', { rfaId: id })
+    void api<RfaDetail>('rfa.detail', schoolYear ? { rfaId: id, schoolYear } : { rfaId: id })
       .then(setDetail)
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [id]);
+  }, [id, schoolYear]);
 
   useEffect(load, [load]);
 
@@ -84,6 +86,7 @@ export function RfaDetailPage() {
   return <>
     <div className="screen-only">
       <Link className="back-link" to="/rfas"><ArrowLeft size={16} /> Back to RFAs</Link>
+      {detail.archived && <div className="notice archived-notice" role="status">Archived record · {detail.archived.label}. This RFA is kept for reference and can no longer be changed.</div>}
       <header className="detail-header">
         <div>
           <span className="eyebrow orange">{rfa.RFA_NUMBER}</span>
