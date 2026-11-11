@@ -13,9 +13,7 @@ type DashboardBudget = { totals: { totalOpex: number; totalCapex: number; total:
 function DashboardSkeleton() {
   return <>
     <div className="dashboard-greeting">
-      <div className="skeleton" style={{ height: 22, width: 200, marginBottom: 8 }} />
-      <div className="skeleton" style={{ height: 14, width: 300 }} />
-      <div className="skeleton" style={{ height: 34, width: 130, marginTop: 12, borderRadius: 999 }} />
+      <div className="skeleton" style={{ height: 34, width: 130, borderRadius: 999 }} />
     </div>
     <div className="skeleton-metrics" aria-hidden>
       {Array.from({ length: 5 }).map((_, i) => <div key={i} className="skeleton skeleton-metric" />)}
@@ -64,19 +62,10 @@ export function DashboardPage() {
 
   if (loading) return <DashboardSkeleton />;
 
-  const displayName = user?.FULL_NAME?.split(' ')[0] ?? 'there';
-
   return <>
-    <div className="dashboard-greeting dashboard-hero">
-      <h1>Good day, {displayName}.</h1>
-      <p>{approvals.length
-        ? `You have ${approvals.length} request${approvals.length === 1 ? '' : 's'} waiting for your action.`
-        : 'Your requests and approval work are up to date.'}
-      </p>
-      {user?.CAN_CREATE_RFA && <div style={{ marginTop: '0.75rem' }}>
-        <Link className="button primary" to="/rfa/new">Create RFA <ArrowRight size={16} /></Link>
-      </div>}
-    </div>
+    {user?.CAN_CREATE_RFA && <div className="dashboard-greeting dashboard-hero">
+      <Link className="button primary" to="/rfa/new">Create RFA <ArrowRight size={16} /></Link>
+    </div>}
 
     <ErrorNotice message={error} />
 
