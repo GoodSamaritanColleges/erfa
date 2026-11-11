@@ -14,13 +14,29 @@ const loadAdmin = () => import('./pages/AdminPage');
 const loadBudget = () => import('./pages/BudgetPages');
 const loadReport = () => import('./pages/DepartmentExpenseReportPage');
 
-const DashboardPage = lazy(() => loadDashboard().then((m) => ({ default: m.DashboardPage })));
-const RfaListPage = lazy(() => loadList().then((m) => ({ default: m.RfaListPage })));
-const RfaFormPage = lazy(() => loadForm().then((m) => ({ default: m.RfaFormPage })));
-const RfaDetailPage = lazy(() => loadDetail().then((m) => ({ default: m.RfaDetailPage })));
-const AdminPage = lazy(() => loadAdmin().then((m) => ({ default: m.AdminPage })));
-const BudgetManagementPage = lazy(() => loadBudget().then((m) => ({ default: m.BudgetManagementPage })));
-const DepartmentExpenseReportPage = lazy(() => loadReport().then((m) => ({ default: m.DepartmentExpenseReportPage })));
+// After a new deploy, an already-open tab may ask for page files that no longer exist.
+// Reload once to pick up the new version instead of showing a blank page.
+const RELOAD_KEY = 'erfa_chunk_reload_at';
+function withReload<T>(load: () => Promise<T>): () => Promise<T> {
+  return () => load().catch((error: unknown) => {
+    let last = 0;
+    try { last = Number(sessionStorage.getItem(RELOAD_KEY) || 0); } catch { /* storage blocked */ }
+    if (Date.now() - last > 60_000) {
+      try { sessionStorage.setItem(RELOAD_KEY, String(Date.now())); } catch { /* storage blocked */ }
+      window.location.reload();
+      return new Promise<T>(() => undefined);
+    }
+    throw error;
+  });
+}
+
+const DashboardPage = lazy(() => withReload(loadDashboard)().then((m) => ({ default: m.DashboardPage })));
+const RfaListPage = lazy(() => withReload(loadList)().then((m) => ({ default: m.RfaListPage })));
+const RfaFormPage = lazy(() => withReload(loadForm)().then((m) => ({ default: m.RfaFormPage })));
+const RfaDetailPage = lazy(() => withReload(loadDetail)().then((m) => ({ default: m.RfaDetailPage })));
+const AdminPage = lazy(() => withReload(loadAdmin)().then((m) => ({ default: m.AdminPage })));
+const BudgetManagementPage = lazy(() => withReload(loadBudget)().then((m) => ({ default: m.BudgetManagementPage })));
+const DepartmentExpenseReportPage = lazy(() => withReload(loadReport)().then((m) => ({ default: m.DepartmentExpenseReportPage })));
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -29,9 +45,11 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     const warm = () => {
-      void loadList(); void loadDetail();
-      if (user.CAN_CREATE_RFA) void loadForm();
-      if (user.IS_ADMIN) { void loadAdmin(); void loadBudget(); void loadReport(); }
+      // Background warm-up only; a failure here is harmless and must never reload the page.
+      const quiet = (load: () => Promise<unknown>) => { load().catch(() => undefined); };
+      quiet(loadList); quiet(loadDetail);
+      if (user.CAN_CREATE_RFA) quiet(loadForm);
+      if (user.IS_ADMIN) { quiet(loadAdmin); quiet(loadBudget); quiet(loadReport); }
     };
     const idle = (window as Window & { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback;
     const handle = idle ? idle(warm) : window.setTimeout(warm, 1200);

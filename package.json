@@ -3,7 +3,10 @@
   "version": "1.0.0",
   "type": "module",
   "private": true,
-  "workspaces": ["frontend", "apps-script"],
+  "workspaces": [
+    "frontend",
+    "apps-script"
+  ],
   "scripts": {
     "dev": "pnpm --filter @erfa/frontend dev",
     "build": "pnpm -r run build",
@@ -13,13 +16,15 @@
     "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build"
   },
   "devDependencies": {
-    "@eslint/js": "^9.34.0",
-    "@types/google-apps-script": "^1.0.99",
-    "eslint": "^9.34.0",
-    "typescript": "^5.9.2",
-    "typescript-eslint": "^8.41.0",
-    "vitest": "^3.2.4"
+    "@eslint/js": "9.39.5",
+    "@types/google-apps-script": "1.0.100",
+    "eslint": "9.39.5",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.67.0",
+    "vitest": "3.2.7"
   },
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "packageManager": "pnpm@11.19.0"
 }

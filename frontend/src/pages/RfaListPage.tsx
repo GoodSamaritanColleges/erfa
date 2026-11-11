@@ -1,6 +1,6 @@
 import { Search } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { api } from '../api';
+import { api, peek } from '../api';
 import { useAuth } from '../auth';
 import { ErrorNotice } from '../components';
 import type { Rfa } from '../types';
@@ -19,12 +19,15 @@ export function RfaListPage({ mode = 'mine' }: { mode?: ListMode }) {
   const approvalsOnly = mode === 'approvals';
   const approvedOnlyScope = mode === 'all' && user?.ALL_RFAS_SCOPE === 'approved';
   const copy = COPY[mode];
-  const [rfas, setRfas] = useState<Rfa[]>([]);
+  const action = approvalsOnly ? 'rfa.forApproval' : mode === 'all' ? 'rfa.all' : 'rfa.list';
+  const emptyFilters = approvalsOnly ? {} : { query: '', status: '', expenseClassification: '', fiscalYear: '' };
+  // Show the list loaded earlier in this visit straight away; a fresh copy replaces it in the background.
+  const [rfas, setRfas] = useState<Rfa[]>(() => peek<Rfa[]>(action, emptyFilters) ?? []);
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('');
   const [expenseClassification, setExpenseClassification] = useState('');
   const [fiscalYear, setFiscalYear] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !peek<Rfa[]>(action, emptyFilters));
   const [error, setError] = useState('');
   const previousQuery = useRef(query);
 
@@ -32,15 +35,18 @@ export function RfaListPage({ mode = 'mine' }: { mode?: ListMode }) {
     let current = true;
     const delay = query === previousQuery.current ? 0 : 250;
     previousQuery.current = query;
+    const payload = approvalsOnly ? {} : { query, status, expenseClassification, fiscalYear };
+    const known = peek<Rfa[]>(action, payload);
+    if (known) setRfas(known);
     setLoading(true);
     const timer = setTimeout(() => {
-      void api<Rfa[]>(approvalsOnly ? 'rfa.forApproval' : mode === 'all' ? 'rfa.all' : 'rfa.list', approvalsOnly ? {} : { query, status, expenseClassification, fiscalYear })
+      void api<Rfa[]>(action, payload)
         .then((next) => { if (current) { setRfas(next); setError(''); } })
         .catch((caught: Error) => { if (current) setError(caught.message); })
         .finally(() => { if (current) setLoading(false); });
     }, delay);
     return () => { current = false; clearTimeout(timer); };
-  }, [query, status, expenseClassification, fiscalYear, approvalsOnly, mode]);
+  }, [query, status, expenseClassification, fiscalYear, approvalsOnly, action]);
 
   return <>
     <header className="page-header">

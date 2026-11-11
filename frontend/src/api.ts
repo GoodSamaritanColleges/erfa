@@ -9,20 +9,61 @@ const READ_CACHE_TTL_MS = 30_000;
 const readCache = new Map<string, { at: number; data: unknown }>();
 export function clearReadCache(): void { readCache.clear(); }
 
+// Last successful answer per read, kept for the whole visit (not just 30 s) so a page can
+// show it instantly while a fresh copy loads. Cleared by any write and by sign-out.
+const lastGood = new Map<string, unknown>();
+const viewKey = (action: string, payload: Record<string, unknown>) => JSON.stringify([action, payload]);
+/** Last data loaded for this read during this visit, or undefined. Pages show it while refreshing. */
+export function peek<T>(action: string, payload: Record<string, unknown> = {}): T | undefined {
+  return lastGood.get(viewKey(action, payload)) as T | undefined;
+}
+
+// Session problems are broadcast so the app can ask the user to sign in again
+// without leaving the page (a half-filled RFA form stays on screen).
+type SessionProblem = 'expired' | 'revoked';
+const sessionListeners = new Set<(problem: SessionProblem, message: string) => void>();
+export function onSessionProblem(listener: (problem: SessionProblem, message: string) => void): () => void {
+  sessionListeners.add(listener);
+  return () => { sessionListeners.delete(listener); };
+}
+function reportSessionProblem(problem: SessionProblem, message: string): void { sessionListeners.forEach((listener) => listener(problem, message)); }
+
+/** Expiry time (ms) from the Google ID token itself, or 0 if it cannot be read. */
+export function tokenExpiresAt(token: string): number {
+  try {
+    const part = token.split('.')[1] ?? '';
+    const json = JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/'))) as { exp?: number };
+    return typeof json.exp === 'number' ? json.exp * 1000 : 0;
+  } catch { return 0; }
+}
+const EXPIRY_MARGIN_MS = 30_000;
+const SESSION_EXPIRED_MESSAGE = 'Your sign-in has expired. Please sign in again to continue — your work on this page is kept.';
+
 export class ApiError extends Error {
   constructor(public code: string, message: string) { super(message); }
 }
 
 export function getToken(): string { return sessionStorage.getItem(TOKEN_KEY) ?? ''; }
-export function setToken(token: string): void { clearReadCache(); if (token) sessionStorage.setItem(TOKEN_KEY, token); else sessionStorage.removeItem(TOKEN_KEY); }
+export function setToken(token: string): void {
+  clearReadCache();
+  if (token) sessionStorage.setItem(TOKEN_KEY, token);
+  else { sessionStorage.removeItem(TOKEN_KEY); lastGood.clear(); }
+}
 export function isConfigured(): boolean { return Boolean(API_URL && import.meta.env.VITE_GOOGLE_CLIENT_ID); }
 
 export async function api<T>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
   if (!API_URL) throw new ApiError('CONFIGURATION_REQUIRED', 'The eRFA API URL is not configured.');
   const idToken = getToken();
+  if (idToken && action !== 'session') {
+    const expiresAt = tokenExpiresAt(idToken);
+    if (expiresAt && expiresAt - EXPIRY_MARGIN_MS <= Date.now()) {
+      reportSessionProblem('expired', SESSION_EXPIRED_MESSAGE);
+      throw new ApiError('SESSION_EXPIRED', SESSION_EXPIRED_MESSAGE);
+    }
+  }
   const diagnostic = sessionStorage.getItem('erfa_perf') === '1';
   const key = coalescedReads.has(action) ? JSON.stringify([action, payload, idToken]) : '';
-  if (!key) clearReadCache();
+  if (!key) { clearReadCache(); lastGood.clear(); }
   const cacheable = Boolean(key) && cachedReads.has(action);
   if (cacheable) {
     const hit = readCache.get(key);
@@ -49,9 +90,15 @@ export async function api<T>(action: string, payload: Record<string, unknown> = 
     const result = await response.json() as { ok: boolean; data?: T; error?: { code: string; message: string }; performance?: Record<string, number> };
     parsed = performance.now();
     backend = result.performance;
-    if (!result.ok || result.data === undefined) throw new ApiError(result.error?.code ?? 'SERVER_ERROR', result.error?.message ?? 'The request could not be completed.');
+    if (!result.ok || result.data === undefined) {
+      const code = result.error?.code ?? 'SERVER_ERROR';
+      if (action !== 'session' && code === 'UNAUTHORIZED') { reportSessionProblem('expired', SESSION_EXPIRED_MESSAGE); throw new ApiError('SESSION_EXPIRED', SESSION_EXPIRED_MESSAGE); }
+      if (action !== 'session' && (code === 'INACTIVE_USER' || code === 'NOT_REGISTERED')) reportSessionProblem('revoked', result.error?.message ?? 'Your eRFA access has ended.');
+      throw new ApiError(code, result.error?.message ?? 'The request could not be completed.');
+    }
     if (cacheable) readCache.set(key, { at: Date.now(), data: result.data });
-    else if (!key) clearReadCache();
+    else if (!key) { clearReadCache(); lastGood.clear(); }
+    if (key && action !== 'session') lastGood.set(viewKey(action, payload), result.data);
     return result.data;
     } finally {
       if (diagnostic) console.info('[eRFA PERF]', /^[a-z.]+$/.test(action) ? action : 'request', {

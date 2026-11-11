@@ -1,8 +1,9 @@
 import { AlertTriangle, BarChart3, Files, CheckCircle2, FilePlus2, FileText, Home, ListTodo, LoaderCircle, LogOut, Settings2, ShieldCheck, Wallet, X } from 'lucide-react';
-import { Suspense, useEffect, useState, type ReactNode } from 'react';
+import { Component, Suspense, useEffect, useState, type ErrorInfo, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { api } from './api';
 import { useAuth } from './auth';
+import { GoogleSignInButton } from './googleSignIn';
 import { statusLabel } from './format';
 import type { Rfa, RfaStatus } from './types';
 
@@ -57,6 +58,38 @@ function CountBubble({ count, className = '' }: { count: number; className?: str
   return <span className={`count-bubble ${className}`} aria-hidden>{count > 99 ? '99+' : count}</span>;
 }
 
+/** Signs the user back in over the current page, so anything typed on it is kept. */
+function SessionExpiredDialog() {
+  const { user, renewCredential, signOut } = useAuth();
+  const [busy, setBusy] = useState(false);
+  return <div className="dialog-backdrop" role="presentation">
+    <section className="dialog session-dialog" role="alertdialog" aria-modal="true" aria-labelledby="session-expired-title">
+      <header><h2 id="session-expired-title">Please sign in again</h2></header>
+      <div className="dialog-body">
+        <p>For your security, your Google sign-in lasts about an hour. Sign in again{user ? ` as ${user.EMAIL}` : ''} to continue. Anything you typed on this page is kept; just repeat your last action after signing in.</p>
+        {busy ? <Spinner label="Verifying your Google account" /> : <GoogleSignInButton onCredential={(credential) => { setBusy(true); void renewCredential(credential).finally(() => setBusy(false)); }} />}
+        <div className="dialog-actions"><button className="button ghost" onClick={signOut}>Sign out instead</button></div>
+      </div>
+    </section>
+  </div>;
+}
+
+/** Shows a friendly message instead of a blank page if something unexpected breaks. */
+export class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError(): { failed: boolean } { return { failed: true }; }
+  componentDidCatch(error: Error, info: ErrorInfo): void { console.error('[eRFA] Unexpected error', error, info.componentStack); }
+  render(): ReactNode {
+    if (!this.state.failed) return this.props.children;
+    return <div className="crash-panel" role="alert">
+      <AlertTriangle />
+      <h2>Something went wrong on this page</h2>
+      <p>This can happen right after eRFA is updated. Reloading usually fixes it. Your submitted RFAs are safe.</p>
+      <button className="button primary" onClick={() => window.location.reload()}>Reload eRFA</button>
+    </div>;
+  }
+}
+
 export function StatusBadge({ status }: { status: RfaStatus | string }) {
   return <span className={`status status-${status.toLowerCase()}`}>{statusLabel(status)}</span>;
 }
@@ -79,7 +112,7 @@ export function Dialog({ title, children, onClose }: { title: string; children: 
 }
 
 export function Layout() {
-  const { user, signOut } = useAuth();
+  const { user, signOut, sessionExpired } = useAuth();
   const { pathname } = useLocation();
   const pending = usePendingCount(Boolean(user?.CAN_APPROVE_RFA), pathname);
   useEffect(() => {
@@ -136,13 +169,15 @@ export function Layout() {
         </div>
       </header>
 
-      <main className="page"><Suspense fallback={<PageFallback />}><Outlet /></Suspense></main>
+      <main className="page"><ErrorBoundary key={pathname}><Suspense fallback={<PageFallback />}><Outlet /></Suspense></ErrorBoundary></main>
 
       <footer className="site-footer">
         <span>eRFA - Good Samaritan Colleges</span>
         <span>Approvals are recorded electronically with a complete audit trail.</span>
       </footer>
     </div>
+
+    {sessionExpired && <SessionExpiredDialog />}
 
     {/* Mobile navigation — visible only via CSS media query at ≤900px */}
     <nav className="mobile-nav" aria-label="Mobile navigation">

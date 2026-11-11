@@ -1,7 +1,7 @@
 import { ArrowRight, CheckCircle2, Clock3, FilePenLine, RotateCcw, ShieldCheck } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api } from '../api';
+import { api, peek } from '../api';
 import { useAuth } from '../auth';
 import { ErrorNotice, StatusBadge } from '../components';
 import { date, money, stepLabel } from '../format';
@@ -31,21 +31,26 @@ function DashboardSkeleton() {
   </>;
 }
 
+type DashboardHome = { rfas: Rfa[]; approvals: Rfa[]; expenseMonitoring?: DashboardBudget | null; budget?: DashboardBudget | null };
+
 export function DashboardPage() {
   const { user } = useAuth();
-  const [rfas, setRfas] = useState<Rfa[]>([]);
-  const [approvals, setApprovals] = useState<Rfa[]>([]);
+  // Show what was loaded earlier in this visit straight away, then refresh quietly.
+  const [cached] = useState(() => peek<DashboardHome>('dashboard.home'));
+  const [rfas, setRfas] = useState<Rfa[]>(() => (Array.isArray(cached?.rfas) ? cached.rfas : []));
+  const [approvals, setApprovals] = useState<Rfa[]>(() => (Array.isArray(cached?.approvals) ? cached.approvals : []));
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [expenses, setExpenses] = useState<DashboardExpenses | null>(null);
+  const [loading, setLoading] = useState(!cached);
+  const [expenses, setExpenses] = useState<DashboardExpenses | null>(() => cached?.expenseMonitoring ?? cached?.budget ?? null);
 
   useEffect(() => {
     let cancelled = false;
-    void api<{ rfas: Rfa[]; approvals: Rfa[]; expenseMonitoring?: DashboardBudget | null; budget?: DashboardBudget | null }>('dashboard.home').then(({ rfas: mine, approvals: action, expenseMonitoring, budget }) => {
+    void api<DashboardHome>('dashboard.home').then(({ rfas: mine, approvals: action, expenseMonitoring, budget }) => {
       if (cancelled) return;
       setRfas(Array.isArray(mine) ? mine : []);
       setApprovals(Array.isArray(action) ? action : []);
       setExpenses(expenseMonitoring ?? budget ?? null);
+      setError('');
     })
       .catch((e: Error) => { if (!cancelled) setError(e.message); })
       .finally(() => { if (!cancelled) setLoading(false); });
