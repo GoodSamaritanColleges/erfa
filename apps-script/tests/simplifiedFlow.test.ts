@@ -552,3 +552,24 @@ describe('official roles: the person can change, the role stays the same', () =>
     expect(allRfasScope(userById('newPresident'))).toBe('all');
   });
 });
+
+describe('RFA numbering', () => {
+  it('uses one shared counter for everyone: sequential, never duplicated, fixed at draft time', () => {
+    settings.set('LAST_RFA_YEAR', String(new Date().getFullYear()));
+    settings.set('LAST_RFA_SEQUENCE', '0');
+    const year = new Date().getFullYear();
+    const it1 = requesterFor('it');
+    const hr1 = { ...requesterFor('hr'), USER_ID: 'hrRequester', EMAIL: 'hr.requester@example.edu' } as SessionUser;
+    const first = createRfa(it1, input({}));
+    const second = createRfa(hr1, input({}));
+    const third = createRfa(it1, input({}));
+    expect([first.RFA_NUMBER, second.RFA_NUMBER, third.RFA_NUMBER]).toEqual([`RFA-${year}-0001`, `RFA-${year}-0002`, `RFA-${year}-0003`]);
+    // Submitting later, in a different order, does not change any number.
+    submitRfa(it1, third.RFA_ID);
+    submitRfa(it1, first.RFA_ID);
+    const numbers = (sheets.get('RFA') || []).map((row) => String(row.RFA_NUMBER));
+    expect(new Set(numbers).size).toBe(numbers.length);
+    expect(numbers).toEqual(expect.arrayContaining([`RFA-${year}-0001`, `RFA-${year}-0002`, `RFA-${year}-0003`]));
+    expect(settings.get('LAST_RFA_SEQUENCE')).toBe('3');
+  });
+});
