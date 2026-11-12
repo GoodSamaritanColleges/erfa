@@ -595,3 +595,56 @@ describe('RFA numbering', () => {
     expect(String((sheets.get('RFA') || []).find((row) => row.RFA_ID === draft.RFA_ID)?.RFA_NUMBER)).toBe(numbered);
   });
 });
+
+describe('configurable approval roles', () => {
+  const role = (over: Record<string, unknown>) => ({ ROLE_ID: 'R', TITLE: 'Role', STAGE: 'APPROVED_BY', CONDITION: 'ALWAYS', EMAIL_ORDER: 1, ALL_RFAS_ACCESS: true, USER_ID: '', ACTIVE: true, SORT: 10, ...over });
+  function addUser(user: SessionUser) {
+    sheets.set('USERS', [...((sheets.get('USERS') || []) as SheetRecord[]), user as unknown as SheetRecord]);
+    users.push(user as unknown as SheetRecord);
+  }
+  const baseRoles = () => [
+    role({ ROLE_ID: 'REVIEWED', TITLE: 'Reviewed and Noted By', STAGE: 'REVIEWED_AND_NOTED', USER_ID: 'ofelia', SORT: 10 }),
+    role({ ROLE_ID: 'APPROVED_FIRST', TITLE: 'AVP for Finance', EMAIL_ORDER: 0, USER_ID: 'ana', SORT: 20 }),
+    role({ ROLE_ID: 'VP_FINANCE', TITLE: 'VP for Admin and Finance', USER_ID: 'raquel', SORT: 30 }),
+    role({ ROLE_ID: 'VP_ACADEMIC', TITLE: 'VP for Academic Affairs', CONDITION: 'ACADEMIC', USER_ID: 'jennelyn', SORT: 40 }),
+    role({ ROLE_ID: 'PRESIDENT', TITLE: 'President', CONDITION: 'AT_OR_ABOVE_THRESHOLD', EMAIL_ORDER: 2, USER_ID: 'president', SORT: 50 }),
+    role({ ROLE_ID: 'PRINCIPAL', TITLE: 'JHS/SHS Principal', STAGE: 'REVIEWED_AND_NOTED', CONDITION: 'JHS_SHS_OPTIONAL', ALL_RFAS_ACCESS: false, USER_ID: 'principal', SORT: 60 })
+  ];
+
+  it('routes a newly added role and gives it its email order and All RFAs access', () => {
+    addUser(namedUser('director', 'Finance Director'));
+    sheets.set('ROLES', [...baseRoles(), role({ ROLE_ID: 'FIN_DIR', TITLE: 'Finance Director', EMAIL_ORDER: 2, USER_ID: 'director', SORT: 35 })] as SheetRecord[]);
+    const req = requesterFor('it');
+    const draft = createRfa(req, input({}));
+    submitRfa(req, draft.RFA_ID);
+    expect(assignmentsFor(draft.RFA_ID, 'APPROVED_BY')).toEqual(expect.arrayContaining(['ana', 'raquel', 'director']));
+    expect(allRfasScope(userById('director'))).toBe('all');
+    acted(draft.RFA_ID, userById('itHead'));
+    acted(draft.RFA_ID, userById('ofelia'));
+    // Emailed last: cannot act before the AVP (first) and the VP (middle) have approved.
+    expect(() => acted(draft.RFA_ID, userById('director'))).toThrow();
+    acted(draft.RFA_ID, userById('ana'));
+    acted(draft.RFA_ID, userById('raquel'));
+    acted(draft.RFA_ID, userById('director'));
+    expect(status(draft.RFA_ID)).toBe('APPROVED');
+  });
+
+  it('applies conditional roles only when their condition holds, and skips switched-off roles', () => {
+    sheets.set('ROLES', baseRoles().map((r) => (r.ROLE_ID === 'VP_FINANCE' ? { ...r, ACTIVE: false } : r)) as SheetRecord[]);
+    const req = requesterFor('it');
+    const small = createRfa(req, input({ requestedAmount: '20000', budgetAllocation: 20000 }));
+    submitRfa(req, small.RFA_ID);
+    expect(assignmentsFor(small.RFA_ID, 'APPROVED_BY')).toEqual(['ana']); // VP off, no President below threshold, not academic
+    const large = createRfa(req, input({ requestedAmount: '60000', budgetAllocation: 60000 }));
+    submitRfa(req, large.RFA_ID);
+    expect(assignmentsFor(large.RFA_ID, 'APPROVED_BY')).toEqual(expect.arrayContaining(['ana', 'president']));
+    expect(allRfasScope(userById('raquel'))).toBe('none'); // switched-off role gives no access
+  });
+
+  it('names the role when an applicable role has no person', () => {
+    sheets.set('ROLES', baseRoles().map((r) => (r.ROLE_ID === 'PRESIDENT' ? { ...r, USER_ID: 'nobody' } : r)) as SheetRecord[]);
+    const req = requesterFor('it');
+    const draft = createRfa(req, input({ requestedAmount: '60000', budgetAllocation: 60000 }));
+    expect(() => submitRfa(req, draft.RFA_ID)).toThrow('The approval role "President" has no person assigned');
+  });
+});

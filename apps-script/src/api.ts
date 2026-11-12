@@ -2,7 +2,7 @@ import { APP_VERSION } from './constants';
 import { timed } from './performance';
 import { dashboardHome } from './dashboard';
 import { authenticate, requireCapability } from './auth';
-import { adminAudit, adminData, cleanImportedData, removeDepartmentHead, saveApprovalSettings, saveDepartment, saveDepartmentHead, saveMatrix, saveUser } from './admin';
+import { adminAudit, adminData, saveApprovalRoles, cleanImportedData, removeDepartmentHead, saveApprovalSettings, saveDepartment, saveDepartmentHead, saveMatrix, saveUser } from './admin';
 import { importUsersFromList } from './importUsers';
 import { adjustBudget, adminBudgetManagement, adminBudgetOverview, adminBudgetSummary, adminExpenseCategories, budgetReport, departmentExpenseReport, departmentFinancialDetail, expenseMonitoringReport, requesterBudgetContext, saveBudget, saveCategory, setOverBudget } from './budget';
 import { getDatabase, resetPerRequestCache } from './store';
@@ -61,6 +61,7 @@ function dispatchRequest(request: ApiRequest): unknown {
     case 'admin.data.clean': return withLock(() => cleanImportedData(user, payload));
     case 'admin.users.import': return withLock(() => importUsersFromList(user, payload));
     case 'admin.settings.save': return withLock(() => saveApprovalSettings(user, payload));
+    case 'admin.roles.save': return withLock(() => saveApprovalRoles(user, payload));
     case 'admin.matrix.save': return withLock(() => saveMatrix(user, payload));
     case 'admin.budget.overview': return adminBudgetOverview(user, payload.fiscalYear);
     case 'admin.budget.management': return adminBudgetManagement(user, payload.fiscalYear);

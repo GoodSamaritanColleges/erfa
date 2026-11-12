@@ -4,6 +4,7 @@ import { requireCapability } from './auth';
 import { all, allTail, findBy, getDatabase, getSetting, insert, newId, nowIso, setSetting, updateBy } from './store';
 import type { ApprovalStep, DepartmentHeadRecord, DepartmentRecord, MatrixRecord, RfaRecord, SessionUser, SheetRecord, UserRecord } from './types';
 import { APPROVAL_STEPS, SHEETS } from './constants';
+import { loadRoles, saveRoles } from './roles';
 
 function required(value: unknown, label: string): string {
   const clean = String(value ?? '').trim();
@@ -18,6 +19,7 @@ export function adminData(user: SessionUser): Record<string, unknown> {
   try { heads = all<DepartmentHeadRecord>('DEPARTMENT_HEADS'); } catch { heads = []; }
   return {
     users: all<UserRecord>('USERS'), departments: all<DepartmentRecord>('DEPARTMENTS'), matrix: all<MatrixRecord>('APPROVAL_MATRIX'), heads,
+    roles: loadRoles(),
     settings: {
       presidentThresholdPhp: getSetting('PRESIDENT_THRESHOLD_PHP') || '50000',
       reviewedMandatoryUserId: getSetting('REVIEWED_MANDATORY_USER_ID') || '',
@@ -61,6 +63,15 @@ export function removeDepartmentHead(actor: SessionUser, payload: Record<string,
   audit('DEPARTMENT_HEAD_CHANGED', actor, '', '', '', 'head deactivated', { headId });
 }
 
+/** Save the full list of approval roles (title, person, stage, when it applies, email order, access, on/off). */
+export function saveApprovalRoles(actor: SessionUser, payload: Record<string, unknown>): Record<string, unknown> {
+  requireCapability(actor, 'IS_ADMIN');
+  const usersById = new Map(all<UserRecord>('USERS').map((u) => [u.USER_ID, u]));
+  const roles = saveRoles(payload.roles, usersById);
+  audit('APPROVAL_ROLES_CHANGED', actor, '', '', '', `${roles.length} approval roles saved`, { roles: roles.map((r) => ({ id: r.ROLE_ID, title: r.TITLE, userId: r.USER_ID, stage: r.STAGE, condition: r.CONDITION, active: r.ACTIVE })) });
+  return adminData(actor);
+}
+
 export function saveApprovalSettings(actor: SessionUser, payload: Record<string, unknown>): Record<string, unknown> {
   requireCapability(actor, 'IS_ADMIN');
   const thresholdRaw = String(payload.presidentThresholdPhp ?? '').trim();
@@ -68,6 +79,13 @@ export function saveApprovalSettings(actor: SessionUser, payload: Record<string,
     // Validate via core parser (throws on invalid)
     parsePresidentThresholdCents(thresholdRaw);
     setSetting('PRESIDENT_THRESHOLD_PHP', String(Number(thresholdRaw.replace(/,/g, ''))), 'Presidential approval threshold in PHP (inclusive)');
+  }
+  // Roles are now saved with admin.roles.save. Only touch the older role settings when a caller
+  // still sends them, so saving the threshold alone can never clear anyone's role.
+  const roleFields = ['reviewedMandatoryUserId', 'approvedMandatoryUserIds', 'vpAcademicUserId', 'presidentUserId', 'principalUserId', 'procurementUserId'];
+  if (!roleFields.some((field) => Object.prototype.hasOwnProperty.call(payload, field))) {
+    audit('APPROVAL_SETTINGS_CHANGED', actor, '', '', '', 'threshold updated', { thresholdPhp: thresholdRaw });
+    return adminData(actor);
   }
   // Each official role is a fixed function; the person is whoever is selected here.
   // APPROVED_MANDATORY_USER_IDS is positional: [0] AVP for Finance (emailed first), [1] VP for Admin and Finance.

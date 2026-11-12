@@ -4,6 +4,7 @@ import { commitApprovedFinancialRfa, financialDetail, financialRfaFields, record
 import { formatRfaNumber, isJhsOrShsDepartment, nextAssignedSection, nextAssignedStageAfterAction, normalizeEmail, orderedMatrix, parsePresidentThresholdCents, selectNextApprover, toBoolean, validateExpenseClassification, validateRfaInput } from './core';
 import { archivedRows, findArchivedAttachment, findArchivedRfa, schoolYearLabel } from './archive';
 import { notify } from './notifications';
+import { activeRoles, emailOrderFor, hasAllRfasRole, isReplacedOfficial, resolveRole, type ApprovalRole, type RoleStage } from './roles';
 import { all, clearPendingRfaAssignments, findBy, getAssignmentsBySection, getSetting, insert, newId, nowIso, saveRfaSectionAssignments, setSetting, updateBy } from './store';
 import type { ApprovalSection, DepartmentHeadRecord, DepartmentRecord, EligibleApprover, MatrixRecord, RfaRecord, RfaSectionAssignments, SessionUser, SheetRecord, UserRecord } from './types';
 
@@ -58,10 +59,7 @@ function getApprovedAssignments(rfa: RfaRecord, section: ApprovalSection): Sheet
  * official can still open and act on the RFA as soon as the stage starts.
  */
 function approvedByEmailTier(row: SheetRecord): number {
-  const person = { id: String(row.APPROVER_USER_ID), name: String(row.APPROVER_NAME || ''), email: String(row.APPROVER_EMAIL || '') };
-  if (holdsRole('APPROVED_FIRST', person)) return 0;
-  if (holdsRole('PRESIDENT', person)) return 2;
-  return 1;
+  return emailOrderFor({ id: String(row.APPROVER_USER_ID), name: String(row.APPROVER_NAME || ''), email: String(row.APPROVER_EMAIL || '') });
 }
 
 /** The Approved By assignees still awaiting action in the earliest email tier that is not yet complete. */
@@ -121,12 +119,6 @@ function isProcurementUser(user: SessionUser): boolean {
 
 const APPROVED_STATUSES = ['APPROVED', 'IMPLEMENTATION', 'CLOSED'];
 
-function nameMatches(candidate: string, fullName: string): boolean {
-  const name = candidate.trim().toLowerCase();
-  const parts = fullName.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  return parts.length >= 2 && name.includes(parts[0]) && name.includes(parts[parts.length - 1]);
-}
-
 /**
  * Who may open the institution-wide "All RFAs" register:
  *  - 'all'      administrators, both VPs, the President, the Reviewed and Noted
@@ -139,9 +131,7 @@ function nameMatches(candidate: string, fullName: string): boolean {
 export function allRfasScope(user: SessionUser): 'all' | 'approved' | 'none' {
   if (toBoolean(user.IS_ADMIN)) return 'all';
   const person = { id: user.USER_ID, name: String(user.FULL_NAME || ''), email: user.EMAIL };
-  if (ALL_RFAS_ROLES.some((role) => holdsRole(role, person))) return 'all';
-  // Any additional Approved By officials configured beyond the two named roles.
-  if (String(getSetting('APPROVED_MANDATORY_USER_IDS') || '').split(',').map((v) => v.trim()).filter(Boolean).includes(user.USER_ID)) return 'all';
+  if (hasAllRfasRole(person)) return 'all';
   const procurementId = String(getSetting('PROCUREMENT_USER_ID') || '').trim();
   if ((procurementId && procurementId === user.USER_ID) || isProcurementUser(user)) return 'approved';
   return 'none';
@@ -411,81 +401,6 @@ function getThresholdCents(): number {
   try { return parsePresidentThresholdCents(getSetting('PRESIDENT_THRESHOLD_PHP') || '50000'); } catch { return 5_000_000; }
 }
 
-/**
- * Official roles. Each role's FUNCTION is fixed (its approval stage, its place in the
- * Approved By email order, All RFAs access); the PERSON is chosen in Administration ->
- * Approval settings and stored as a user ID. Change the person there and everything follows.
- * The legacy name/email below is used only while a role has not been assigned yet.
- */
-export type OfficialRole = 'REVIEWED' | 'APPROVED_FIRST' | 'VP_FINANCE' | 'VP_ACADEMIC' | 'PRESIDENT' | 'PRINCIPAL';
-interface RoleDef { key: string; index?: number; label: string; legacyName: string; legacyEmailKey?: string; legacyEmail?: string; exactName?: boolean }
-export const OFFICIAL_ROLES: Record<OfficialRole, RoleDef> = {
-  REVIEWED: { key: 'REVIEWED_MANDATORY_USER_ID', label: 'Reviewed and Noted By (mandatory)', legacyName: 'Ofelia Hocson' },
-  APPROVED_FIRST: { key: 'APPROVED_MANDATORY_USER_IDS', index: 0, label: 'AVP for Finance (Approved By, emailed first)', legacyName: 'Ana Liza Tago' },
-  VP_FINANCE: { key: 'APPROVED_MANDATORY_USER_IDS', index: 1, label: 'VP for Admin and Finance (Approved By)', legacyName: 'Raquel Baquiran', legacyEmailKey: 'VP_ADMIN_FINANCE_EMAIL', legacyEmail: 'vp.finance@example.edu', exactName: true },
-  VP_ACADEMIC: { key: 'VP_ACADEMIC_USER_ID', label: 'VP for Academic Affairs (Approved By, academic departments)', legacyName: 'Jennelyn De Guzman' },
-  PRESIDENT: { key: 'PRESIDENT_USER_ID', label: 'President (Approved By, at or above the threshold)', legacyName: 'Alessandra De Guzman-Valino', legacyEmailKey: 'PRESIDENT_EMAIL', legacyEmail: 'president@example.edu', exactName: true },
-  PRINCIPAL: { key: 'PRINCIPAL_USER_ID', label: 'JHS/SHS Principal', legacyName: 'Noliver Garcia' }
-};
-const ALL_RFAS_ROLES: OfficialRole[] = ['REVIEWED', 'APPROVED_FIRST', 'VP_FINANCE', 'VP_ACADEMIC', 'PRESIDENT'];
-
-/** The user ID assigned to a role in Settings ('' when not assigned yet). */
-export function roleUserId(role: OfficialRole): string {
-  const def = OFFICIAL_ROLES[role];
-  const raw = String(getSetting(def.key) || '');
-  return def.index === undefined ? raw.trim() : (raw.split(',')[def.index] || '').trim();
-}
-
-function legacyEmail(role: OfficialRole): string {
-  const def = OFFICIAL_ROLES[role];
-  return normalizeEmail(String((def.legacyEmailKey && getSetting(def.legacyEmailKey)) || def.legacyEmail || ''));
-}
-
-/** True when this person holds the role: by user ID, or by the legacy name/email only while the role is unassigned. */
-export function holdsRole(role: OfficialRole, person: { id: string; name: string; email: string }): boolean {
-  const id = roleUserId(role);
-  if (id) return person.id === id;
-  return isLegacyHolder(role, person);
-}
-
-/** Matches the person who held this role before roles were assigned in Settings. */
-function isLegacyHolder(role: OfficialRole, person: { name: string; email: string }): boolean {
-  const def = OFFICIAL_ROLES[role];
-  const email = legacyEmail(role);
-  if (email && normalizeEmail(person.email) === email) return true;
-  return def.exactName ? person.name.trim().toLowerCase() === def.legacyName.toLowerCase() : nameMatches(person.name, def.legacyName);
-}
-
-/**
- * True for someone listed in the Approval Matrix only because they used to hold an official
- * role that Settings now assigns to a different person. Such entries are skipped so a change
- * of person in Settings takes effect everywhere, while other department-specific matrix
- * approvers are kept.
- */
-function isReplacedOfficial(user: UserRecord): boolean {
-  const roles = Object.keys(OFFICIAL_ROLES) as OfficialRole[];
-  if (roles.some((role) => roleUserId(role) === user.USER_ID)) return false;
-  const person = { name: String(user.FULL_NAME || ''), email: String(user.EMAIL || '') };
-  return roles.some((role) => Boolean(roleUserId(role)) && isLegacyHolder(role, person));
-}
-
-/** The user holding the role who may approve this request, or undefined. */
-function resolveOfficial(role: OfficialRole, usersById: Map<string, UserRecord>, requesterEmail: string, requesterUserId: string): UserRecord | undefined {
-  const id = roleUserId(role);
-  if (id) {
-    const assigned = usersById.get(id);
-    return assigned && isValidApprover(assigned, requesterEmail, requesterUserId) ? assigned : undefined;
-  }
-  // Role not assigned yet: confirmed email first (keeps the two separate accounts apart), then name.
-  const def = OFFICIAL_ROLES[role];
-  const candidates = [...usersById.values()].filter((u) => isValidApprover(u, requesterEmail, requesterUserId));
-  const email = legacyEmail(role);
-  const byEmail = email ? candidates.find((u) => normalizeEmail(u.EMAIL) === email) : undefined;
-  if (byEmail) return byEmail;
-  const exact = candidates.find((u) => String(u.FULL_NAME || '').trim().toLowerCase() === def.legacyName.toLowerCase());
-  if (exact || def.exactName) return exact;
-  return candidates.find((u) => nameMatches(String(u.FULL_NAME || ''), def.legacyName));
-}
 
 function addDistinct(list: EligibleApprover[], candidates: EligibleApprover[]): void {
   for (const c of candidates) {
@@ -632,17 +547,29 @@ function resolveOfficialAssignments(
   if (strict && !recommending.length) businessError('No Department Head is configured for the requesting department. An administrator must set department heads before submission.', 'CONFIGURATION_REQUIRED');
   assignments.RECOMMENDING_APPROVAL = recommending;
 
+  // Roles from Administration -> Approval roles. Each applicable role must have a person who can approve.
+  const canApprove = (u: UserRecord) => isValidApprover(u, requester, requesterUserId);
+  const roleHolders = (stage: RoleStage, applies: (role: ApprovalRole) => boolean, why: string): EligibleApprover[] => {
+    const holders: EligibleApprover[] = [];
+    for (const role of activeRoles(stage).filter(applies)) {
+      const holder = resolveRole(role, usersById, canApprove);
+      if (holder) addDistinct(holders, [toEligible(holder, deptNameMap)]);
+      else if (strict) businessError(`The approval role "${role.TITLE}" has no person assigned${why}. An administrator must assign it in Approval roles before submission.`, 'CONFIGURATION_REQUIRED');
+    }
+    return holders;
+  };
+  const academic = isAcademicDepartment(requestingDept);
+  const atOrAboveThreshold = Number(requestedAmountCents) >= getThresholdCents();
+  const conditional = (role: ApprovalRole) => (role.CONDITION === 'ACADEMIC' && academic) || (role.CONDITION === 'AT_OR_ABOVE_THRESHOLD' && atOrAboveThreshold);
+
   // --- Stage 2: Reviewed and Noted By ---
   const reviewed: EligibleApprover[] = [];
-  // Mandatory: matrix REVIEWED_AND_NOTED takes precedence, then setting, then name lookup
+  // A department's own matrix entries take precedence over the always-on Reviewed roles.
   let mandatoryReviewed = resolveMatrix('REVIEWED_AND_NOTED');
-  if (!mandatoryReviewed.length) {
-    const official = resolveOfficial('REVIEWED', usersById, requester, requesterUserId);
-    if (official) mandatoryReviewed = [toEligible(official, deptNameMap)];
-  }
-  // If matrix contains REVIEWED_BY/NOTED_BY from V2-era config for this dept, do not mix; official stage only uses REVIEWED_AND_NOTED.
+  if (!mandatoryReviewed.length) mandatoryReviewed = roleHolders('REVIEWED_AND_NOTED', (role) => role.CONDITION === 'ALWAYS', '');
   addDistinct(reviewed, mandatoryReviewed);
-  if (strict && !mandatoryReviewed.length) businessError('Reviewed and Noted By mandatory approver is not configured. An administrator must assign it in Approval settings before submission.', 'CONFIGURATION_REQUIRED');
+  if (strict && !mandatoryReviewed.length) businessError('Reviewed and Noted By has no approver. An administrator must assign it in Approval roles before submission.', 'CONFIGURATION_REQUIRED');
+  addDistinct(reviewed, roleHolders('REVIEWED_AND_NOTED', conditional, ' for this request'));
 
   // Optional: Other Department Heads (all heads per involved dept — all must approve)
   const involvedNames: string[] = [];
@@ -659,12 +586,10 @@ function resolveOfficialAssignments(
     }
   }
 
-  // Optional: Principal (JHS/SHS only)
+  // Optional: JHS/SHS roles (e.g. the Principal), only when the request asks for them
   if (selections.includePrincipal) {
     if (!isJhsOrShsDepartment(requestingDept)) businessError('The JHS/SHS Principal is only available for Junior High School or Senior High School departments.', 'FORBIDDEN');
-    const principal = resolveOfficial('PRINCIPAL', usersById, requester, requesterUserId);
-    if (strict && !principal) businessError('The JHS/SHS Principal is not configured. An administrator must assign it in Approval settings.', 'CONFIGURATION_REQUIRED');
-    if (principal) addDistinct(reviewed, [toEligible(principal, deptNameMap)]);
+    addDistinct(reviewed, roleHolders('REVIEWED_AND_NOTED', (role) => role.CONDITION === 'JHS_SHS_OPTIONAL', ' for this JHS/SHS request'));
   }
   // Procurement Clerk removed from the workflow — never assigned.
   assignments.REVIEWED_AND_NOTED = reviewed;
@@ -672,29 +597,11 @@ function resolveOfficialAssignments(
   // --- Stage 3: Approved By ---
   const approved: EligibleApprover[] = [];
   const mandatoryApproved = resolveMatrix('APPROVED_BY');
-  // The two Approved By roles (AVP for Finance, VP for Admin and Finance), then any extra configured IDs.
-  for (const role of ['APPROVED_FIRST', 'VP_FINANCE'] as OfficialRole[]) {
-    const official = resolveOfficial(role, usersById, requester, requesterUserId);
-    if (official) addDistinct(mandatoryApproved, [toEligible(official, deptNameMap)]);
-  }
-  for (const id of String(getSetting('APPROVED_MANDATORY_USER_IDS') || '').split(',').map((v) => v.trim()).filter(Boolean).slice(2)) {
-    const extra = usersById.get(id);
-    if (extra && isValidApprover(extra, requester, requesterUserId)) addDistinct(mandatoryApproved, [toEligible(extra, deptNameMap)]);
-  }
+  addDistinct(mandatoryApproved, roleHolders('APPROVED_BY', (role) => role.CONDITION === 'ALWAYS', ''));
   addDistinct(approved, mandatoryApproved);
-  if (strict && !mandatoryApproved.length) businessError('Approved By mandatory approvers are not configured. An administrator must assign them in Approval settings before submission.', 'CONFIGURATION_REQUIRED');
-
-  if (isAcademicDepartment(requestingDept)) {
-    const vp = resolveOfficial('VP_ACADEMIC', usersById, requester, requesterUserId);
-    if (strict && !vp) businessError('The VP for Academic Affairs is not configured for this academic department RFA. An administrator must assign it in Approval settings.', 'CONFIGURATION_REQUIRED');
-    if (vp) addDistinct(approved, [toEligible(vp, deptNameMap)]);
-  }
-  const threshold = getThresholdCents();
-  if (Number(requestedAmountCents) >= threshold) {
-    const president = resolveOfficial('PRESIDENT', usersById, requester, requesterUserId);
-    if (strict && !president) businessError('The President is not configured for this above-threshold RFA. An administrator must assign it in Approval settings.', 'CONFIGURATION_REQUIRED');
-    if (president) addDistinct(approved, [toEligible(president, deptNameMap)]);
-  }
+  if (strict && !mandatoryApproved.length) businessError('Approved By has no approvers. An administrator must assign them in Approval roles before submission.', 'CONFIGURATION_REQUIRED');
+  // Conditional roles: academic departments (e.g. VP for Academic Affairs), at or above the threshold (e.g. President)
+  addDistinct(approved, roleHolders('APPROVED_BY', conditional, ' for this request'));
   assignments.APPROVED_BY = approved;
 
   return { assignments, involvedDepartmentNames: involvedNames, alternateName };
@@ -798,7 +705,7 @@ export function fixedRoutePreview(user: SessionUser): Record<string, unknown> {
     isAcademic: isAcademicDepartment(department as DepartmentRecord),
     isJhsOrShs: isJhsOrShsDepartment(department as DepartmentRecord),
     presidentThresholdPhp: getThresholdCents() / 100,
-    principalName: resolveOfficial('PRINCIPAL', usersById, user.EMAIL, user.USER_ID)?.FULL_NAME || '',
+    principalName: activeRoles('REVIEWED_AND_NOTED').filter((role) => role.CONDITION === 'JHS_SHS_OPTIONAL').map((role) => resolveRole(role, usersById, (u) => isValidApprover(u, user.EMAIL, user.USER_ID))?.FULL_NAME || '').filter(Boolean).join(', '),
     alternateCandidates
   };
 }

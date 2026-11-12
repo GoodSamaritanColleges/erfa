@@ -236,47 +236,67 @@ function MaintenancePanel() {
   </section>;
 }
 
+type RoleRow = { ROLE_ID: string; TITLE: string; STAGE: 'REVIEWED_AND_NOTED' | 'APPROVED_BY'; CONDITION: 'ALWAYS' | 'ACADEMIC' | 'AT_OR_ABOVE_THRESHOLD' | 'JHS_SHS_OPTIONAL'; EMAIL_ORDER: number; ALL_RFAS_ACCESS: boolean; USER_ID: string; ACTIVE: boolean };
+const STAGE_LABELS: Record<RoleRow['STAGE'], string> = { REVIEWED_AND_NOTED: 'Reviewed and Noted By', APPROVED_BY: 'Approved By' };
+const CONDITION_LABELS: Record<RoleRow['CONDITION'], string> = { ALWAYS: 'Every RFA', ACADEMIC: 'Academic departments only', AT_OR_ABOVE_THRESHOLD: 'Amount ≥ threshold', JHS_SHS_OPTIONAL: 'JHS/SHS, when requested' };
+const ORDER_LABELS = ['Emailed first', 'Emailed in the middle', 'Emailed last'];
+
+/**
+ * Approval roles: each row is a role with its title, the person who holds it, its stage, when it
+ * applies, its Approved By email order and whether it opens All RFAs. Add, rename or switch off roles here.
+ */
 function ApprovalSettingsPanel({ data, onSaved, onError }: { data: AdminData; onSaved: () => void; onError: (e: string) => void }) {
-  const settings = data.settings ?? { presidentThresholdPhp: '50000', reviewedMandatoryUserId: '', approvedMandatoryUserIds: '', vpAcademicUserId: '', presidentUserId: '', principalUserId: '' };
-  const [form, setForm] = useState(settings);
+  const initialRoles = (data.roles ?? []) as RoleRow[];
+  const [roles, setRoles] = useState<RoleRow[]>(initialRoles);
+  const [threshold, setThreshold] = useState(data.settings?.presidentThresholdPhp ?? '50000');
   const [saving, setSaving] = useState(false);
-  useEffect(() => { setForm(settings); }, [JSON.stringify(settings)]);
-  const set = (key: keyof typeof form, value: string) => setForm((cur) => ({ ...cur, [key]: value }));
+  useEffect(() => { setRoles((data.roles ?? []) as RoleRow[]); setThreshold(data.settings?.presidentThresholdPhp ?? '50000'); }, [JSON.stringify(data.roles), data.settings?.presidentThresholdPhp]);
+  const options = data.users.filter((u) => u.ACTIVE && u.CAN_APPROVE_RFA).map((u) => ({ value: u.USER_ID, label: `${u.FULL_NAME} - ${u.EMAIL}` }));
+  const update = (index: number, patch: Partial<RoleRow>) => setRoles((cur) => cur.map((role, i) => (i === index ? { ...role, ...patch } : role)));
+  const move = (index: number, delta: number) => setRoles((cur) => {
+    const next = [...cur]; const target = index + delta;
+    if (target < 0 || target >= next.length) return cur;
+    [next[index], next[target]] = [next[target], next[index]];
+    return next;
+  });
+  const addRole = () => setRoles((cur) => [...cur, { ROLE_ID: '', TITLE: '', STAGE: 'APPROVED_BY', CONDITION: 'ALWAYS', EMAIL_ORDER: 1, ALL_RFAS_ACCESS: true, USER_ID: '', ACTIVE: true }]);
   async function save() {
     setSaving(true);
-    try { await api('admin.settings.save', { ...form }); onSaved(); }
-    catch (e) { onError(e instanceof Error ? e.message : 'Could not save settings.'); }
+    try {
+      await api('admin.settings.save', { presidentThresholdPhp: threshold });
+      await api('admin.roles.save', { roles });
+      onSaved();
+    } catch (e) { onError(e instanceof Error ? e.message : 'Could not save approval roles.'); }
     finally { setSaving(false); }
   }
-  const approverOptions = data.users.filter((u) => u.ACTIVE && u.CAN_APPROVE_RFA);
-  const options = approverOptions.map((u) => ({ value: u.USER_ID, label: `${u.FULL_NAME} - ${u.EMAIL}` }));
-  const roleField = (label: string, help: string, value: string, onChange: (v: string) => void) => (
-    <label className="field role-field"><span>{label}</span>
-      <SearchableSelect value={value} options={options} placeholder="Search name or email…" onChange={onChange} />
-      <small>{help}</small>
-    </label>
-  );
-  // Positional: [0] AVP for Finance, [1] VP for Admin and Finance. Clearing one never shifts the other.
-  const approvedIds = String(form.approvedMandatoryUserIds ?? '').split(',').map((s) => s.trim());
-  const setApprovedId = (slot: number, userId: string) => {
-    const next = [approvedIds[0] ?? '', approvedIds[1] ?? '', ...approvedIds.slice(2)];
-    next[slot] = userId;
-    set('approvedMandatoryUserIds', next.some(Boolean) ? next.join(',') : '');
-  };
   return <section className="form-card" style={{ marginTop: '1rem' }}>
-    <h3>Official Approval Roles</h3>
-    <p className="muted">Each role keeps the same job in every RFA. To change who holds a role, pick the new person and save: routing, the Approved By email order, and All RFAs access move to them, and the previous person no longer has them. Leave a role empty only while it is vacant.</p>
-    <div className="form-grid">
-      <label className="field role-field"><span>Presidential threshold (PHP)</span><input inputMode="decimal" value={form.presidentThresholdPhp} onChange={(e) => set('presidentThresholdPhp', e.target.value)} /><small>Requests at or above this amount also go to the President.</small></label>
-      {roleField('Reviewed and Noted By (mandatory)', 'Reviews every RFA after the department head.', String(form.reviewedMandatoryUserId ?? ''), (v) => set('reviewedMandatoryUserId', v))}
-      {roleField('AVP for Finance (Approved By)', 'Approves every RFA; emailed first in Approved By.', approvedIds[0] ?? '', (v) => setApprovedId(0, v))}
-      {roleField('VP for Admin and Finance (Approved By)', 'Approves every RFA, after the AVP for Finance.', approvedIds[1] ?? '', (v) => setApprovedId(1, v))}
-      {roleField('VP for Academic Affairs (Approved By)', 'Approves RFAs from academic departments.', String(form.vpAcademicUserId ?? ''), (v) => set('vpAcademicUserId', v))}
-      {roleField('President (Approved By)', 'Approves RFAs at or above the threshold; emailed last.', String(form.presidentUserId ?? ''), (v) => set('presidentUserId', v))}
-      {roleField('JHS/SHS Principal (Reviewed and Noted By)', 'Added when a JHS/SHS request includes the Principal.', String(form.principalUserId ?? ''), (v) => set('principalUserId', v))}
+    <h3>Approval Roles</h3>
+    <p className="muted">Each role keeps its job; change the person, rename it, or add and switch off roles. Routing, the Approved By email order and All RFAs access follow these rows. A department's own matrix entries for Reviewed and Noted By take precedence over the "Every RFA" Reviewed roles.</p>
+    <label className="field role-field" style={{ maxWidth: 320 }}><span>Presidential threshold (PHP)</span><input inputMode="decimal" value={threshold} onChange={(e) => setThreshold(e.target.value)} /><small>Roles set to "Amount ≥ threshold" apply from this amount.</small></label>
+    <div className="roles-list">
+      {roles.map((role, index) => <div key={role.ROLE_ID || `new-${index}`} className={`role-card${role.ACTIVE ? '' : ' inactive'}`}>
+        <div className="role-card-head">
+          <input className="role-title" aria-label="Role title" placeholder="Role title, e.g. Finance Director" value={role.TITLE} onChange={(e) => update(index, { TITLE: e.target.value })} />
+          <div className="role-card-tools">
+            <button type="button" className="icon-button" aria-label="Move up" disabled={index === 0} onClick={() => move(index, -1)}>↑</button>
+            <button type="button" className="icon-button" aria-label="Move down" disabled={index === roles.length - 1} onClick={() => move(index, 1)}>↓</button>
+            <label className="checkbox"><input type="checkbox" checked={role.ACTIVE} onChange={(e) => update(index, { ACTIVE: e.target.checked })} /> Active</label>
+          </div>
+        </div>
+        <div className="role-card-grid">
+          <label className="field"><span>Person</span><SearchableSelect value={role.USER_ID} options={options} placeholder="Search name or email…" onChange={(v) => update(index, { USER_ID: v })} /></label>
+          <label className="field"><span>Stage</span><select value={role.STAGE} onChange={(e) => update(index, { STAGE: e.target.value as RoleRow['STAGE'], ...(e.target.value === 'APPROVED_BY' && role.CONDITION === 'JHS_SHS_OPTIONAL' ? { CONDITION: 'ALWAYS' as const } : {}) })}>{(Object.keys(STAGE_LABELS) as RoleRow['STAGE'][]).map((stage) => <option key={stage} value={stage}>{STAGE_LABELS[stage]}</option>)}</select></label>
+          <label className="field"><span>Applies to</span><select value={role.CONDITION} onChange={(e) => update(index, { CONDITION: e.target.value as RoleRow['CONDITION'] })}>{(Object.keys(CONDITION_LABELS) as RoleRow['CONDITION'][]).filter((c) => c !== 'JHS_SHS_OPTIONAL' || role.STAGE === 'REVIEWED_AND_NOTED').map((c) => <option key={c} value={c}>{CONDITION_LABELS[c]}</option>)}</select></label>
+          {role.STAGE === 'APPROVED_BY' && <label className="field"><span>Email order</span><select value={role.EMAIL_ORDER} onChange={(e) => update(index, { EMAIL_ORDER: Number(e.target.value) })}>{ORDER_LABELS.map((label, order) => <option key={order} value={order}>{label}</option>)}</select></label>}
+          <label className="checkbox role-access"><input type="checkbox" checked={role.ALL_RFAS_ACCESS} onChange={(e) => update(index, { ALL_RFAS_ACCESS: e.target.checked })} /> Can see All RFAs</label>
+        </div>
+      </div>)}
     </div>
-    <p className="muted">One person cannot hold two Approved By roles. Procurement is view-only by department (PPU); there is no approver to set.</p>
-    <button className="button primary" disabled={saving} onClick={() => void save()}>Save approval settings</button>
+    <div className="roles-actions">
+      <button type="button" className="button secondary" onClick={addRole}><Plus size={16} /> Add role</button>
+      <button type="button" className="button primary" disabled={saving} onClick={() => void save()}>{saving ? 'Saving…' : 'Save approval roles'}</button>
+    </div>
+    <p className="muted">One person cannot hold two Approved By roles. Switching a role off keeps its history. Procurement is view-only by department (PPU).</p>
   </section>;
 }
 
