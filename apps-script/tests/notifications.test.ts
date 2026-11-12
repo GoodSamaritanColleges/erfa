@@ -9,7 +9,7 @@ const rfa = {
   RFA_ID: 'rfa_1', RFA_NUMBER: 'RFA-2026-0001', REQUEST_TITLE: 'Laboratory supplies', DEPARTMENT_NAME: 'Office of the VPAA',
   REQUESTED_BY: 'Kristine D. Ramos', REQUESTED_AMOUNT: 100000, CURRENT_STEP: 'RECOMMENDING_APPROVAL'
 } as never;
-const link = 'https://kyojin03.github.io/erfa/#/rfa/rfa_1';
+const link = 'https://goodsamaritancolleges.github.io/erfa/#/rfa/rfa_1';
 
 describe('buildEmail', () => {
   it('writes a clear action-required email with friendly step names', () => {
