@@ -735,3 +735,26 @@ describe('keeping RFAs moving: hand over, reminders, email retries', () => {
     expect((sheets.get('NOTIFICATIONS') || []).find((row) => row.NOTIFICATION_ID === 'n1')).toMatchObject({ STATUS: 'SENT', RETRY_COUNT: 1 });
   });
 });
+
+describe('approval matrix leftovers', () => {
+  it('turns off only rows whose department or person no longer exists, and routing is unchanged', async () => {
+    const { turnOffLeftoverMatrixRows } = await import('../src/admin');
+    const admin = { ...userById('itHead'), IS_ADMIN: true } as SessionUser;
+    const matrix = (sheets.get('APPROVAL_MATRIX') || []) as SheetRecord[];
+    const working = matrix.length;
+    sheets.set('APPROVAL_MATRIX', [...matrix,
+      { MATRIX_ID: 'gone_dept', DEPARTMENT_ID: 'deleted', APPROVAL_STEP: 'RECOMMENDING_APPROVAL', APPROVER_USER_ID: 'itHead', SEQUENCE: 1, REQUIRED: true, ACTIVE: true },
+      { MATRIX_ID: 'gone_user', DEPARTMENT_ID: 'it', APPROVAL_STEP: 'APPROVED_BY', APPROVER_USER_ID: 'deleted_user', SEQUENCE: 1, REQUIRED: true, ACTIVE: true }
+    ] as SheetRecord[]);
+    const result = turnOffLeftoverMatrixRows(admin) as { turnedOff: number };
+    expect(result.turnedOff).toBe(2);
+    const rows = (sheets.get('APPROVAL_MATRIX') || []) as SheetRecord[];
+    expect(rows.filter((row) => row.ACTIVE === true)).toHaveLength(working);
+    expect(rows.find((row) => row.MATRIX_ID === 'gone_dept')).toMatchObject({ ACTIVE: false });
+    // A normal RFA still routes exactly as before.
+    const req = requesterFor('it');
+    const draft = createRfa(req, input({}));
+    submitRfa(req, draft.RFA_ID);
+    expect(assignmentsFor(draft.RFA_ID, 'RECOMMENDING_APPROVAL')).toEqual(['itHead']);
+  });
+});

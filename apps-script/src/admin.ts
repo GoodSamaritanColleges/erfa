@@ -204,6 +204,22 @@ export function saveDepartment(actor: SessionUser, payload: Record<string, unkno
   return record;
 }
 
+/**
+ * Turn off Approval Matrix rows whose department or approver no longer exists (left over after
+ * a data clean-up). They could never route anything; switching them off keeps the matrix simple.
+ * Rows are kept (inactive) for history, never deleted.
+ */
+export function turnOffLeftoverMatrixRows(actor: SessionUser): Record<string, unknown> {
+  requireCapability(actor, 'IS_ADMIN');
+  const departmentIds = new Set(all<DepartmentRecord>('DEPARTMENTS').map((d) => String(d.DEPARTMENT_ID)));
+  const userIds = new Set(all<UserRecord>('USERS').map((u) => String(u.USER_ID)));
+  const leftovers = all<MatrixRecord>('APPROVAL_MATRIX').filter((row) => toBoolean(row.ACTIVE) && (!departmentIds.has(String(row.DEPARTMENT_ID)) || !userIds.has(String(row.APPROVER_USER_ID))));
+  const timestamp = nowIso();
+  for (const row of leftovers) updateBy('APPROVAL_MATRIX', 'MATRIX_ID', String(row.MATRIX_ID), { ACTIVE: false, UPDATED_AT: timestamp });
+  if (leftovers.length) audit('MATRIX_LEFTOVERS_TURNED_OFF', actor, '', '', '', `${leftovers.length} leftover matrix rows turned off`, { matrixIds: leftovers.map((row) => row.MATRIX_ID) });
+  return { ...adminData(actor), turnedOff: leftovers.length };
+}
+
 export function saveMatrix(actor: SessionUser, payload: Record<string, unknown>): MatrixRecord {
   requireCapability(actor, 'IS_ADMIN');
   const timestamp = nowIso();

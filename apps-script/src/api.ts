@@ -2,7 +2,7 @@ import { APP_VERSION } from './constants';
 import { timed } from './performance';
 import { dashboardHome } from './dashboard';
 import { authenticate, requireCapability } from './auth';
-import { adminAudit, adminData, saveApprovalRoles, cleanImportedData, removeDepartmentHead, saveApprovalSettings, saveDepartment, saveDepartmentHead, saveMatrix, saveUser } from './admin';
+import { adminAudit, adminData, saveApprovalRoles, turnOffLeftoverMatrixRows, cleanImportedData, removeDepartmentHead, saveApprovalSettings, saveDepartment, saveDepartmentHead, saveMatrix, saveUser } from './admin';
 import { importUsersFromList } from './importUsers';
 import { adjustBudget, adminBudgetManagement, adminBudgetOverview, adminBudgetSummary, adminExpenseCategories, budgetReport, departmentExpenseReport, departmentFinancialDetail, expenseMonitoringReport, requesterBudgetContext, saveBudget, saveCategory, setOverBudget } from './budget';
 import { getDatabase, resetPerRequestCache } from './store';
@@ -61,6 +61,7 @@ function dispatchRequest(request: ApiRequest): unknown {
     case 'admin.data.clean': return withLock(() => cleanImportedData(user, payload));
     case 'admin.users.import': return withLock(() => importUsersFromList(user, payload));
     case 'admin.settings.save': return withLock(() => saveApprovalSettings(user, payload));
+    case 'admin.matrix.cleanup': return withLock(() => turnOffLeftoverMatrixRows(user));
     case 'admin.roles.save': return withLock(() => saveApprovalRoles(user, payload));
     case 'admin.approvals.reassign': return payload.preview === true ? reassignApprovals(user, payload) : withLock(() => reassignApprovals(user, payload));
     case 'admin.matrix.save': return withLock(() => saveMatrix(user, payload));

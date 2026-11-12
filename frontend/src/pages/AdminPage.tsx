@@ -52,7 +52,7 @@ export function AdminPage() {
     <nav className="tabs">
       <button className={tab === 'users' ? 'active' : ''} onClick={() => setTab('users')}><Users /> Users</button>
       <button className={tab === 'departments' ? 'active' : ''} onClick={() => setTab('departments')}><Building2 /> Departments</button>
-      <button className={tab === 'matrix' ? 'active' : ''} onClick={() => setTab('matrix')}><GitBranch /> Approval Matrix</button>
+      <button className={tab === 'matrix' ? 'Optional: extra approvers for one specific department. Most schools need none here: department heads (Departments tab) and Approval Roles (below) already cover every RFA.' : ''} onClick={() => setTab('matrix')}><GitBranch /> Approval Matrix</button>
       <button className={tab === 'logs' ? 'active' : ''} onClick={() => setTab('logs')}>System Logs</button>
     </nav>
 
@@ -74,7 +74,7 @@ export function AdminPage() {
         <ApprovalSettingsPanel data={data} onSaved={() => { setSuccess('Approval settings saved.'); load(); }} onError={setError} />
       </>}
       {tab === 'matrix' && <>
-        <MatrixTable matrix={data.matrix} users={data.users} departments={data.departments} edit={setEditing} />
+        <MatrixTable matrix={data.matrix} users={data.users} departments={data.departments} edit={setEditing} onChanged={(message) => { setSuccess(message); load(); }} onError={setError} />
         <ApprovalSettingsPanel data={data} onSaved={() => { setSuccess('Approval settings saved.'); load(); }} onError={setError} />
       </>}
       {tab === 'logs' && <><MaintenancePanel /><Logs data={data} /></>}
@@ -356,19 +356,48 @@ function ApprovalSettingsPanel({ data, onSaved, onError }: { data: AdminData; on
   </section>;
 }
 
-function MatrixTable({ matrix, users, departments, edit }: { matrix: Matrix[]; users: User[]; departments: Department[]; edit: (item: Matrix) => void }) {
-  const rows = [...matrix].sort((a,b) => a.DEPARTMENT_ID.localeCompare(b.DEPARTMENT_ID) || a.APPROVAL_STEP.localeCompare(b.APPROVAL_STEP) || Number(a.SEQUENCE)-Number(b.SEQUENCE));
-  return <div className="table-wrap"><table>
-    <thead><tr><th>Department</th><th>Approval Step</th><th>Sequence</th><th>Approver</th><th>Status</th><th /></tr></thead>
-    <tbody>{rows.map((row) => <tr key={row.MATRIX_ID}>
-      <td data-label="Department">{departments.find((d) => d.DEPARTMENT_ID === row.DEPARTMENT_ID)?.DEPARTMENT_NAME || 'Unknown'}</td>
-      <td data-label="Approval Step"><b>{stepLabel(row.APPROVAL_STEP)}</b></td>
-      <td data-label="Sequence">{row.SEQUENCE}</td>
-      <td data-label="Approver">{users.find((u) => u.USER_ID === row.APPROVER_USER_ID)?.FULL_NAME || 'Unknown user'}</td>
-      <td data-label="Status">{row.ACTIVE ? 'Active' : 'Inactive'}</td>
-      <td><button className="icon-button" onClick={() => edit(row)} aria-label="Edit route"><Pencil/></button></td>
-    </tr>)}</tbody>
-  </table></div>;
+/**
+ * Department-specific extra approvers. Leftover rows (department or person deleted) and switched-off
+ * rows never route anything, so they are hidden behind a toggle and can be switched off in one click.
+ */
+function MatrixTable({ matrix, users, departments, edit, onChanged, onError }: { matrix: Matrix[]; users: User[]; departments: Department[]; edit: (item: Matrix) => void; onChanged: (message: string) => void; onError: (e: string) => void }) {
+  const [showAll, setShowAll] = useState(false);
+  const [working, setWorking] = useState(false);
+  const departmentName = (id: string) => departments.find((d) => d.DEPARTMENT_ID === id)?.DEPARTMENT_NAME;
+  const userName = (id: string) => users.find((u) => u.USER_ID === id)?.FULL_NAME;
+  const isLeftover = (row: Matrix) => !departmentName(row.DEPARTMENT_ID) || !userName(row.APPROVER_USER_ID);
+  const sorted = [...matrix].sort((a, b) => (departmentName(a.DEPARTMENT_ID) || '~').localeCompare(departmentName(b.DEPARTMENT_ID) || '~') || a.APPROVAL_STEP.localeCompare(b.APPROVAL_STEP) || Number(a.SEQUENCE) - Number(b.SEQUENCE));
+  const workingRows = sorted.filter((row) => row.ACTIVE && !isLeftover(row));
+  const activeLeftovers = sorted.filter((row) => row.ACTIVE && isLeftover(row));
+  const rows = showAll ? sorted : workingRows;
+  async function turnOffLeftovers() {
+    setWorking(true);
+    try {
+      const result = await api<{ turnedOff: number }>('admin.matrix.cleanup');
+      onChanged(`Turned off ${result.turnedOff} leftover row${result.turnedOff === 1 ? '' : 's'}. They are kept for history.`);
+    } catch (e) { onError(e instanceof Error ? e.message : 'Could not turn off leftover rows.'); }
+    finally { setWorking(false); }
+  }
+  return <>
+    {activeLeftovers.length > 0 && <div className="notice matrix-leftovers" role="status">
+      <span>{activeLeftovers.length} leftover row{activeLeftovers.length === 1 ? '' : 's'} point to a deleted department or person and never route anything.</span>
+      <button type="button" className="button secondary" disabled={working} onClick={() => void turnOffLeftovers()}>{working ? 'Turning off…' : 'Turn off leftovers'}</button>
+    </div>}
+    {rows.length === 0
+      ? <div className="empty"><h3>No department-specific approvers</h3><p>That is normal. Department heads (Departments tab) and Approval Roles (below) cover every RFA. Add a route only when one department needs an extra approver.</p></div>
+      : <div className="table-wrap"><table>
+        <thead><tr><th>Department</th><th>Approval Step</th><th>Sequence</th><th>Approver</th><th>Status</th><th /></tr></thead>
+        <tbody>{rows.map((row) => <tr key={row.MATRIX_ID} className={isLeftover(row) || !row.ACTIVE ? 'matrix-off' : ''}>
+          <td data-label="Department">{departmentName(row.DEPARTMENT_ID) || <span className="history-muted">Department deleted</span>}</td>
+          <td data-label="Approval Step"><b>{stepLabel(row.APPROVAL_STEP)}</b></td>
+          <td data-label="Sequence">{row.SEQUENCE}</td>
+          <td data-label="Approver">{userName(row.APPROVER_USER_ID) || <span className="history-muted">Person deleted</span>}</td>
+          <td data-label="Status">{isLeftover(row) ? 'Leftover' : row.ACTIVE ? 'Active' : 'Off'}</td>
+          <td><button className="icon-button" onClick={() => edit(row)} aria-label="Edit route"><Pencil/></button></td>
+        </tr>)}</tbody>
+      </table></div>}
+    {sorted.length > workingRows.length && <p className="muted matrix-toggle"><button type="button" className="link-button" onClick={() => setShowAll((v) => !v)}>{showAll ? 'Show only working rows' : `Show ${sorted.length - workingRows.length} switched-off or leftover row${sorted.length - workingRows.length === 1 ? '' : 's'}`}</button></p>}
+  </>;
 }
 
 function Logs({ data }: { data: AdminData }) {
