@@ -3,7 +3,9 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
-  base: '/erfa/',
+  // GitHub Pages serves the site under /<repository-name>/. The workflow passes it in, so the
+  // build works under any account or repository name; '/erfa/' is the local default.
+  base: process.env.VITE_BASE_PATH || '/erfa/',
   build: {
     sourcemap: true,
     target: 'es2020',

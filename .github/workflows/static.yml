@@ -40,7 +40,7 @@ jobs:
         env:
           VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
           VITE_API_URL: ${{ vars.VITE_API_URL }}
-          VITE_BASE_PATH: /erfa/
+          VITE_BASE_PATH: /${{ github.event.repository.name }}/
         run: pnpm --filter @erfa/frontend build
 
       - name: Setup Pages
