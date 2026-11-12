@@ -2,7 +2,11 @@
 
 **Goal:** eRFA belongs to the school, not to one person, and keeps working even if any single email account is deleted.
 
-**Status:** planned, not done yet. Today everything belongs to one personal account.
+**Status (2026-11-12):** Google side done. Shared drives are turned off at GSC, so instead of a shared drive the files were handed to erfa@ with `transferOwnershipNow` (run once by the previous owner; `previewOwnershipTransferNow` shows what it would move). erfa@ now owns the database, attachments, backups, archives and the Apps Script project; is Owner of the Google Cloud project; owns the three schedules (runMonthlyBackup, runYearlyArchive, runDailyFollowUps); and deployed the live web app (version 42, same URL). The previous owner's schedules were deleted. **Still to do:** a backup owner, `clasp login` as erfa@, and the GitHub steps (8–15).
+
+**Important for developers:** a `clasp deploy` runs the web app as whoever is signed in to clasp. Deploy only while signed in as erfa@, or the web app switches back to running as a personal account.
+
+Without a shared drive, the files belong to the erfa@ account. Before that account is ever deleted, the Workspace admin must use **Transfer data** to another account. If the school later turns on shared drives, move the files into one.
 
 ## The accounts
 
@@ -31,7 +35,7 @@ Why a shared drive: files in someone's *My Drive* disappear with that person's a
 Two things in Apps Script always run "as" a person: the **web app** ("Execute as: Me") and the **schedules** (monthly backup, yearly archive). They run as erfa@. If erfa@ is ever removed:
 
 1. The backup owner opens the Apps Script project (in the shared drive).
-2. Runs **installAutomaticMaintenance** and clicks Allow (recreates both schedules under their account).
+2. Runs **installAutomaticMaintenance** and clicks Allow (recreates the three schedules under their account).
 3. **Deploy → Manage deployments → Edit → New version** (the web app now runs as them; **same URL**, nothing changes for users).
 
 About 10 minutes. No data is lost because the data lives in the shared drive.
@@ -44,7 +48,7 @@ About 10 minutes. No data is lost because the data lives in the shared drive.
 3. Move into it: the database spreadsheet, the attachments folder, **eRFA Backups**, the archive spreadsheets, and the Apps Script project. (File and folder IDs stay the same, so eRFA settings do not change.)
 4. Google Cloud: add erfa@ and the backup owner as **Owner** of the eRFA project.
 5. Signed in as **erfa@**: open the Apps Script project, run **installAutomaticMaintenance**, Allow; then **Deploy → Manage deployments → Edit → New version** so the web app runs as erfa@ (same URL).
-6. Signed in as the **current owner**: Apps Script → Triggers → delete your two old schedules (runMonthlyBackup, runYearlyArchive), or backups run twice.
+6. Signed in as the **current owner**: Apps Script → Triggers → delete your three old schedules (runMonthlyBackup, runYearlyArchive, runDailyFollowUps), or backups run twice.
 7. Developer re-links the deploy tool: `clasp login` as erfa@.
 
 **GitHub**
@@ -57,4 +61,4 @@ About 10 minutes. No data is lost because the data lives in the shared drive.
 14. eRFA Settings: set `FRONTEND_URL` to the new address (email links).
 15. Announce the new link; then retire the old site and remove the personal account (keep it as editor for a few weeks first).
 
-**Check after the move:** sign in on the new site; submit and approve a test RFA (email arrives from erfa@); Administration → Logs → Automatic maintenance shows **On**; the Triggers page shows exactly two schedules, under erfa@.
+**Check after the move:** sign in on the new site; submit and approve a test RFA (email arrives from erfa@); Administration → Logs → Automatic maintenance shows **On**; the Triggers page shows exactly three schedules, under erfa@.
