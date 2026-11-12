@@ -8,6 +8,7 @@ import { archivePastSchoolYears, previewArchive } from './archive';
 import { backupDatabase } from './backup';
 import { installAutomaticMaintenance as installMaintenance, runMonthlyBackupJob, runYearlyArchiveJob } from './maintenance';
 import { runDailyFollowUpsJob } from './followups';
+import { NEW_OWNER_EMAIL, transferOwnership } from './ownership';
 
 function json(value: unknown): GoogleAppsScript.Content.TextOutput {
   const serialized = timed('serializationMs', () => JSON.stringify(value));
@@ -109,6 +110,21 @@ function backupNow(): unknown {
   return copy;
 }
 
+// One-time hand-over of eRFA's Drive files to the school's eRFA account (see ownership.ts).
+// Run previewOwnershipTransferNow first (changes nothing), then transferOwnershipNow as the
+// current owner. Run transferOwnershipNow again if it says it stopped before the time limit.
+function previewOwnershipTransferNow(): unknown {
+  const result = transferOwnership(NEW_OWNER_EMAIL, { dryRun: true });
+  console.log('[eRFA] Ownership preview:', result.message, JSON.stringify(result.failed));
+  return result;
+}
+
+function transferOwnershipNow(): unknown {
+  const result = transferOwnership(NEW_OWNER_EMAIL);
+  console.log('[eRFA] Ownership transfer:', result.message, JSON.stringify(result.failed));
+  return result;
+}
+
 function runMonthlyBackup(): unknown { return runMonthlyBackupJob(); }
 function runYearlyArchive(): unknown { setupSchema(); return runYearlyArchiveJob(); }
 function runDailyFollowUps(): unknown { return runDailyFollowUpsJob(); }
@@ -116,4 +132,4 @@ function runDailyFollowUps(): unknown { return runDailyFollowUpsJob(); }
 // The production bundle keeps implementation code inside an IIFE. Store only
 // intended Apps Script entry points here; build.mjs emits top-level forwarding
 // declarations so Apps Script can discover them in the editor and Web App.
-Object.assign(globalThis, { __erfaEntrypoints: { doGet, doPost, setupDatabase, bootstrapAdmin, cleanAllNow, previewRfaResetNow, resetAllRfasKeepAccounts, previewArchiveNow, archivePastSchoolYearsNow, installAutomaticMaintenance, backupNow, runMonthlyBackup, runYearlyArchive, runDailyFollowUps } });
+Object.assign(globalThis, { __erfaEntrypoints: { doGet, doPost, setupDatabase, bootstrapAdmin, cleanAllNow, previewRfaResetNow, resetAllRfasKeepAccounts, previewArchiveNow, archivePastSchoolYearsNow, installAutomaticMaintenance, backupNow, runMonthlyBackup, runYearlyArchive, runDailyFollowUps, previewOwnershipTransferNow, transferOwnershipNow } });
