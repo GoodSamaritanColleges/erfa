@@ -883,3 +883,81 @@ td[data-label="Requested Amount"], td[data-label="Date Filed"], td[data-label="C
 }
 @media (max-width: 620px) { .workflow-steps { grid-template-columns: 1fr 1fr; } }
 td[data-label="RFA"], td[data-label="Date"], td[data-label="Date Filed"], td[data-label="RFA Number"] { white-space: nowrap; }
+
+/* ============================================================
+   Colour roles borrowed from the FEU theme, in Good Samaritan colours
+   (the two colours of the GSC logo): deep blue is the main colour,
+   the logo's green is the accent, used the way FEU uses gold.
+   - deep blue sidebar, with the logo on a white plate at the top
+   - green markers: active page, header rule, focus rings, avatars
+   - blue rule on top of each card, tinted page so white cards stand out
+   No yellow or orange. To retune, change the tokens in this block.
+   ============================================================ */
+:root {
+  --brand: #0b4ea2;          /* main blue: buttons, titles, card rules */
+  --brand-2: #1a5fbf;        /* hover */
+  --brand-deep: #0a3a7a;     /* sidebar top */
+  --brand-ink: #072a59;      /* sidebar bottom, darkest text */
+  --accent: #1f8a4c;         /* GSC logo green: markers and rules on white */
+  --accent-light: #6fd39a;   /* the same green, readable on the deep blue sidebar */
+  --accent-soft: #e8f5ee;
+  --accent-line: #bfe3cd;
+  --tint: #eaf1fc;           /* blue tint backgrounds */
+  --tint-line: #c9dbf5;
+  --navy: var(--brand);
+  --navy-2: var(--brand-2);
+  --navy-3: var(--brand-deep);
+  --bg: #f1f4f9;             /* cool paper, so white cards stand out */
+  --line: #dfe5ee;
+}
+body, .full-loader { background: var(--bg); }
+::selection { background: rgba(31,138,76,.22); }
+
+/* Cards: thin blue rule on top */
+.panel, .table-panel, .form-card { border-top: 3px solid var(--brand); }
+.page-fallback .panel { border-top-color: var(--line); }
+.metric, .metric-card { border-color: var(--line); }
+thead th { background: #f6f8fc; color: #45526a; }
+
+/* Buttons and focus: blue buttons, green focus ring */
+.button.primary { background: var(--brand); box-shadow: inset 0 -2px 0 rgba(0,0,0,.18); }
+.button.primary:hover { background: var(--brand-2); }
+.button.secondary:hover { border-color: var(--accent-line); background: #f7fcf9; }
+:focus-visible { outline-color: var(--accent); }
+.filters select:focus, .filters input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(31,138,76,.22); }
+.search-field:focus-within { box-shadow: 0 0 0 3px rgba(31,138,76,.22); }
+.financial-card { border-left-color: var(--accent); }
+
+/* Sidebar: deep blue with green markers; the logo keeps its colours on a white plate */
+.sidebar { background: linear-gradient(180deg, var(--brand-deep) 0%, var(--brand-ink) 100%); color: #fff; border-right: 0; box-shadow: inset -1px 0 0 rgba(255,255,255,.05); }
+.sidebar-brand { background: #fff; border-bottom: 3px solid var(--accent); }
+.sidebar-nav-label { color: var(--accent-light); letter-spacing: .14em; opacity: .9; }
+.sidebar-nav a { color: rgba(255,255,255,.8); }
+.sidebar-nav a svg { color: rgba(255,255,255,.6); }
+.sidebar-nav a:hover { background: rgba(255,255,255,.08); color: #fff; }
+.sidebar-nav a:hover svg { color: #fff; }
+.sidebar-nav a.active { background: rgba(111,211,154,.14); color: #fff; }
+.sidebar-nav a.active svg { color: var(--accent-light); }
+.sidebar-nav a.active::before { background: var(--accent-light); }
+.sidebar-footer { border-top: 1px solid rgba(255,255,255,.1); background: rgba(0,0,0,.14); }
+.sidebar-user b { color: #fff; }
+.sidebar-user small { color: rgba(255,255,255,.68); }
+.sidebar .button.ghost { color: rgba(255,255,255,.85); border-color: rgba(255,255,255,.22); background: transparent; }
+.sidebar .button.ghost:hover { background: rgba(111,211,154,.16); color: #fff; border-color: rgba(111,211,154,.5); }
+
+/* Avatars: green monogram */
+.avatar, .avatar.small { background: var(--accent); color: #fff; box-shadow: 0 0 0 2px rgba(255,255,255,.9); }
+
+/* Header: white bar with a green rule */
+.content-header { border-bottom: 2px solid var(--accent); }
+.content-header-left svg { color: var(--brand); }
+.content-header-left b { color: var(--brand-ink); }
+
+/* Login: green rule beside the card */
+.login-card { border-right: 4px solid var(--accent); }
+
+/* Phones: active tab marked in green */
+@media (max-width: 900px) {
+  .mobile-nav a.active { border-top-color: var(--accent); background: var(--tint); color: var(--brand); }
+}
+@media print { .panel, .table-panel, .form-card { border-top: 1px solid #ddd; } }
