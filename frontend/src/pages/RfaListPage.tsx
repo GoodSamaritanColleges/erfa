@@ -77,7 +77,7 @@ export function RfaListPage({ mode = 'mine' }: { mode?: ListMode }) {
       </label>}
       <label className="search-field">
         <Search size={16} />
-        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="RFA number, title, requester, department, or OPEX/CAPEX" aria-label="Search RFAs" />
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search number, title, name, department…" aria-label="Search RFAs" />
       </label>
       <label>
         <span className="sr-only">Status</span>
@@ -96,7 +96,7 @@ export function RfaListPage({ mode = 'mine' }: { mode?: ListMode }) {
       </label>
       <label>
         <span className="sr-only">Fiscal year</span>
-        <input value={fiscalYear} onChange={(e) => setFiscalYear(e.target.value)} placeholder="School year start (e.g. 2026)" inputMode="numeric" aria-label="Fiscal year" />
+        <input value={fiscalYear} onChange={(e) => setFiscalYear(e.target.value)} placeholder="Year, e.g. 2026" inputMode="numeric" aria-label="Fiscal year" />
       </label>
     </div>}
     <section className={`panel flush${loading && rfas.length ? ' is-refreshing' : ''}`} aria-busy={loading}>

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { ErrorNotice, Spinner, StatusBadge } from '../components';
-import { currentSchoolYear, isFiscalYear, money, schoolYearLabel, schoolYearOptions } from '../format';
+import { currentSchoolYear, date, isFiscalYear, money, schoolYearLabel, schoolYearOptions } from '../format';
 
 type DetailRow = { rfaId: string; rfaNumber: string; dateFiled: string; departmentId: string; department: string; involvedDepartment: string; title: string; purpose: string; requester: string; expenseClassification: string; amount: number; fiscalYear: string; status: string };
 type Report = { fiscalYear: string; departments: Array<{ DEPARTMENT_ID: string; DEPARTMENT_NAME: string }>; deptRows: Array<{ departmentName: string }>; rows: DetailRow[]; totals: { totalOpex: number; totalCapex: number; total: number; rfaCount: number } };
@@ -72,7 +72,7 @@ export function DepartmentExpenseReportPage() {
       </section>
       <section className="table-panel"><header><h2>Filtered expense records</h2><span className="muted">Use the filters above; export downloads the same filtered set.</span></header>
         <div className="table-wrap"><table><thead><tr><th>RFA</th><th>Date Filed</th><th>Requester</th><th>Department</th><th>Involved</th><th>Type</th><th>Title / Purpose</th><th>Amount</th><th>Status</th></tr></thead><tbody>
-          {report.rows.length ? report.rows.map((row) => <tr key={row.rfaId}><td data-label="RFA"><Link className="rfa-number" to={`/rfa/${row.rfaId}`}>{row.rfaNumber}</Link></td><td data-label="Date">{row.dateFiled}</td><td data-label="Requester">{row.requester}</td><td data-label="Department">{row.department}</td><td data-label="Involved">{row.involvedDepartment || '—'}</td><td data-label="Type"><b>{row.expenseClassification || '—'}</b></td><td data-label="Title / Purpose"><span className="cell-primary">{row.title}</span><small>{row.purpose}</small></td><td data-label="Amount" className="amount-cell">{money(row.amount)}</td><td data-label="Status"><StatusBadge status={row.status} /></td></tr>) : <tr><td colSpan={9}>No recorded expenses match these filters.</td></tr>}
+          {report.rows.length ? report.rows.map((row) => <tr key={row.rfaId}><td data-label="RFA"><Link className="rfa-number" to={`/rfa/${row.rfaId}`}>{row.rfaNumber}</Link></td><td data-label="Date">{date(row.dateFiled)}</td><td data-label="Requester">{row.requester}</td><td data-label="Department">{row.department}</td><td data-label="Involved">{row.involvedDepartment || '—'}</td><td data-label="Type"><b>{row.expenseClassification || '—'}</b></td><td data-label="Title / Purpose"><span className="cell-primary">{row.title}</span><small>{row.purpose}</small></td><td data-label="Amount" className="amount-cell">{money(row.amount)}</td><td data-label="Status"><StatusBadge status={row.status} /></td></tr>) : <tr><td colSpan={9}>No recorded expenses match these filters.</td></tr>}
         </tbody></table></div>
       </section>
     </>}

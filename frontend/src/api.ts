@@ -9,6 +9,11 @@ const READ_CACHE_TTL_MS = 30_000;
 const readCache = new Map<string, { at: number; data: unknown }>();
 export function clearReadCache(): void { readCache.clear(); }
 
+// Notified after every successful change (approve, submit, save…), so counts like the
+// For My Action bubble refresh immediately instead of on the next page change.
+const changeListeners = new Set<() => void>();
+export function onDataChanged(listener: () => void): () => void { changeListeners.add(listener); return () => { changeListeners.delete(listener); }; }
+
 // Last successful answer per read, kept for the whole visit (not just 30 s) so a page can
 // show it instantly while a fresh copy loads. Cleared by any write and by sign-out.
 const lastGood = new Map<string, unknown>();
@@ -97,7 +102,7 @@ export async function api<T>(action: string, payload: Record<string, unknown> = 
       throw new ApiError(code, result.error?.message ?? 'The request could not be completed.');
     }
     if (cacheable) readCache.set(key, { at: Date.now(), data: result.data });
-    else if (!key) { clearReadCache(); lastGood.clear(); }
+    else if (!key) { clearReadCache(); lastGood.clear(); queueMicrotask(() => changeListeners.forEach((listener) => listener())); }
     if (key && action !== 'session') lastGood.set(viewKey(action, payload), result.data);
     return result.data;
     } finally {

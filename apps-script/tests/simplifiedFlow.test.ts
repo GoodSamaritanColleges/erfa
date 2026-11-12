@@ -758,3 +758,25 @@ describe('approval matrix leftovers', () => {
     expect(assignmentsFor(draft.RFA_ID, 'RECOMMENDING_APPROVAL')).toEqual(['itHead']);
   });
 });
+
+describe('hand-over keeps the email order', () => {
+  it("a stand-in for the AVP for Finance keeps the AVP's place: emailed first, the VP still waits", async () => {
+    const { reassignApprovals } = await import('../src/workflow');
+    const { notify } = await import('../src/notifications');
+    const extra = namedUser('standIn', 'Stand In');
+    sheets.set('USERS', [...((sheets.get('USERS') || []) as SheetRecord[]), extra as unknown as SheetRecord]);
+    users.push(extra as unknown as SheetRecord);
+    const req = requesterFor('it');
+    const draft = createRfa(req, input({}));
+    submitRfa(req, draft.RFA_ID);
+    acted(draft.RFA_ID, userById('itHead'));
+    acted(draft.RFA_ID, userById('ofelia')); // now Approved By: AVP (ana) first, then the VP (raquel)
+    vi.mocked(notify).mockClear();
+    reassignApprovals({ ...userById('itHead'), IS_ADMIN: true } as SessionUser, { rfaId: draft.RFA_ID, fromUserId: 'ana', toUserId: 'standIn', reason: 'On leave' });
+    expect(vi.mocked(notify).mock.calls.map((call) => (call[1] as { EMAIL: string }).EMAIL)).toEqual(['standIn@example.edu']);
+    expect(() => acted(draft.RFA_ID, userById('raquel'))).toThrow(); // still waits for the AVP's stand-in
+    acted(draft.RFA_ID, userById('standIn'));
+    acted(draft.RFA_ID, userById('raquel'));
+    expect(status(draft.RFA_ID)).toBe('APPROVED');
+  });
+});

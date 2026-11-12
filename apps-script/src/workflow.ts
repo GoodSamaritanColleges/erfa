@@ -58,7 +58,15 @@ function getApprovedAssignments(rfa: RfaRecord, section: ApprovalSection): Sheet
  * then the President last. Only the email timing follows this order; every assigned
  * official can still open and act on the RFA as soon as the stage starts.
  */
+/** Marker kept on a handed-over assignment so the stand-in keeps the original person's place. */
+const STAND_IN = /\(#([^)]+)\)$/;
+export function standInNote(fromName: string, fromId: string): string { return `Stand-in for ${fromName} (#${fromId})`; }
+
 function approvedByEmailTier(row: SheetRecord): number {
+  // A stand-in takes the email order of the person they replaced (e.g. still "first" for the AVP).
+  const original = String(row.REMARKS || '').match(STAND_IN)?.[1];
+  const source = original ? findBy<UserRecord>('USERS', 'USER_ID', original) : undefined;
+  if (original) return emailOrderFor({ id: original, name: String(source?.FULL_NAME || ''), email: String(source?.EMAIL || '') });
   return emailOrderFor({ id: String(row.APPROVER_USER_ID), name: String(row.APPROVER_NAME || ''), email: String(row.APPROVER_EMAIL || '') });
 }
 
@@ -1266,12 +1274,28 @@ export function reassignApprovals(actor: SessionUser, payload: Record<string, un
     if (clash) { skipped.push({ rfaNumber: rfa.RFA_NUMBER, reason: 'the new approver is already in that step' }); continue; }
     moved.push({ rfaId: rfa.RFA_ID, rfaNumber: rfa.RFA_NUMBER, title: rfa.REQUEST_TITLE, steps: [...new Set(pending.map((row) => String(row.STEP)))] });
     if (preview || !to) continue;
-    for (const row of pending) updateBy('RFA_APPROVALS', 'APPROVAL_ID', String(row.APPROVAL_ID), { APPROVER_USER_ID: to.USER_ID, APPROVER_NAME: to.FULL_NAME, APPROVER_EMAIL: to.EMAIL });
+    const waitingBefore = new Set(waitingApprovers(rfa).map((row) => String(row.APPROVER_USER_ID)));
+    const from = findBy<UserRecord>('USERS', 'USER_ID', fromId);
+    for (const row of pending) {
+      // Keep the original person's place in the email order, and say who the stand-in replaced.
+      const original = String(row.REMARKS || '').match(STAND_IN)?.[1] || fromId;
+      const originalName = original === fromId ? String(from?.FULL_NAME || fromId) : String(findBy<UserRecord>('USERS', 'USER_ID', original)?.FULL_NAME || original);
+      updateBy('RFA_APPROVALS', 'APPROVAL_ID', String(row.APPROVAL_ID), { APPROVER_USER_ID: to.USER_ID, APPROVER_NAME: to.FULL_NAME, APPROVER_EMAIL: to.EMAIL, REMARKS: standInNote(originalName, original) });
+    }
     if (legacyCurrent) updateBy('RFA', 'RFA_ID', rfa.RFA_ID, { CURRENT_APPROVER_USER_ID: to.USER_ID, CURRENT_APPROVER_EMAIL: to.EMAIL, UPDATED_AT: nowIso() });
     audit('APPROVER_REASSIGNED', actor, rfa.RFA_ID, rfa.STATUS, rfa.STATUS, reason, { fromUserId: fromId, toUserId: to.USER_ID, toName: to.FULL_NAME, steps: moved[moved.length - 1].steps });
-    // If it is now their turn, they get the usual "Action required" email straight away.
+    // Everyone whose turn it is now and who was not already waiting gets the usual "Action required"
+    // email straight away: the stand-in, and anyone whose turn started because of the hand-over.
     const refreshed = getRfa(rfa.RFA_ID);
-    if (legacyCurrent || waitingApprovers(refreshed).some((row) => String(row.APPROVER_USER_ID) === to.USER_ID)) notify('APPROVAL_REQUIRED', to, refreshed, actor, `Handed over to you: ${reason}`);
+    const newlyWaiting = waitingApprovers(refreshed).filter((row) => !waitingBefore.has(String(row.APPROVER_USER_ID)) || String(row.APPROVER_USER_ID) === to.USER_ID);
+    const notified = new Set<string>();
+    if (legacyCurrent) { notify('APPROVAL_REQUIRED', to, refreshed, actor, `Handed over to you: ${reason}`); notified.add(to.USER_ID); }
+    for (const row of newlyWaiting) {
+      const id = String(row.APPROVER_USER_ID);
+      if (notified.has(id)) continue;
+      notified.add(id);
+      notify('APPROVAL_REQUIRED', { FULL_NAME: String(row.APPROVER_NAME || ''), EMAIL: String(row.APPROVER_EMAIL || '') } as UserRecord, refreshed, actor, id === to.USER_ID ? `Handed over to you: ${reason}` : '');
+    }
   }
   if (rfaId && !moved.length && !skipped.length) businessError('That person has no pending approval on this RFA.');
   return { preview, moved, skipped, count: moved.length };

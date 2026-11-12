@@ -5,7 +5,7 @@ import { api } from '../api';
 import { useAuth } from '../auth';
 import { Dialog, ErrorNotice, Spinner, StatusBadge, SuccessNotice } from '../components';
 import { date, dateTime, displayName, expenseClassificationLabel, money, rfaNumberLabel, schoolYearLabel, stepLabel } from '../format';
-import type { Approval, ApprovalStep, Attachment, Rfa, RfaDetail } from '../types';
+import type { Approval, ApprovalStep, Attachment, Audit, Rfa, RfaDetail } from '../types';
 
 const legacySteps: ApprovalStep[] = ['PREPARED_BY', 'RECOMMENDING_APPROVAL', 'REVIEWED_AND_NOTED', 'APPROVED_BY'];
 const legacyAssignmentSteps: ApprovalStep[] = ['PREPARED_BY', 'RECOMMENDING_APPROVAL', 'REVIEWED_BY', 'NOTED_BY', 'APPROVED_BY'];
@@ -187,11 +187,11 @@ export function RfaDetailPage() {
 
       <section className="audit-section screen-only">
         <h2>Audit History</h2>
-        {audit.length ? <ol>{[...audit].reverse().map((entry) => <li key={entry.LOG_ID}>
+        {visibleAudit(audit).length ? <ol>{[...visibleAudit(audit)].reverse().map((entry) => <li key={entry.LOG_ID}>
           <span>{dateTime(entry.TIMESTAMP)}</span>
           <div>
-            <b>{entry.ACTION.replaceAll('_',' ')}</b>
-            <p>{entry.ACTOR_NAME}{entry.REMARKS ? ` — ${entry.REMARKS}` : ''}</p>
+            <b>{auditLabel(entry.ACTION)}</b>
+            <p>{entry.ACTOR_NAME}{auditRemarks(entry) ? ` — ${auditRemarks(entry)}` : ''}</p>
           </div>
         </li>)}</ol> : <p>No audit entries.</p>}
       </section>
@@ -255,6 +255,27 @@ export function RfaDetailPage() {
       </div></div>
     </Dialog>}
   </>;
+}
+
+// Plain-language history on the RFA page. Purely technical entries are kept in
+// Administration > Logs but not shown here.
+const HIDDEN_AUDIT = new Set(['OPTIONAL_APPROVERS_SELECTED', 'OPTIONAL_APPROVERS_RESOLVED', 'FINANCIAL_RFA_SUBMITTED', 'APPROVAL_REQUESTED', 'NOTED_BY_SELECTION', 'ACCESS_DENIED']);
+const AUDIT_LABELS: Record<string, string> = {
+  RFA_CREATED: 'Draft created', RFA_UPDATED: 'Draft updated', RFA_SUBMITTED: 'Submitted', RESUBMITTED: 'Resubmitted',
+  APPROVED: 'Approved', RETURNED: 'Returned for revision', DISAPPROVED: 'Disapproved', FINAL_APPROVED: 'Fully approved',
+  EMAIL_SENT: 'Email sent', EMAIL_FAILED: 'Email could not be sent', APPROVER_REASSIGNED: 'Approval handed over',
+  ATTACHMENT_UPLOADED: 'Attachment added', IMPLEMENTATION: 'Implementation started', CLOSED: 'Closed', CANCELLED: 'Cancelled',
+  ACTUAL_EXPENSE_RECORDED: 'Actual expense recorded', WORKFLOW_EXCEPTION: 'Needs administrator attention', APPROVER_SKIPPED: 'Approver skipped', STAGE_SKIPPED: 'Step skipped'
+};
+const EMAIL_KINDS: Record<string, string> = {
+  APPROVAL_REQUIRED: 'approval request', APPROVAL_REMINDER: 'reminder', RFA_SUBMITTED: 'submission confirmation', RFA_RESUBMITTED: 'resubmission confirmation',
+  RFA_RETURNED: 'returned notice', RFA_DISAPPROVED: 'disapproval notice', RFA_APPROVED: 'approval notice', RFA_CLOSED: 'closing notice', WORKFLOW_EXCEPTION: 'administrator alert'
+};
+function visibleAudit(entries: Audit[]): Audit[] { return entries.filter((entry) => !HIDDEN_AUDIT.has(entry.ACTION)); }
+function auditLabel(action: string): string { return AUDIT_LABELS[action] ?? action.replaceAll('_', ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase()); }
+function auditRemarks(entry: Audit): string {
+  if (entry.ACTION === 'EMAIL_SENT' || entry.ACTION === 'EMAIL_FAILED') return EMAIL_KINDS[entry.REMARKS] ?? entry.REMARKS;
+  return entry.REMARKS;
 }
 
 function Fact({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
@@ -360,7 +381,7 @@ function HistoryTable({ approvals, status, waiting = new Map<string, string>(), 
           <td data-label="Step">{stepLabel(approval.STEP)}</td>
           <td data-label="Approver">{approval.APPROVER_NAME ? displayName(approval.APPROVER_NAME) : 'System'}{canHandOver && !acted && awaiting && approval.APPROVER_USER_ID && <Link className="handover-link" to={`/admin?tab=users&handover=${encodeURIComponent(approval.APPROVER_USER_ID)}&rfa=${encodeURIComponent(rfaId)}`}>Hand over</Link>}</td>
           <td data-label="Action"><span className={`history-action history-action-${sent ? 'sent' : acted ? approval.ACTION.toLowerCase() : waitingLabel ? 'idle' : awaiting ? 'pending' : 'idle'}`}>{label}</span></td>
-          <td data-label="Remarks">{approval.REMARKS || '—'}</td>
+          <td data-label="Remarks">{String(approval.REMARKS || '').replace(/ \(#[^)]+\)$/, '') || '—'}</td>
           <td data-label={acted ? 'Date and Time' : 'Assigned'}>{acted ? dateTime(approval.TIMESTAMP) : <span className="history-muted">Assigned {dateTime(approval.TIMESTAMP)}</span>}</td>
         </tr>;
       })}</tbody>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { ErrorNotice, Spinner } from '../components';
-import { currentSchoolYear, isFiscalYear, money, schoolYearLabel, schoolYearOptions } from '../format';
+import { currentSchoolYear, date, isFiscalYear, money, schoolYearLabel, schoolYearOptions } from '../format';
 
 type Department = { DEPARTMENT_ID: string; DEPARTMENT_NAME: string };
 type DeptRow = { departmentId: string; departmentName: string; fiscalYear: string; totalOpex: number; totalCapex: number; total: number; rfaCount: number };
@@ -83,7 +83,7 @@ export function BudgetManagementPage() {
       </section>
       <section className="table-panel"><header><h2>Filtered RFA records</h2><span className="muted">Exported in CSV together with the grouped totals.</span></header>
         <div className="table-wrap"><table><thead><tr><th>RFA</th><th>Date Filed</th><th>Department</th><th>Involved</th><th>Type</th><th>Title</th><th>Amount</th><th>Status</th></tr></thead><tbody>
-          {data.rows.length ? data.rows.map((row) => <tr key={row.rfaId}><td data-label="RFA">{row.rfaNumber}</td><td data-label="Date">{row.dateFiled}</td><td data-label="Department">{row.department}</td><td data-label="Involved">{row.involvedDepartment || '—'}</td><td data-label="Type"><b>{row.expenseClassification || '—'}</b></td><td data-label="Title"><span className="cell-primary">{row.title}</span><small>{row.requester}</small></td><td data-label="Amount" className="amount-cell">{money(row.amount)}</td><td data-label="Status">{row.status}</td></tr>) : <tr><td colSpan={8}>No records match these filters.</td></tr>}
+          {data.rows.length ? data.rows.map((row) => <tr key={row.rfaId}><td data-label="RFA">{row.rfaNumber}</td><td data-label="Date">{date(row.dateFiled)}</td><td data-label="Department">{row.department}</td><td data-label="Involved">{row.involvedDepartment || '—'}</td><td data-label="Type"><b>{row.expenseClassification || '—'}</b></td><td data-label="Title"><span className="cell-primary">{row.title}</span><small>{row.requester}</small></td><td data-label="Amount" className="amount-cell">{money(row.amount)}</td><td data-label="Status">{row.status}</td></tr>) : <tr><td colSpan={8}>No records match these filters.</td></tr>}
         </tbody></table></div>
       </section>
     </>}

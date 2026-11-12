@@ -1,7 +1,7 @@
 import { AlertTriangle, BarChart3, Files, CheckCircle2, FilePlus2, FileText, Home, ListTodo, LoaderCircle, LogOut, Settings2, ShieldCheck, Wallet, X } from 'lucide-react';
 import { Component, Suspense, useEffect, useState, type ErrorInfo, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
-import { api } from './api';
+import { api, onDataChanged } from './api';
 import { useAuth } from './auth';
 import { GoogleSignInButton } from './googleSignIn';
 import { statusLabel } from './format';
@@ -48,7 +48,8 @@ function usePendingCount(enabled: boolean, pathname: string): number {
     const onVisible = () => { if (document.visibilityState === 'visible') load(); };
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('focus', onVisible);
-    return () => { alive = false; window.clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); window.removeEventListener('focus', onVisible); };
+    const stopListening = onDataChanged(load);
+    return () => { alive = false; window.clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); window.removeEventListener('focus', onVisible); stopListening(); };
   }, [enabled, pathname]);
   return count;
 }

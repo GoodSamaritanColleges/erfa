@@ -308,7 +308,7 @@ export function RfaFormPage() {
       {!usesLegacyWorkflow && <section className="form-card approval-assignment-card">
         <div className="section-title">
           <span>06</span>
-          <div><h2>Approval route — official matrix</h2><p>Assigned automatically. Mandatory approvers cannot be removed.</p></div>
+          <div><h2>Approval route</h2><p>Assigned automatically from your department heads and the approval roles. Required approvers cannot be removed.</p></div>
         </div>
         <div className="route-names">
           <RouteStage title="Prepared By" names={[existing?.REQUESTED_BY || user?.FULL_NAME || 'Requester']} note={existing?.POSITION || user?.POSITION || ''} />

@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { api, peek } from '../api';
 import { useAuth } from '../auth';
 import { ErrorNotice, StatusBadge } from '../components';
-import { currentSchoolYear, date, money, schoolYearLabel, stepLabel } from '../format';
+import { currentSchoolYear, date, money, schoolYearLabel } from '../format';
 import type { Rfa } from '../types';
 
 type DashboardExpenses = { totals: { totalOpex: number; totalCapex: number; total: number; rfaCount: number }; deptRows: Array<{ departmentName: string; total: number; rfaCount: number }> };
@@ -142,7 +142,6 @@ export function RfaTable({ rfas, review = false, schoolYear = '' }: { rfas: Rfa[
           <th>Request</th>
           <th>Department</th>
           <th>Requested Amount</th>
-          {review && <th>Current Step</th>}
           <th>Status</th>
           <th>Date Filed</th>
           <th aria-label="Action" />
@@ -157,7 +156,6 @@ export function RfaTable({ rfas, review = false, schoolYear = '' }: { rfas: Rfa[
           </td>
           <td data-label="Department">{rfa.DEPARTMENT_NAME}</td>
           <td data-label="Requested Amount">{money(rfa.REQUESTED_AMOUNT ? rfa.REQUESTED_AMOUNT / 100 : rfa.BUDGET_ALLOCATION)}</td>
-          {review && <td data-label="Current Step">{rfa.CURRENT_STEP ? stepLabel(rfa.CURRENT_STEP) : '—'}</td>}
           <td data-label="Status"><StatusBadge status={rfa.STATUS} /></td>
           <td data-label="Date Filed">{date(rfa.DATE_FILED)}</td>
           <td><Link className="row-link" to={`/rfa/${rfa.RFA_ID}${schoolYear ? `?sy=${schoolYear}` : ''}`}>{review ? 'Review' : 'View'} <ArrowRight size={14} /></Link></td>

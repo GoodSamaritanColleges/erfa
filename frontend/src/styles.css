@@ -864,3 +864,22 @@ td[data-label="RFA Number"] > b, td[data-label="Date Filed"] { white-space: nowr
 .matrix-off td { color: var(--muted); }
 .matrix-toggle { padding: 0 1rem 1rem; margin: .5rem 0 0; }
 @media (max-width: 620px) { .matrix-leftovers { flex-direction: column; align-items: flex-start; } }
+
+/* Readable tables: give the request title room; setup tools tucked away */
+td[data-label="Request"] { min-width: 180px; }
+@media (min-width: 621px) { td[data-label="Department"] { max-width: 170px; } }
+/* Tables fit a laptop screen without sideways scrolling: tighter cell padding, no wrapping on short values */
+thead th { padding: .75rem .7rem; }
+tbody td { padding: .8rem .7rem; }
+td[data-label="Requested Amount"], td[data-label="Date Filed"], td[data-label="Current Step"] { white-space: nowrap; }
+.setup-tools { margin: 0 0 1rem; border: 1px dashed var(--line); border-radius: var(--radius); padding: .6rem .9rem; background: #fbfcfe; }
+.setup-tools > summary { cursor: pointer; font-size: var(--text-sm); font-weight: 600; color: var(--muted); }
+.setup-tools[open] > summary { margin-bottom: .6rem; }
+
+/* Phones: compact RFA cards, short fields side by side */
+@media (max-width: 620px) {
+  .table-wrap tbody tr { display: grid; grid-template-columns: 1fr 1fr; column-gap: .5rem; }
+  .table-wrap tbody td[data-label="Request"], .table-wrap tbody td:last-child, .table-wrap tbody td[data-label="Remarks"] { grid-column: 1 / -1; }
+}
+@media (max-width: 620px) { .workflow-steps { grid-template-columns: 1fr 1fr; } }
+td[data-label="RFA"], td[data-label="Date"], td[data-label="Date Filed"], td[data-label="RFA Number"] { white-space: nowrap; }

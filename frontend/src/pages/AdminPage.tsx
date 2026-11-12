@@ -52,20 +52,20 @@ export function AdminPage() {
     <nav className="tabs">
       <button className={tab === 'users' ? 'active' : ''} onClick={() => setTab('users')}><Users /> Users</button>
       <button className={tab === 'departments' ? 'active' : ''} onClick={() => setTab('departments')}><Building2 /> Departments</button>
-      <button className={tab === 'matrix' ? 'Optional: extra approvers for one specific department. Most schools need none here: department heads (Departments tab) and Approval Roles (below) already cover every RFA.' : ''} onClick={() => setTab('matrix')}><GitBranch /> Approval Matrix</button>
+      <button className={tab === 'matrix' ? 'active' : ''} onClick={() => setTab('matrix')}><GitBranch /> Approval Matrix</button>
       <button className={tab === 'logs' ? 'active' : ''} onClick={() => setTab('logs')}>System Logs</button>
     </nav>
 
     <section className="panel flush admin-panel">
       {tab !== 'logs' && <header className="panel-header">
         <div>
-          <h2>{tab === 'users' ? 'Registered users' : tab === 'departments' ? 'Departments & heads' : 'Official approval matrix'}</h2>
-          <p>{tab === 'matrix' ? 'Department-specific approvers. The official roles (Reviewed and Noted By, Approved By, VPs, President, Principal) are assigned once in Official Approval Roles below and apply to every department.' : tab === 'departments' ? 'Set department heads (multiple per department allowed) and academic classification.' : 'No public registration or destructive deletion.'}</p>
+          <h2>{tab === 'users' ? 'Registered users' : tab === 'departments' ? 'Departments & heads' : 'Approval matrix (optional)'}</h2>
+          <p>{tab === 'matrix' ? 'Extra approvers for one specific department. Most schools need none: department heads (Departments tab) and Approval Roles (below) already cover every RFA.' : tab === 'departments' ? 'Set department heads (multiple per department allowed) and academic classification.' : 'No public registration or destructive deletion.'}</p>
         </div>
         <button className="button primary" onClick={() => setEditing('new')}><Plus size={16}/> Add {tab === 'users' ? 'User' : tab === 'departments' ? 'Department' : 'Route'}</button>
       </header>}
       {tab === 'users' && <>
-        <UsersImportPanel onSaved={() => { setSuccess('Import saved.'); load(); }} onError={setError} />
+        <details className="setup-tools"><summary>Setup tools (one-time import and clean-up)</summary><UsersImportPanel onSaved={() => { setSuccess('Import saved.'); load(); }} onError={setError} /></details>
         <HandOverPanel key={`${handOverFrom}-${handOverRfa}`} users={data.users} initialFrom={handOverFrom} initialRfaId={handOverRfa} onDone={(message) => { setSuccess(message); load(); }} onError={setError} />
         <UsersTable users={data.users} departments={data.departments} edit={setEditing} />
       </>}
@@ -293,7 +293,7 @@ function MaintenancePanel() {
 }
 
 type RoleRow = { ROLE_ID: string; TITLE: string; STAGE: 'REVIEWED_AND_NOTED' | 'APPROVED_BY'; CONDITION: 'ALWAYS' | 'ACADEMIC' | 'AT_OR_ABOVE_THRESHOLD' | 'JHS_SHS_OPTIONAL'; EMAIL_ORDER: number; ALL_RFAS_ACCESS: boolean; USER_ID: string; ACTIVE: boolean };
-const STAGE_LABELS: Record<RoleRow['STAGE'], string> = { REVIEWED_AND_NOTED: 'Reviewed and Noted By', APPROVED_BY: 'Approved By' };
+const STAGE_LABELS: Record<RoleRow['STAGE'], string> = { REVIEWED_AND_NOTED: 'Reviewed & Noted', APPROVED_BY: 'Approved By' };
 const CONDITION_LABELS: Record<RoleRow['CONDITION'], string> = { ALWAYS: 'Every RFA', ACADEMIC: 'Academic departments only', AT_OR_ABOVE_THRESHOLD: 'Amount ≥ threshold', JHS_SHS_OPTIONAL: 'JHS/SHS, when requested' };
 const ORDER_LABELS = ['Emailed first', 'Emailed in the middle', 'Emailed last'];
 
@@ -340,7 +340,7 @@ function ApprovalSettingsPanel({ data, onSaved, onError }: { data: AdminData; on
           </div>
         </div>
         <div className="role-card-grid">
-          <label className="field"><span>Person</span><SearchableSelect value={role.USER_ID} options={options} placeholder="Search name or email…" onChange={(v) => update(index, { USER_ID: v })} /></label>
+          <label className="field"><span>Person</span><SearchableSelect value={role.USER_ID} options={options} placeholder="Search name or email…" emptyLabel="No one assigned" onChange={(v) => update(index, { USER_ID: v })} /></label>
           <label className="field"><span>Stage</span><select value={role.STAGE} onChange={(e) => update(index, { STAGE: e.target.value as RoleRow['STAGE'], ...(e.target.value === 'APPROVED_BY' && role.CONDITION === 'JHS_SHS_OPTIONAL' ? { CONDITION: 'ALWAYS' as const } : {}) })}>{(Object.keys(STAGE_LABELS) as RoleRow['STAGE'][]).map((stage) => <option key={stage} value={stage}>{STAGE_LABELS[stage]}</option>)}</select></label>
           <label className="field"><span>Applies to</span><select value={role.CONDITION} onChange={(e) => update(index, { CONDITION: e.target.value as RoleRow['CONDITION'] })}>{(Object.keys(CONDITION_LABELS) as RoleRow['CONDITION'][]).filter((c) => c !== 'JHS_SHS_OPTIONAL' || role.STAGE === 'REVIEWED_AND_NOTED').map((c) => <option key={c} value={c}>{CONDITION_LABELS[c]}</option>)}</select></label>
           {role.STAGE === 'APPROVED_BY' && <label className="field"><span>Email order</span><select value={role.EMAIL_ORDER} onChange={(e) => update(index, { EMAIL_ORDER: Number(e.target.value) })}>{ORDER_LABELS.map((label, order) => <option key={order} value={order}>{label}</option>)}</select></label>}
@@ -516,7 +516,7 @@ function Checkbox({ label, checked, set }: { label: string; checked: boolean; se
   return <label className="checkbox"><input type="checkbox" checked={checked} onChange={(e) => set(e.target.checked)}/><span>{label}</span></label>;
 }
 
-function SearchableSelect({ value, options, placeholder, onChange }: { value: string; options: Array<{ value: string; label: string }>; placeholder: string; onChange: (v: string) => void }) {
+function SearchableSelect({ value, options, placeholder, onChange, emptyLabel }: { value: string; options: Array<{ value: string; label: string }>; placeholder: string; onChange: (v: string) => void; emptyLabel?: string }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [highlight, setHighlight] = useState(0);
@@ -540,7 +540,7 @@ function SearchableSelect({ value, options, placeholder, onChange }: { value: st
       }}
     />
     {open && <ul className="searchable-list">
-      <li className={value === '' ? 'active' : ''} onMouseDown={(e) => { e.preventDefault(); onChange(''); setOpen(false); setQuery(''); }}>Not configured (name lookup)</li>
+      {emptyLabel && <li className={value === '' ? 'active' : ''} onMouseDown={(e) => { e.preventDefault(); onChange(''); setOpen(false); setQuery(''); }}>{emptyLabel}</li>}
       {shown.map((o, i) => <li key={o.value} className={o.value === value || i === highlight ? 'active' : ''} onMouseDown={(e) => { e.preventDefault(); onChange(o.value); setOpen(false); setQuery(''); }}>{o.label}</li>)}
       {shown.length === 0 && <li style={{ color: 'var(--muted)' }}>No matches</li>}
     </ul>}
