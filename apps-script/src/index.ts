@@ -7,6 +7,7 @@ import { previewRfaReset, resetRfas } from './resetRfas';
 import { archivePastSchoolYears, previewArchive } from './archive';
 import { backupDatabase } from './backup';
 import { installAutomaticMaintenance as installMaintenance, runMonthlyBackupJob, runYearlyArchiveJob } from './maintenance';
+import { runDailyFollowUpsJob } from './followups';
 
 function json(value: unknown): GoogleAppsScript.Content.TextOutput {
   const serialized = timed('serializationMs', () => JSON.stringify(value));
@@ -110,8 +111,9 @@ function backupNow(): unknown {
 
 function runMonthlyBackup(): unknown { return runMonthlyBackupJob(); }
 function runYearlyArchive(): unknown { setupSchema(); return runYearlyArchiveJob(); }
+function runDailyFollowUps(): unknown { return runDailyFollowUpsJob(); }
 
 // The production bundle keeps implementation code inside an IIFE. Store only
 // intended Apps Script entry points here; build.mjs emits top-level forwarding
 // declarations so Apps Script can discover them in the editor and Web App.
-Object.assign(globalThis, { __erfaEntrypoints: { doGet, doPost, setupDatabase, bootstrapAdmin, cleanAllNow, previewRfaResetNow, resetAllRfasKeepAccounts, previewArchiveNow, archivePastSchoolYearsNow, installAutomaticMaintenance, backupNow, runMonthlyBackup, runYearlyArchive } });
+Object.assign(globalThis, { __erfaEntrypoints: { doGet, doPost, setupDatabase, bootstrapAdmin, cleanAllNow, previewRfaResetNow, resetAllRfasKeepAccounts, previewArchiveNow, archivePastSchoolYearsNow, installAutomaticMaintenance, backupNow, runMonthlyBackup, runYearlyArchive, runDailyFollowUps } });

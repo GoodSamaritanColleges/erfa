@@ -1205,3 +1205,74 @@ export function downloadAttachment(user: SessionUser, attachmentId: string): She
   const blob = DriveApp.getFileById(String(attachment.DRIVE_FILE_ID)).getBlob();
   return { fileName: attachment.FILE_NAME, mimeType: attachment.MIME_TYPE, base64: Utilities.base64Encode(blob.getBytes()) };
 }
+
+// --- Keeping RFAs moving: who an RFA is waiting on, and handing approvals over ---
+
+export const WAITING_STATUSES = ['SUBMITTED', 'PENDING_RECOMMENDING_APPROVAL', 'PENDING_REVIEW', 'PENDING_AUTHORITY_APPROVAL'];
+
+/**
+ * The approvers an RFA is waiting on right now: assigned to the current step, not yet approved
+ * this round, and (in Approved By) only the group whose turn it is in the email order.
+ * Matches who was emailed and who sees the RFA in For My Action.
+ */
+export function waitingApprovers(rfa: RfaRecord): SheetRecord[] {
+  if (!WAITING_STATUSES.includes(rfa.STATUS) || !isAssignmentWorkflow(rfa)) return [];
+  const section = currentAssignmentSection(rfa);
+  if (!section) return [];
+  if (section === 'APPROVED_BY') return approvedByCurrentEmailTier(rfa).rows;
+  const approvedIds = new Set(getApprovedAssignments(rfa, section).map((row) => String(row.APPROVER_USER_ID)));
+  return getAssignmentsBySection(rfa.RFA_ID, section).filter((row) => !approvedIds.has(String(row.APPROVER_USER_ID)));
+}
+
+/** When the RFA started waiting on its current approvers: the later of submission and the last approval. */
+export function waitingSince(rfa: RfaRecord): string {
+  const actions = approvalRows(rfa.RFA_ID).filter((row) => row.ACTION === 'APPROVED').map((row) => String(row.TIMESTAMP || ''));
+  return [String(rfa.SUBMITTED_AT || ''), ...actions].filter(Boolean).sort().pop() || String(rfa.UPDATED_AT || '');
+}
+
+/**
+ * Hand pending approvals from one person to another (resignation, leave, role change).
+ * With an RFA ID it moves that RFA only; without one it moves every waiting RFA of that person.
+ * Already-given approvals are never changed. `preview: true` lists what would move without saving.
+ */
+export function reassignApprovals(actor: SessionUser, payload: Record<string, unknown>): Record<string, unknown> {
+  if (!toBoolean(actor.IS_ADMIN)) businessError('Only an administrator can hand over approvals.', 'FORBIDDEN');
+  const fromId = String(payload.fromUserId || '').trim();
+  const toId = String(payload.toUserId || '').trim();
+  const reason = String(payload.reason || '').trim();
+  const rfaId = String(payload.rfaId || '').trim();
+  const preview = payload.preview === true;
+  if (!fromId) businessError('Choose whose approvals to hand over.');
+  if (!preview) {
+    if (!toId) businessError('Choose who will take over the approvals.');
+    if (toId === fromId) businessError('Choose a different person to take over.');
+    if (reason.length < 3) businessError('Give a short reason, for example "On leave until June".');
+  }
+  const to = toId ? findBy<UserRecord>('USERS', 'USER_ID', toId) : undefined;
+  if (!preview && (!to || !toBoolean(to.ACTIVE) || !toBoolean(to.CAN_APPROVE_RFA))) businessError('The new approver must be an active user with approval permission.');
+
+  const candidates = rfaId ? [getRfa(rfaId)] : all<RfaRecord>('RFA');
+  const moved: Array<{ rfaId: string; rfaNumber: string; title: string; steps: string[] }> = [];
+  const skipped: Array<{ rfaNumber: string; reason: string }> = [];
+  for (const rfa of candidates) {
+    if (!WAITING_STATUSES.includes(rfa.STATUS)) { if (rfaId) businessError('Only an RFA that is waiting for approval can be handed over.'); continue; }
+    const rows = approvalRows(rfa.RFA_ID);
+    const pending = rows.filter((row) => row.ACTION === '' && String(row.APPROVER_USER_ID) === fromId)
+      .filter((row) => !getApprovedAssignments(rfa, row.STEP as ApprovalSection).some((done) => String(done.APPROVER_USER_ID) === fromId));
+    const legacyCurrent = !isAssignmentWorkflow(rfa) && String(rfa.CURRENT_APPROVER_USER_ID) === fromId;
+    if (!pending.length && !legacyCurrent) continue;
+    if (to && normalizeEmail(rfa.REQUESTER_EMAIL) === normalizeEmail(to.EMAIL)) { skipped.push({ rfaNumber: rfa.RFA_NUMBER, reason: 'the new approver filed this RFA' }); continue; }
+    const clash = pending.find((row) => rows.some((other) => other.STEP === row.STEP && String(other.APPROVER_USER_ID) === toId));
+    if (clash) { skipped.push({ rfaNumber: rfa.RFA_NUMBER, reason: 'the new approver is already in that step' }); continue; }
+    moved.push({ rfaId: rfa.RFA_ID, rfaNumber: rfa.RFA_NUMBER, title: rfa.REQUEST_TITLE, steps: [...new Set(pending.map((row) => String(row.STEP)))] });
+    if (preview || !to) continue;
+    for (const row of pending) updateBy('RFA_APPROVALS', 'APPROVAL_ID', String(row.APPROVAL_ID), { APPROVER_USER_ID: to.USER_ID, APPROVER_NAME: to.FULL_NAME, APPROVER_EMAIL: to.EMAIL });
+    if (legacyCurrent) updateBy('RFA', 'RFA_ID', rfa.RFA_ID, { CURRENT_APPROVER_USER_ID: to.USER_ID, CURRENT_APPROVER_EMAIL: to.EMAIL, UPDATED_AT: nowIso() });
+    audit('APPROVER_REASSIGNED', actor, rfa.RFA_ID, rfa.STATUS, rfa.STATUS, reason, { fromUserId: fromId, toUserId: to.USER_ID, toName: to.FULL_NAME, steps: moved[moved.length - 1].steps });
+    // If it is now their turn, they get the usual "Action required" email straight away.
+    const refreshed = getRfa(rfa.RFA_ID);
+    if (legacyCurrent || waitingApprovers(refreshed).some((row) => String(row.APPROVER_USER_ID) === to.USER_ID)) notify('APPROVAL_REQUIRED', to, refreshed, actor, `Handed over to you: ${reason}`);
+  }
+  if (rfaId && !moved.length && !skipped.length) businessError('That person has no pending approval on this RFA.');
+  return { preview, moved, skipped, count: moved.length };
+}

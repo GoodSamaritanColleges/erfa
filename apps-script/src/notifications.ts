@@ -7,9 +7,14 @@ export const STEP_LABELS: Record<string, string> = {
   REVIEWED_BY: 'Reviewed By', NOTED_BY: 'Noted By', INVOLVED_DEPARTMENT_HEAD: 'Involved Department Head', APPROVED_BY: 'Approved By'
 };
 
-interface EmailCopy { subject: (rfa: RfaRecord) => string; opening: (rfa: RfaRecord, step: string) => string; showRemarks?: boolean; showStep?: boolean }
+interface EmailCopy { subject: (rfa: RfaRecord) => string; opening: (rfa: RfaRecord, step: string, remarks: string) => string; showRemarks?: boolean; showStep?: boolean }
 
 const EMAIL_COPY: Record<string, EmailCopy> = {
+  APPROVAL_REMINDER: {
+    subject: (rfa) => `Reminder: ${rfa.RFA_NUMBER} is still awaiting your approval`,
+    opening: (_rfa, step, days) => `This is a friendly reminder. A Request for Approval has been waiting${days ? ` ${days} days` : ''} for your review and decision${step ? ` as ${step}` : ''}.`,
+    showStep: true
+  },
   APPROVAL_REQUIRED: {
     subject: (rfa) => `Action required: ${rfa.RFA_NUMBER} is awaiting your approval`,
     opening: (_rfa, step) => `A Request for Approval is waiting for your review and decision${step ? ` as ${step}` : ''}.`,
@@ -64,7 +69,7 @@ export function buildEmail(type: string, recipientName: string, rfa: RfaRecord, 
   const amount = formatPeso(rfa);
   const lines: Array<string | null> = [
     `Dear ${recipientName || 'eRFA user'},`, '',
-    copy.opening(rfa, step), '',
+    copy.opening(rfa, step, remarks), '',
     'Request details:',
     `  RFA Number: ${rfa.RFA_NUMBER}`,
     `  Request Title: ${rfa.REQUEST_TITLE || 'Untitled request'}`,

@@ -90,6 +90,8 @@ export const DEFAULT_SETTINGS = [
   ['EMAIL_ENABLED', 'TRUE', 'Send real email notifications through MailApp'],
   ['LAST_RFA_YEAR', '0', 'Internal numbering state'],
   ['LAST_RFA_SEQUENCE', '0', 'Internal numbering state'],
+  ['REMINDERS_ENABLED', 'TRUE', 'Daily reminder emails to approvers who keep an RFA waiting (TRUE/FALSE)'],
+  ['REMINDER_DAYS', '3', 'Days an RFA may wait before its approvers are reminded (repeats every this many days)'],
   ['VISIBLE_PAST_SCHOOL_YEARS', '2', 'How many past school years stay visible in the app. Older years are kept in Drive (archives and backups) but hidden.'],
   ['AUTO_MAINTENANCE', 'OFF', 'ON after installAutomaticMaintenance: monthly backup on the 1st, yearly archive on the 15th of the school-year start month.'],
   ['SCHOOL_YEAR_START_MONTH', '6', 'First month of the school year (1-12). Used for yearly archives: 6 = June to May.'],

@@ -1,5 +1,6 @@
 import { Building2, GitBranch, Pencil, Plus, Users } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { Dialog, ErrorNotice, Spinner, SuccessNotice } from '../components';
 import { date, dateTime, money, stepLabel } from '../format';
@@ -18,7 +19,10 @@ const emptyAuditFilters = { fromDate: '', toDate: '', rfaNumber: '', requester: 
 
 export function AdminPage() {
   const [data, setData] = useState<AdminData | null>(null);
-  const [tab, setTab] = useState<Tab>('users');
+  const [params] = useSearchParams();
+  const [tab, setTab] = useState<Tab>((params.get('tab') as Tab) || 'users');
+  const handOverFrom = params.get('handover') || '';
+  const handOverRfa = params.get('rfa') || '';
   const [editing, setEditing] = useState<User|Department|Matrix|'new'|null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -62,6 +66,7 @@ export function AdminPage() {
       </header>}
       {tab === 'users' && <>
         <UsersImportPanel onSaved={() => { setSuccess('Import saved.'); load(); }} onError={setError} />
+        <HandOverPanel key={`${handOverFrom}-${handOverRfa}`} users={data.users} initialFrom={handOverFrom} initialRfaId={handOverRfa} onDone={(message) => { setSuccess(message); load(); }} onError={setError} />
         <UsersTable users={data.users} departments={data.departments} edit={setEditing} />
       </>}
       {tab === 'departments' && <>
@@ -193,10 +198,55 @@ function DepartmentsTable({ departments, users, heads, edit, onSaved, onError }:
   </>;
 }
 
+
+type HandOverResult = { preview: boolean; count: number; moved: Array<{ rfaId: string; rfaNumber: string; title: string; steps: string[] }>; skipped: Array<{ rfaNumber: string; reason: string }> };
+
+/** Hand pending approvals from someone who is away or has left to another approver. */
+function HandOverPanel({ users, initialFrom, initialRfaId, onDone, onError }: { users: User[]; initialFrom: string; initialRfaId: string; onDone: (message: string) => void; onError: (e: string) => void }) {
+  const [fromUserId, setFrom] = useState(initialFrom);
+  const [toUserId, setTo] = useState('');
+  const [reason, setReason] = useState('');
+  const [rfaId, setRfaId] = useState(initialRfaId);
+  const [preview, setPreview] = useState<HandOverResult | null>(null);
+  const [working, setWorking] = useState(false);
+  useEffect(() => { setPreview(null); }, [fromUserId, rfaId]);
+  const everyone = users.map((u) => ({ value: u.USER_ID, label: `${u.FULL_NAME} - ${u.EMAIL}${u.ACTIVE ? '' : ' (inactive)'}` }));
+  const approvers = users.filter((u) => u.ACTIVE && u.CAN_APPROVE_RFA && u.USER_ID !== fromUserId).map((u) => ({ value: u.USER_ID, label: `${u.FULL_NAME} - ${u.EMAIL}` }));
+  async function run(previewOnly: boolean) {
+    setWorking(true);
+    try {
+      const result = await api<HandOverResult>('admin.approvals.reassign', { fromUserId, toUserId, reason, rfaId, preview: previewOnly });
+      if (previewOnly) setPreview(result);
+      else { setPreview(null); setReason(''); onDone(`Handed over ${result.count} RFA${result.count === 1 ? '' : 's'}${result.skipped.length ? `; ${result.skipped.length} skipped` : ''}. The new approver was emailed where it is their turn.`); }
+    } catch (e) { onError(e instanceof Error ? e.message : 'Could not hand over approvals.'); }
+    finally { setWorking(false); }
+  }
+  return <section className="form-card handover-panel">
+    <h3>Hand over pending approvals</h3>
+    <p className="muted">When an approver is on leave or has left, move the RFAs waiting on them to someone else. Approvals already given are never changed, and every hand-over is recorded in the audit log.</p>
+    <div className="form-grid">
+      <label className="field"><span>From (away or left)</span><SearchableSelect value={fromUserId} options={everyone} placeholder="Search name or email…" onChange={setFrom} /></label>
+      <label className="field"><span>To (takes over)</span><SearchableSelect value={toUserId} options={approvers} placeholder="Search name or email…" onChange={setTo} /></label>
+      <label className="field full"><span>Reason</span><input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. On leave until June 30" /></label>
+    </div>
+    {rfaId && <p className="muted">Only for one RFA (opened from its page). <button type="button" className="link-button" onClick={() => setRfaId('')}>Hand over all of this person's waiting RFAs instead</button></p>}
+    {preview && <div className="handover-preview">
+      <b>{preview.count ? `${preview.count} waiting RFA${preview.count === 1 ? '' : 's'} will move:` : 'This person has no waiting RFAs to hand over.'}</b>
+      {preview.moved.length > 0 && <ul>{preview.moved.map((item) => <li key={item.rfaId}>{item.rfaNumber || 'Draft'} · {item.title || 'Untitled'} <small>({item.steps.map(stepLabel).join(', ')})</small></li>)}</ul>}
+      {preview.skipped.length > 0 && <p className="muted">{preview.skipped.length} will be skipped: {preview.skipped.map((s) => `${s.rfaNumber} (${s.reason})`).join('; ')}</p>}
+    </div>}
+    <div className="form-actions">
+      <button type="button" className="button secondary" disabled={!fromUserId || working} onClick={() => void run(true)}>Show waiting RFAs</button>
+      <button type="button" className="button primary" disabled={!fromUserId || !toUserId || reason.trim().length < 3 || working || (preview !== null && preview.count === 0)} onClick={() => void run(false)}>{working ? 'Working…' : 'Hand over'}</button>
+    </div>
+  </section>;
+}
+
 type MaintenanceStatus = {
   enabled: boolean; lastBackupAt: string; lastArchiveAt: string; backupOverdue: boolean;
   nextBackup: string; nextArchive: string; visibleFrom: string; visibleYears: number;
   backups: Array<{ date: string; name: string; url: string; reason: string }>;
+  followUpsScheduled?: boolean; lastFollowUpsAt?: string; remindersEnabled?: boolean; reminderDays?: number; failedEmails?: number;
 };
 
 /** Automatic backups and yearly archive: whether they are on, recent backups, and what runs next. */
@@ -223,6 +273,12 @@ function MaintenancePanel() {
       <div><span>Next backup</span><b>{day(status.nextBackup)}</b></div>
       <div><span>Next yearly archive</span><b>{day(status.nextArchive)}</b></div>
       <div><span>Last archive</span><b>{day(status.lastArchiveAt)}</b></div>
+    </div>
+    <div className="maintenance-facts">
+      <div><span>Daily follow-ups (7 AM)</span><b>{status.followUpsScheduled ? 'On' : 'Off'}</b></div>
+      <div><span>Approver reminders</span><b>{status.remindersEnabled === false ? 'Off' : `After ${status.reminderDays ?? 3} days`}</b></div>
+      <div><span>Last follow-up run</span><b>{day(status.lastFollowUpsAt ?? '')}</b></div>
+      <div><span>Failed emails to retry</span><b>{status.failedEmails ?? 0}</b></div>
     </div>
     {status.backups.length > 0 && <div className="table-wrap"><table>
       <thead><tr><th>Backup</th><th>Saved</th><th>Type</th><th aria-label="Open" /></tr></thead>

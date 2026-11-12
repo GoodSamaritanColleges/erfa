@@ -13,7 +13,7 @@ import type { SheetRecord, UserRecord } from './types';
  *    acts in the start month.
  * Admins are emailed after each run and alerted on failure.
  */
-export const MAINTENANCE_HANDLERS = { backup: 'runMonthlyBackup', archive: 'runYearlyArchive' } as const;
+export const MAINTENANCE_HANDLERS = { backup: 'runMonthlyBackup', archive: 'runYearlyArchive', followups: 'runDailyFollowUps' } as const;
 const SYSTEM_ACTOR = { FULL_NAME: 'eRFA automatic maintenance', EMAIL: '' };
 
 function startMonth(): number {
@@ -21,7 +21,7 @@ function startMonth(): number {
   return month >= 1 && month <= 12 ? Math.floor(month) : 6;
 }
 
-function emailAdmins(subject: string, body: string): void {
+export function emailAdmins(subject: string, body: string): void {
   try {
     if (!settingBoolean('EMAIL_ENABLED')) return;
     const recipients = all<UserRecord>('USERS').filter((u) => toBoolean(u.IS_ADMIN) && toBoolean(u.ACTIVE) && u.EMAIL).map((u) => String(u.EMAIL));
@@ -66,6 +66,7 @@ export function installAutomaticMaintenance(): Record<string, unknown> {
   ScriptApp.getProjectTriggers().filter((t) => handlers.includes(t.getHandlerFunction())).forEach((t) => ScriptApp.deleteTrigger(t));
   ScriptApp.newTrigger(MAINTENANCE_HANDLERS.backup).timeBased().onMonthDay(1).atHour(2).inTimezone('Asia/Manila').create();
   ScriptApp.newTrigger(MAINTENANCE_HANDLERS.archive).timeBased().onMonthDay(15).atHour(3).inTimezone('Asia/Manila').create();
+  ScriptApp.newTrigger(MAINTENANCE_HANDLERS.followups).timeBased().everyDays(1).atHour(7).inTimezone('Asia/Manila').create();
   setSetting('AUTO_MAINTENANCE', 'ON', 'ON after installAutomaticMaintenance: monthly backup on the 1st, yearly archive on the 15th of the school-year start month.');
   audit('AUTO_MAINTENANCE_INSTALLED', SYSTEM_ACTOR, '', '', '', 'Monthly backup and yearly archive scheduled.');
   const first = runMonthlyBackupJob();
@@ -83,8 +84,24 @@ function nextDate(day: number, onlyMonth?: number, now = new Date()): string {
   return '';
 }
 
+/**
+ * Installs made before daily follow-ups existed get the daily schedule added automatically the
+ * next time an administrator opens the maintenance panel (no second setup click needed).
+ */
+function ensureDailyFollowUps(): boolean {
+  if (String(getSetting('AUTO_MAINTENANCE') || '').toUpperCase() !== 'ON') return false;
+  try {
+    if (ScriptApp.getProjectTriggers().some((t) => t.getHandlerFunction() === MAINTENANCE_HANDLERS.followups)) return true;
+    ScriptApp.newTrigger(MAINTENANCE_HANDLERS.followups).timeBased().everyDays(1).atHour(7).inTimezone('Asia/Manila').create();
+    return true;
+  } catch { return false; }
+}
+
 /** For the Administration page: is it on, recent backups with links, and what runs next. */
 export function maintenanceStatus(): Record<string, unknown> {
+  const followUpsScheduled = ensureDailyFollowUps();
+  let failedEmails = 0;
+  try { failedEmails = all<SheetRecord>('NOTIFICATIONS').filter((row) => String(row.STATUS) === 'FAILED' && Number(row.RETRY_COUNT || 0) < 3).length; } catch { failedEmails = 0; }
   let backups: SheetRecord[] = [];
   try { backups = all<SheetRecord>('BACKUPS').sort((a, b) => String(b.BACKUP_DATE).localeCompare(String(a.BACKUP_DATE))).slice(0, 12); } catch { backups = []; }
   const lastBackupAt = String(getSetting('LAST_BACKUP_AT') || '');
@@ -99,6 +116,11 @@ export function maintenanceStatus(): Record<string, unknown> {
     nextArchive: nextDate(15, startMonth()),
     visibleFrom: schoolYearLabel(current - visiblePastYears()),
     visibleYears: visiblePastYears(),
+    followUpsScheduled,
+    lastFollowUpsAt: String(getSetting('LAST_FOLLOWUPS_AT') || ''),
+    remindersEnabled: String(getSetting('REMINDERS_ENABLED') || 'TRUE').toUpperCase() !== 'FALSE',
+    reminderDays: Number(getSetting('REMINDER_DAYS') || 3) || 3,
+    failedEmails,
     backups: backups.map((row) => ({ date: String(row.BACKUP_DATE), name: String(row.FILE_NAME), url: String(row.URL || ''), reason: String(row.REASON || '') }))
   };
 }

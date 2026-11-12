@@ -50,7 +50,7 @@ beforeEach(() => {
   vi.stubGlobal('MailApp', { sendEmail: (m: { to: string; subject: string }) => { sent.push(m); } });
   const trigger = (handler: string) => {
     const t = { day: 0, hour: 0 };
-    const builder = { timeBased: () => builder, onMonthDay: (d: number) => { t.day = d; return builder; }, atHour: (h: number) => { t.hour = h; return builder; }, inTimezone: () => builder, create: () => { triggers.push({ handler, ...t }); return {}; } };
+    const builder = { timeBased: () => builder, onMonthDay: (d: number) => { t.day = d; return builder; }, everyDays: (n: number) => { t.day = -n; return builder; }, atHour: (h: number) => { t.hour = h; return builder; }, inTimezone: () => builder, create: () => { triggers.push({ handler, ...t }); return {}; } };
     return builder;
   };
   vi.stubGlobal('ScriptApp', { getProjectTriggers: () => [], deleteTrigger: vi.fn(), newTrigger: trigger });
@@ -91,7 +91,7 @@ describe('automatic maintenance', () => {
   it('installs both schedules once and makes a first backup', async () => {
     const { installAutomaticMaintenance, maintenanceStatus } = await import('../src/maintenance');
     installAutomaticMaintenance();
-    expect(triggers).toEqual([{ handler: 'runMonthlyBackup', day: 1, hour: 2 }, { handler: 'runYearlyArchive', day: 15, hour: 3 }]);
+    expect(triggers).toEqual([{ handler: 'runMonthlyBackup', day: 1, hour: 2 }, { handler: 'runYearlyArchive', day: 15, hour: 3 }, { handler: 'runDailyFollowUps', day: -1, hour: 7 }]);
     expect(copies).toHaveLength(1);
     const status = maintenanceStatus();
     expect(status).toMatchObject({ enabled: true, backupOverdue: false, nextBackup: '2027-01-01', nextArchive: '2027-06-15', visibleFrom: 'SY 2024–2025' });

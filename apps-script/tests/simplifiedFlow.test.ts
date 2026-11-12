@@ -15,19 +15,20 @@ vi.mock('../src/store', () => ({
   updateBy: vi.fn((name: string, key: string, value: string, update: SheetRecord) => { const row = sheets.get(name)?.find((item) => String(item[key]) === value); if (!row) throw new Error('Missing test row'); Object.assign(row, update); }),
   getSetting: vi.fn((key: string) => settings.get(key) || ''),
   setSetting: vi.fn((key: string, value: string) => { settings.set(key, value); }),
+  settingBoolean: vi.fn((key: string) => (settings.get(key) || '').toUpperCase() === 'TRUE'),
   newId: vi.fn((prefix: string) => `${prefix}_${++sequence}`),
   nowIso: vi.fn(() => stamp()),
   resetPerRequestCache: vi.fn(),
   clearPendingRfaAssignments: vi.fn((rfaId: string) => { sheets.set('RFA_APPROVALS', (sheets.get('RFA_APPROVALS') || []).filter((row) => row.RFA_ID !== rfaId || row.ACTION !== '')); }),
   saveRfaSectionAssignments: vi.fn((rfaId: string, rfaNumber: string, section: string, assignments: Array<{ USER_ID: string; FULL_NAME: string; EMAIL: string }>) => {
-    for (const person of assignments) sheets.set('RFA_APPROVALS', [...(sheets.get('RFA_APPROVALS') || []), { RFA_ID: rfaId, RFA_NUMBER: rfaNumber, STEP: section, APPROVER_USER_ID: person.USER_ID, APPROVER_NAME: person.FULL_NAME, APPROVER_EMAIL: person.EMAIL, ACTION: '', APPROVAL_ID: `${section}_${person.USER_ID}` }]);
+    for (const person of assignments) sheets.set('RFA_APPROVALS', [...(sheets.get('RFA_APPROVALS') || []), { RFA_ID: rfaId, RFA_NUMBER: rfaNumber, STEP: section, APPROVER_USER_ID: person.USER_ID, APPROVER_NAME: person.FULL_NAME, APPROVER_EMAIL: person.EMAIL, ACTION: '', APPROVAL_ID: `${rfaId}_${section}_${person.USER_ID}` }]);
   }),
   getAssignmentsBySection: vi.fn((rfaId: string, section: string) => (sheets.get('RFA_APPROVALS') || []).filter((row) => row.RFA_ID === rfaId && row.STEP === section && row.ACTION === ''))
 }));
 vi.mock('../src/audit', () => ({ audit: vi.fn((action: string, _actor: unknown, rfaId: string, _before: string, _after: string, remarks = '') => {
   sheets.set('RFA_AUDIT', [...(sheets.get('RFA_AUDIT') || []), { ACTION: action, RFA_ID: rfaId, REMARKS: remarks, TIMESTAMP: stamp() }]);
 }) }));
-vi.mock('../src/notifications', () => ({ notify: vi.fn() }));
+vi.mock('../src/notifications', () => ({ notify: vi.fn(), buildEmail: vi.fn(() => ({ subject: 'subject', body: 'body' })) }));
 
 const admin = { USER_ID: 'admin', FULL_NAME: 'Admin', EMAIL: 'admin@example.edu', IS_ADMIN: true, CAN_IMPLEMENT_RFA: true } as SessionUser;
 
@@ -646,5 +647,91 @@ describe('configurable approval roles', () => {
     const req = requesterFor('it');
     const draft = createRfa(req, input({ requestedAmount: '60000', budgetAllocation: 60000 }));
     expect(() => submitRfa(req, draft.RFA_ID)).toThrow('The approval role "President" has no person assigned');
+  });
+});
+
+describe('keeping RFAs moving: hand over, reminders, email retries', () => {
+  const admin = () => ({ ...userById('itHead'), IS_ADMIN: true }) as SessionUser;
+  function addUser(user: SessionUser) {
+    sheets.set('USERS', [...((sheets.get('USERS') || []) as SheetRecord[]), user as unknown as SheetRecord]);
+    users.push(user as unknown as SheetRecord);
+  }
+  const submitted = () => {
+    const req = requesterFor('it');
+    const draft = createRfa(req, input({}));
+    submitRfa(req, draft.RFA_ID);
+    return draft.RFA_ID;
+  };
+
+  it('hands one RFA from an approver on leave to a stand-in, who can then approve', async () => {
+    const { reassignApprovals } = await import('../src/workflow');
+    addUser(namedUser('standIn', 'Stand In Reviewer'));
+    const rfaId = submitted();
+    acted(rfaId, userById('itHead')); // now waiting on Reviewed and Noted (ofelia)
+    const result = reassignApprovals(admin(), { rfaId, fromUserId: 'ofelia', toUserId: 'standIn', reason: 'On leave until June' });
+    expect(result).toMatchObject({ count: 1 });
+    expect(assignmentsFor(rfaId, 'REVIEWED_AND_NOTED')).toEqual(['standIn']);
+    expect(() => acted(rfaId, userById('ofelia'))).toThrow();
+    acted(rfaId, userById('standIn'));
+    expect(status(rfaId)).toBe('PENDING_AUTHORITY_APPROVAL');
+    expect((sheets.get('RFA_AUDIT') || []).some((row) => row.ACTION === 'APPROVER_REASSIGNED' && row.RFA_ID === rfaId)).toBe(true);
+  });
+
+  it('previews and then hands over every waiting RFA of a person, without touching given approvals', async () => {
+    const { reassignApprovals } = await import('../src/workflow');
+    addUser(namedUser('newAvp', 'New AVP'));
+    const first = submitted();
+    const second = submitted();
+    const preview = reassignApprovals(admin(), { fromUserId: 'ana', preview: true }) as { count: number };
+    expect(preview.count).toBe(2);
+    expect(assignmentsFor(first, 'APPROVED_BY')).toContain('ana'); // preview changed nothing
+    reassignApprovals(admin(), { fromUserId: 'ana', toUserId: 'newAvp', reason: 'Resigned' });
+    for (const id of [first, second]) {
+      expect(assignmentsFor(id, 'APPROVED_BY')).toContain('newAvp');
+      expect(assignmentsFor(id, 'APPROVED_BY')).not.toContain('ana');
+    }
+  });
+
+  it('refuses unsafe hand-overs', async () => {
+    const { reassignApprovals } = await import('../src/workflow');
+    const rfaId = submitted();
+    expect(() => reassignApprovals(userById('itHead'), { rfaId, fromUserId: 'itHead', toUserId: 'ofelia', reason: 'x leave' })).toThrow('Only an administrator');
+    expect(() => reassignApprovals(admin(), { rfaId, fromUserId: 'itHead', toUserId: 'ofelia', reason: '' })).toThrow('short reason');
+    // The new approver is already in that step: skipped, not duplicated.
+    const result = reassignApprovals(admin(), { fromUserId: 'ana', toUserId: 'raquel', reason: 'Testing clash' }) as { count: number; skipped: unknown[] };
+    expect(result.count).toBe(0);
+    expect(result.skipped.length).toBe(1);
+  });
+
+  it('reminds only the approvers an RFA is waiting on, after the reminder period, and not twice in a row', async () => {
+    const { sendReminders } = await import('../src/followups');
+    const { notify } = await import('../src/notifications');
+    settings.set('EMAIL_ENABLED', 'TRUE');
+    const rfaId = submitted();
+    const submittedAt = Date.parse(String(rfaRow(rfaId).SUBMITTED_AT));
+    vi.mocked(notify).mockClear();
+    expect(sendReminders(new Date(submittedAt + 2 * 86400000)).reminders).toBe(0); // only 2 days
+    const result = sendReminders(new Date(submittedAt + 4 * 86400000));
+    expect(result.reminders).toBe(1);
+    expect(vi.mocked(notify).mock.calls[0][0]).toBe('APPROVAL_REMINDER');
+    expect(vi.mocked(notify).mock.calls[0][1]).toMatchObject({ EMAIL: 'itHead@example.edu' }); // the department head, not later steps
+    sheets.set('NOTIFICATIONS', [{ NOTIFICATION_TYPE: 'APPROVAL_REMINDER', STATUS: 'SENT', RFA_ID: rfaId, RECIPIENT_EMAIL: 'itHead@example.edu', SENT_AT: new Date(submittedAt + 4 * 86400000).toISOString() }]);
+    expect(sendReminders(new Date(submittedAt + 5 * 86400000)).reminders).toBe(0); // reminded yesterday
+  });
+
+  it('retries a failed approval email only while that approver is still being waited on', async () => {
+    const { retryFailedEmails } = await import('../src/followups');
+    settings.set('EMAIL_ENABLED', 'TRUE');
+    const sent: string[] = [];
+    vi.stubGlobal('MailApp', { sendEmail: (m: { to: string }) => { sent.push(m.to); } });
+    const rfaId = submitted();
+    sheets.set('NOTIFICATIONS', [
+      { NOTIFICATION_ID: 'n1', NOTIFICATION_TYPE: 'APPROVAL_REQUIRED', STATUS: 'FAILED', RFA_ID: rfaId, RECIPIENT: 'IT Head', RECIPIENT_EMAIL: 'itHead@example.edu', RETRY_COUNT: 0 },
+      { NOTIFICATION_ID: 'n2', NOTIFICATION_TYPE: 'APPROVAL_REQUIRED', STATUS: 'FAILED', RFA_ID: rfaId, RECIPIENT: 'Ana', RECIPIENT_EMAIL: 'ana@example.edu', RETRY_COUNT: 0 }
+    ]);
+    const result = retryFailedEmails(new Date());
+    expect(result).toEqual({ retried: 1, sent: 1 });
+    expect(sent).toEqual(['itHead@example.edu']); // Ana's step has not started: not resent
+    expect((sheets.get('NOTIFICATIONS') || []).find((row) => row.NOTIFICATION_ID === 'n1')).toMatchObject({ STATUS: 'SENT', RETRY_COUNT: 1 });
   });
 });

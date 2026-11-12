@@ -9,7 +9,7 @@ import { getDatabase, resetPerRequestCache } from './store';
 import { resetWorkflowCache } from './workflow';
 import { archiveYears, resetArchiveCache } from './archive';
 import { maintenanceStatus } from './maintenance';
-import { allRfasScope, createRfa, dashboardRfas, decideRfa, detailRfa, downloadAttachment, eligibleApprovers, fixedRoutePreview, listDepartments, listAllRfas, listForApproval, listRfas, saveActualExpense, submitRfa, transitionCloseout, updateRfa, uploadAttachment } from './workflow';
+import { allRfasScope, createRfa, dashboardRfas, decideRfa, detailRfa, downloadAttachment, eligibleApprovers, fixedRoutePreview, listDepartments, listAllRfas, listForApproval, listRfas, reassignApprovals, saveActualExpense, submitRfa, transitionCloseout, updateRfa, uploadAttachment } from './workflow';
 
 export interface ApiRequest { action: string; idToken?: string; payload?: Record<string, unknown>; performance?: boolean }
 
@@ -62,6 +62,7 @@ function dispatchRequest(request: ApiRequest): unknown {
     case 'admin.users.import': return withLock(() => importUsersFromList(user, payload));
     case 'admin.settings.save': return withLock(() => saveApprovalSettings(user, payload));
     case 'admin.roles.save': return withLock(() => saveApprovalRoles(user, payload));
+    case 'admin.approvals.reassign': return payload.preview === true ? reassignApprovals(user, payload) : withLock(() => reassignApprovals(user, payload));
     case 'admin.matrix.save': return withLock(() => saveMatrix(user, payload));
     case 'admin.budget.overview': return adminBudgetOverview(user, payload.fiscalYear);
     case 'admin.budget.management': return adminBudgetManagement(user, payload.fiscalYear);

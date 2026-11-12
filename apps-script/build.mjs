@@ -56,6 +56,10 @@ function runYearlyArchive() {
   return globalThis.__erfaEntrypoints.runYearlyArchive();
 }
 
+function runDailyFollowUps() {
+  return globalThis.__erfaEntrypoints.runDailyFollowUps();
+}
+
 `;
 
 await mkdir('dist', { recursive: true });
@@ -74,7 +78,7 @@ await copyFile('appsscript.json', 'dist/appsscript.json');
 
 const bundle = await readFile('dist/Code.js', 'utf8');
 const iifeEnd = bundle.lastIndexOf('})();');
-const requiredEntrypoints = ['doGet', 'doPost', 'setupDatabase', 'bootstrapAdmin', 'cleanAllNow', 'previewRfaResetNow', 'resetAllRfasKeepAccounts', 'previewArchiveNow', 'archivePastSchoolYearsNow', 'installAutomaticMaintenance', 'backupNow', 'runMonthlyBackup', 'runYearlyArchive'];
+const requiredEntrypoints = ['doGet', 'doPost', 'setupDatabase', 'bootstrapAdmin', 'cleanAllNow', 'previewRfaResetNow', 'resetAllRfasKeepAccounts', 'previewArchiveNow', 'archivePastSchoolYearsNow', 'installAutomaticMaintenance', 'backupNow', 'runMonthlyBackup', 'runYearlyArchive', 'runDailyFollowUps'];
 if (iifeEnd < 0 || requiredEntrypoints.some((name) => bundle.indexOf(`function ${name}(`, iifeEnd) < 0)) {
   throw new Error('Apps Script entry-point wrappers were not emitted at top level.');
 }

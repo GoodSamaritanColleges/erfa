@@ -46,6 +46,17 @@ Switch it on once: in the Apps Script editor run **`installAutomaticMaintenance`
 - The app shows the current school year and the previous **2** (setting `VISIBLE_PAST_SCHOOL_YEARS`). Older school years disappear from the app but stay in their archive spreadsheets and in the monthly backups.
 - The schedules run as the script owner. If that account is removed, they stop: keep a second owner on the Apps Script project.
 
+## Keeping RFAs moving
+
+**Daily follow-ups (7 AM Manila, automatic once automatic maintenance is on):**
+- **Reminders:** approvers an RFA is waiting on get a reminder email after `REMINDER_DAYS` days (default 3), repeated every 3 days while it keeps waiting. Turn off with `REMINDERS_ENABLED = FALSE`.
+- **Email retries:** failed emails are resent up to 3 times, but only while they still matter (approval emails while that person is still being waited on; other updates for RFAs changed in the last 14 days).
+- **Mondays:** administrators get a list of RFAs waiting 7 days or more, with who they are waiting on.
+
+**Hand over pending approvals** (Administration → Users): when an approver is on leave or has left, choose *From* and *To*, add a reason, click **Show waiting RFAs** to preview, then **Hand over**. Only approvals not yet given move; the new approver is emailed if it is their turn; each hand-over is in the audit log. On an RFA page, admins also see a **Hand over** link next to each waiting approver.
+
+When someone leaves for good: hand over their pending approvals, give their roles to the new person in **Approval Roles**, update department heads, then turn **Active** off for their account.
+
 ## End of each school year: archive
 
 The school year runs June to May by default (setting `SCHOOL_YEAR_START_MONTH`, 6 = June). This runs automatically on June 15 once automatic maintenance is on. To run it by hand instead, shortly after a school year ends:

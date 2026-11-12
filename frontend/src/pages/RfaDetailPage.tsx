@@ -2,6 +2,7 @@ import { ArrowLeft, Check, Download, Edit3, FileText, Printer, RotateCcw, Send, 
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
+import { useAuth } from '../auth';
 import { Dialog, ErrorNotice, Spinner, StatusBadge, SuccessNotice } from '../components';
 import { date, dateTime, displayName, expenseClassificationLabel, money, rfaNumberLabel, schoolYearLabel, stepLabel } from '../format';
 import type { Approval, ApprovalStep, Attachment, Rfa, RfaDetail } from '../types';
@@ -181,7 +182,7 @@ export function RfaDetailPage() {
       </section>
 
       <DocumentSection title="Approval History">
-        <HistoryTable approvals={approvals} status={rfa.STATUS} waiting={approvedByWaitingMap} />
+        <HistoryTable approvals={approvals} status={rfa.STATUS} waiting={approvedByWaitingMap} rfaId={rfa.RFA_ID} />
       </DocumentSection>
 
       <section className="audit-section screen-only">
@@ -334,7 +335,9 @@ function sameApprover(a: Approval, b: Approval): boolean {
   return Boolean(a.APPROVER_EMAIL) && a.APPROVER_EMAIL.toLowerCase() === (b.APPROVER_EMAIL || '').toLowerCase();
 }
 
-function HistoryTable({ approvals, status, waiting = new Map<string, string>() }: { approvals: Approval[]; status: string; waiting?: Map<string, string> }) {
+function HistoryTable({ approvals, status, waiting = new Map<string, string>(), rfaId = '' }: { approvals: Approval[]; status: string; waiting?: Map<string, string>; rfaId?: string }) {
+  const { user } = useAuth();
+  const canHandOver = Boolean(user?.IS_ADMIN) && Boolean(rfaId);
   const awaiting = status === 'SUBMITTED' || status.startsWith('PENDING_');
   // An assignment row (no action yet) is hidden once that approver has acted on the same step.
   const rows = approvals
@@ -355,7 +358,7 @@ function HistoryTable({ approvals, status, waiting = new Map<string, string>() }
         const label = acted ? actionLabel(approval.STEP, approval.ACTION) : waitingLabel ?? (awaiting ? 'Pending' : 'Not reached');
         return <tr key={approval.APPROVAL_ID}>
           <td data-label="Step">{stepLabel(approval.STEP)}</td>
-          <td data-label="Approver">{approval.APPROVER_NAME ? displayName(approval.APPROVER_NAME) : 'System'}</td>
+          <td data-label="Approver">{approval.APPROVER_NAME ? displayName(approval.APPROVER_NAME) : 'System'}{canHandOver && !acted && awaiting && approval.APPROVER_USER_ID && <Link className="handover-link" to={`/admin?tab=users&handover=${encodeURIComponent(approval.APPROVER_USER_ID)}&rfa=${encodeURIComponent(rfaId)}`}>Hand over</Link>}</td>
           <td data-label="Action"><span className={`history-action history-action-${sent ? 'sent' : acted ? approval.ACTION.toLowerCase() : waitingLabel ? 'idle' : awaiting ? 'pending' : 'idle'}`}>{label}</span></td>
           <td data-label="Remarks">{approval.REMARKS || '—'}</td>
           <td data-label={acted ? 'Date and Time' : 'Assigned'}>{acted ? dateTime(approval.TIMESTAMP) : <span className="history-muted">Assigned {dateTime(approval.TIMESTAMP)}</span>}</td>
