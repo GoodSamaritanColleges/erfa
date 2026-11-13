@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { commitApprovedFinancialRfa, expenseMonitoringReport, financialDetail, financialRfaFields, summarizeBudget } from '../src/budget';
-import { allRfasScope, createRfa, decideRfa, detailRfa, listAllRfas, listForApproval, listRfas, submitRfa, transitionCloseout } from '../src/workflow';
+import { allRfasScope, createRfa, decideRfa, detailRfa, fixedRoutePreview, listAllRfas, listForApproval, listRfas, submitRfa, transitionCloseout } from '../src/workflow';
 import type { BudgetTransactionRecord, DepartmentBudgetRecord, RfaRecord, SessionUser, SheetRecord } from '../src/types';
 
 const sheets = new Map<string, SheetRecord[]>();
@@ -778,5 +778,60 @@ describe('hand-over keeps the email order', () => {
     acted(draft.RFA_ID, userById('standIn'));
     acted(draft.RFA_ID, userById('raquel'));
     expect(status(draft.RFA_ID)).toBe('APPROVED');
+  });
+});
+
+describe('approvers filing their own RFA', () => {
+  const filer = (id: string) => ({ ...userById(id), CAN_CREATE_RFA: true }) as SessionUser;
+
+  it('a sole department head picks another department head to recommend it', () => {
+    const head = filer('itHead');
+    expect(fixedRoutePreview(head).mustPickRecommender).toBe(true);
+    const draft = createRfa(head, input());
+    expect(() => submitRfa(head, draft.RFA_ID)).toThrow(/choose another department head/);
+
+    const picked = createRfa(head, input({ recommendingAlternateUserId: 'hrHead' }));
+    submitRfa(head, picked.RFA_ID);
+    expect(assignmentsFor(picked.RFA_ID, 'RECOMMENDING_APPROVAL')).toEqual(['hrHead']);
+    expect(rfaRow(picked.RFA_ID).RECOMMENDING_ALTERNATE_NAME).toBe('HR Head');
+    acted(picked.RFA_ID, userById('hrHead'));
+    expect(step(picked.RFA_ID)).toBe('REVIEWED_AND_NOTED');
+  });
+
+  it('only a department head can be picked, never the filer or a regular employee', () => {
+    const head = filer('itHead');
+    const stranger = createRfa(head, input({ recommendingAlternateUserId: 'stranger' }));
+    expect(() => submitRfa(head, stranger.RFA_ID)).toThrow(/not an active department head/);
+    const self = createRfa(head, input({ recommendingAlternateUserId: 'itHead' }));
+    expect(() => submitRfa(head, self.RFA_ID)).toThrow(/not an active department head/);
+  });
+
+  it('a regular requester still gets their own head and no picker', () => {
+    expect(fixedRoutePreview(requesterFor('it')).mustPickRecommender).toBe(false);
+  });
+
+  it('the reviewer filing skips Reviewed and Noted By; everyone else still approves', () => {
+    const reviewer = filer('ofelia');
+    const draft = createRfa(reviewer, input());
+    submitRfa(reviewer, draft.RFA_ID);
+    expect(assignmentsFor(draft.RFA_ID, 'RECOMMENDING_APPROVAL')).toEqual(['itHead']);
+    expect(assignmentsFor(draft.RFA_ID, 'REVIEWED_AND_NOTED')).toEqual([]);
+    acted(draft.RFA_ID, userById('itHead'));
+    expect(step(draft.RFA_ID)).toBe('APPROVED_BY');
+  });
+
+  it('an Approved By official filing skips only their own approval', () => {
+    const finance = filer('ana');
+    const draft = createRfa(finance, input());
+    submitRfa(finance, draft.RFA_ID);
+    expect(assignmentsFor(draft.RFA_ID, 'APPROVED_BY')).not.toContain('ana');
+    expect(assignmentsFor(draft.RFA_ID, 'APPROVED_BY')).toContain('raquel');
+  });
+
+  it('the President filing a large request is not asked to approve it', () => {
+    const president = filer('president');
+    const draft = createRfa(president, input({ requestedAmount: '60000', budgetAllocation: 60000 }));
+    submitRfa(president, draft.RFA_ID);
+    expect(assignmentsFor(draft.RFA_ID, 'APPROVED_BY')).not.toContain('president');
   });
 });

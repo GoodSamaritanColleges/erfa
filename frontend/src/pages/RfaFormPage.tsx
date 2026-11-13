@@ -43,6 +43,7 @@ type FixedRoutePreview = {
   heads?: Array<{ departmentId: string; departmentName: string; headName: string; headCount?: number; heads?: Array<{ userId: string; fullName: string }> }>;
   departments?: Department[];
   requestingHeadCount?: number;
+  mustPickRecommender?: boolean;
   isAcademic?: boolean;
   isJhsOrShs?: boolean;
   principalName?: string;
@@ -122,6 +123,7 @@ export function RfaFormPage() {
         if (!['OPEX', 'CAPEX'].includes(form.expenseClassification)) throw new Error('Expense Classification must be OPEX or CAPEX.');
         if (!isFiscalYear(form.fiscalYear)) throw new Error('The school year could not be determined. Please reload and try again.');
         if (!form.requestedAmount || Number(form.requestedAmount) <= 0) throw new Error('Requested Amount is required.');
+        if (submit && fixedRoute?.mustPickRecommender && !form.recommendingAlternateUserId) throw new Error('Choose a department head to recommend this RFA (Approval options).');
         if (form.includePrincipal && fixedRoute && !fixedRoute.isJhsOrShs) throw new Error('The JHS/SHS Principal is only available for Junior High School or Senior High School departments.');
       }
       if (isV2Edit && !form.expenseClassification) {
@@ -265,7 +267,15 @@ export function RfaFormPage() {
           <div><h2>Approval options</h2><p>Select applicable optional approvers and involved departments. Mandatory approvers cannot be removed.</p></div>
         </div>
         {!usesLegacyWorkflow ? <>
-          <p className="muted">Your department head{headCount >= 2 ? `s (${headCount})` : ''} will be your Recommending Approver{headCount === 0 ? ' — pending configuration' : ''}.</p>
+          {fixedRoute?.mustPickRecommender ? <label className="field">
+            <span>Recommending Approver <b>*</b></span>
+            <select value={form.recommendingAlternateUserId} onChange={(e) => set('recommendingAlternateUserId', e.target.value)}>
+              <option value="">Choose a department head…</option>
+              {(fixedRoute.alternateCandidates ?? []).map((head) => <option key={head.USER_ID} value={head.USER_ID}>{displayName(head.FULL_NAME)}{head.DEPARTMENT ? ` — ${head.DEPARTMENT}` : ''}</option>)}
+            </select>
+            <small>You head your department, so another department head recommends your RFA.</small>
+          </label>
+          : <p className="muted">Your department head{headCount >= 2 ? `s (${headCount})` : ''} will be your Recommending Approver{headCount === 0 ? ' — pending configuration' : ''}.</p>}
           {isJhsOrShs && <label className="toggle-field"><input type="checkbox" checked={form.includePrincipal} onChange={(e) => set('includePrincipal', e.target.checked)} /> Include JHS/SHS Principal (Noliver Garcia) in Reviewed and Noted By</label>}
           <div className="involved-picker">
             <div className="involved-header">
@@ -312,7 +322,9 @@ export function RfaFormPage() {
         </div>
         <div className="route-names">
           <RouteStage title="Prepared By" names={[existing?.REQUESTED_BY || user?.FULL_NAME || 'Requester']} note={existing?.POSITION || user?.POSITION || ''} />
-          <RouteStage title="Recommending Approval" names={(fixedRoute?.assignments?.RECOMMENDING_APPROVAL ?? []).map((p) => p.FULL_NAME)} />
+          <RouteStage title="Recommending Approval" names={fixedRoute?.mustPickRecommender
+            ? (fixedRoute.alternateCandidates ?? []).filter((p) => p.USER_ID === form.recommendingAlternateUserId).map((p) => p.FULL_NAME)
+            : (fixedRoute?.assignments?.RECOMMENDING_APPROVAL ?? []).map((p) => p.FULL_NAME)} />
           <RouteStage title="Reviewed and Noted By" names={reviewedPreviewNames} />
           <RouteStage title="Approved By" names={(fixedRoute?.assignments?.APPROVED_BY ?? []).map((p) => p.FULL_NAME)} />
         </div>

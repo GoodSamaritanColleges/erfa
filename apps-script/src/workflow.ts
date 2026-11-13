@@ -371,6 +371,17 @@ function isValidApprover(user: UserRecord | undefined, requesterEmail: string, r
   return !!user && toBoolean(user.ACTIVE) && toBoolean(user.CAN_APPROVE_RFA) && user.USER_ID !== requesterUserId && normalizeEmail(user.EMAIL) !== requesterEmail;
 }
 
+/** Whether the user is listed as a head of the department (active or not as an approver). */
+function requesterIsHeadOf(departmentId: string, usersById: Map<string, UserRecord>, userId: string): boolean {
+  return getDepartmentHeads(departmentId, usersById, '', '', false).some((h) => h.USER_ID === userId);
+}
+
+/** Whether the user heads at least one active department. */
+function headOfAnyDepartment(userId: string, usersById: Map<string, UserRecord>): boolean {
+  return all<DepartmentRecord>('DEPARTMENTS').filter((d) => toBoolean(d.ACTIVE))
+    .some((d) => getDepartmentHeads(d.DEPARTMENT_ID, usersById, '', '', false).some((h) => h.USER_ID === userId));
+}
+
 /** Heads for a department: DEPARTMENT_HEADS rows first, primary field as fallback. */
 function getDepartmentHeads(departmentId: string, usersById: Map<string, UserRecord>, requesterEmail: string, requesterUserId: string, requireValid = true): UserRecord[] {
   const heads: UserRecord[] = [];
@@ -530,12 +541,14 @@ function resolveOfficialAssignments(
   if (!requestingDept || !toBoolean(requestingDept.ACTIVE)) businessError('Your configured department is missing or inactive.', 'CONFIGURATION_REQUIRED');
 
   const assignments = emptyAssignments();
+  const ownMatrixSkipped: Partial<Record<string, boolean>> = {};
   const resolveMatrix = (section: ApprovalSection): EligibleApprover[] => {
     const rows = matrix.filter((row) => row.DEPARTMENT_ID === departmentId && row.APPROVAL_STEP === section).sort((a, b) => Number(a.SEQUENCE) - Number(b.SEQUENCE));
     const out: EligibleApprover[] = [];
     const seen = new Set<string>();
     for (const row of rows) {
       const c = usersById.get(String(row.APPROVER_USER_ID));
+      if (c && (c.USER_ID === requesterUserId || normalizeEmail(c.EMAIL) === requester)) { ownMatrixSkipped[section] = true; continue; }
       if (!c || !isValidApprover(c, requester, requesterUserId)) continue;
       if (isReplacedOfficial(c)) continue; // role now held by someone else (set in Approval settings)
       if (seen.has(c.USER_ID)) continue;
@@ -546,22 +559,42 @@ function resolveOfficialAssignments(
   };
 
   // --- Stage 1: Recommending Approval (Dept Head — all must approve) ---
-  // Alternate selection removed — single head approves alone; dual heads: either approves.
   let recommending: EligibleApprover[] = [];
   const heads = getDepartmentHeads(departmentId, usersById, requester, requesterUserId, true);
   recommending = heads.map((h) => toEligible(h, deptNameMap));
-  const alternateName = '';
-  // Backward compat: ignore any legacy alternate selection (don't require, don't add)
+  let alternateName = '';
+  // A head filing their own RFA, with no other head in their department, picks any other
+  // department head to recommend it (they cannot recommend their own request).
+  if (!recommending.length && requesterIsHeadOf(departmentId, usersById, requesterUserId)) {
+    const pickedId = selections.recommendingAlternateUserId;
+    const picked = pickedId ? usersById.get(pickedId) : undefined;
+    if (picked && isValidApprover(picked, requester, requesterUserId) && headOfAnyDepartment(picked.USER_ID, usersById)) {
+      recommending = [toEligible(picked, deptNameMap)];
+      alternateName = picked.FULL_NAME;
+    } else if (strict) {
+      businessError(pickedId
+        ? 'The selected Recommending Approver is not an active department head. Please choose another.'
+        : 'You are the head of your department, so choose another department head to recommend this RFA (Approval options).', 'VALIDATION');
+    }
+  }
   if (strict && !recommending.length) businessError('No Department Head is configured for the requesting department. An administrator must set department heads before submission.', 'CONFIGURATION_REQUIRED');
   assignments.RECOMMENDING_APPROVAL = recommending;
 
   // Roles from Administration -> Approval roles. Each applicable role must have a person who can approve.
   const canApprove = (u: UserRecord) => isValidApprover(u, requester, requesterUserId);
+  // The requester's own official role is skipped (no one approves their own RFA); the
+  // other approvers in that stage still approve, and an empty stage is passed over.
+  const heldByRequester = (role: ApprovalRole): boolean => {
+    const holder = resolveRole(role, usersById, (u) => isValidApprover(u, '', ''));
+    return !!holder && (holder.USER_ID === requesterUserId || normalizeEmail(holder.EMAIL) === requester);
+  };
+  const ownRoleSkipped: Partial<Record<RoleStage, boolean>> = {};
   const roleHolders = (stage: RoleStage, applies: (role: ApprovalRole) => boolean, why: string): EligibleApprover[] => {
     const holders: EligibleApprover[] = [];
     for (const role of activeRoles(stage).filter(applies)) {
       const holder = resolveRole(role, usersById, canApprove);
       if (holder) addDistinct(holders, [toEligible(holder, deptNameMap)]);
+      else if (heldByRequester(role)) ownRoleSkipped[stage] = true;
       else if (strict) businessError(`The approval role "${role.TITLE}" has no person assigned${why}. An administrator must assign it in Approval roles before submission.`, 'CONFIGURATION_REQUIRED');
     }
     return holders;
@@ -576,7 +609,7 @@ function resolveOfficialAssignments(
   let mandatoryReviewed = resolveMatrix('REVIEWED_AND_NOTED');
   if (!mandatoryReviewed.length) mandatoryReviewed = roleHolders('REVIEWED_AND_NOTED', (role) => role.CONDITION === 'ALWAYS', '');
   addDistinct(reviewed, mandatoryReviewed);
-  if (strict && !mandatoryReviewed.length) businessError('Reviewed and Noted By has no approver. An administrator must assign it in Approval roles before submission.', 'CONFIGURATION_REQUIRED');
+  if (strict && !mandatoryReviewed.length && !ownRoleSkipped.REVIEWED_AND_NOTED && !ownMatrixSkipped.REVIEWED_AND_NOTED) businessError('Reviewed and Noted By has no approver. An administrator must assign it in Approval roles before submission.', 'CONFIGURATION_REQUIRED');
   addDistinct(reviewed, roleHolders('REVIEWED_AND_NOTED', conditional, ' for this request'));
 
   // Optional: Other Department Heads (all heads per involved dept — all must approve)
@@ -607,7 +640,7 @@ function resolveOfficialAssignments(
   const mandatoryApproved = resolveMatrix('APPROVED_BY');
   addDistinct(mandatoryApproved, roleHolders('APPROVED_BY', (role) => role.CONDITION === 'ALWAYS', ''));
   addDistinct(approved, mandatoryApproved);
-  if (strict && !mandatoryApproved.length) businessError('Approved By has no approvers. An administrator must assign them in Approval roles before submission.', 'CONFIGURATION_REQUIRED');
+  if (strict && !mandatoryApproved.length && !ownRoleSkipped.APPROVED_BY && !ownMatrixSkipped.APPROVED_BY) businessError('Approved By has no approvers. An administrator must assign them in Approval roles before submission.', 'CONFIGURATION_REQUIRED');
   // Conditional roles: academic departments (e.g. VP for Academic Affairs), at or above the threshold (e.g. President)
   addDistinct(approved, roleHolders('APPROVED_BY', conditional, ' for this request'));
   assignments.APPROVED_BY = approved;
@@ -710,6 +743,7 @@ export function fixedRoutePreview(user: SessionUser): Record<string, unknown> {
     assignments, heads, departments,
     requestingDepartment: department,
     requestingHeadCount: headsForRequesting.length,
+    mustPickRecommender: !getDepartmentHeads(user.DEPARTMENT_ID, usersById, user.EMAIL, user.USER_ID, true).length && requesterIsHeadOf(user.DEPARTMENT_ID, usersById, user.USER_ID),
     isAcademic: isAcademicDepartment(department as DepartmentRecord),
     isJhsOrShs: isJhsOrShsDepartment(department as DepartmentRecord),
     presidentThresholdPhp: getThresholdCents() / 100,
