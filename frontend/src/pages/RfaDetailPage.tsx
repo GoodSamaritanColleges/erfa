@@ -158,7 +158,7 @@ export function RfaDetailPage() {
           <Fact label="Target Date" value={date(rfa.TARGET_DATE)} />
           {(rfa.INVOLVED_DEPARTMENT_NAME || financial?.involvedDepartmentName) && <Fact label="Involved Department(s)" value={rfa.INVOLVED_DEPARTMENT_NAME || financial?.involvedDepartmentName || ''} />}
           {financial?.approvedAmount ? <Fact label="Approved Amount" value={money(financial.approvedAmount)} /> : null}
-          {(rfa.RECOMMENDING_ALTERNATE_NAME || financial?.recommendingAlternateName) && <Fact label="Alternate Head" value={rfa.RECOMMENDING_ALTERNATE_NAME || financial?.recommendingAlternateName || ''} />}
+          {(rfa.RECOMMENDING_ALTERNATE_NAME || financial?.recommendingAlternateName) && <Fact label="Recommending Approver (chosen by requester)" value={rfa.RECOMMENDING_ALTERNATE_NAME || financial?.recommendingAlternateName || ''} />}
           {financial?.categoryName ? <Fact label="Historical Expense Category" value={financial.categoryName} /> : null}
         </section>
       </DocumentSection>

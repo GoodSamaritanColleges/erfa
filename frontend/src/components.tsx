@@ -116,6 +116,9 @@ export function Layout() {
   const { user, signOut, sessionExpired } = useAuth();
   const { pathname } = useLocation();
   const pending = usePendingCount(Boolean(user?.CAN_APPROVE_RFA), pathname);
+  const [adminMenuOpen, setAdminMenuOpen] = useState(false);
+  // Each page opens at the top instead of keeping the previous page's scroll position.
+  useEffect(() => { setAdminMenuOpen(false); window.scrollTo(0, 0); }, [pathname]);
   useEffect(() => {
     const base = 'eRFA | Electronic Request for Approval';
     document.title = pending > 0 ? `(${pending}) ${base}` : base;
@@ -187,9 +190,16 @@ export function Layout() {
       {canSeeAll && <NavLink to="/all-rfas"><Files />All RFAs</NavLink>}
       {user.CAN_CREATE_RFA && <NavLink to="/rfa/new"><FilePlus2 />Create</NavLink>}
       {user.CAN_APPROVE_RFA && <NavLink to="/approvals" aria-label={pendingLabel ? `For My Action, ${pendingLabel}` : undefined}><span className="mobile-icon-wrap"><ShieldCheck /><CountBubble count={pending} className="mobile-count" /></span>Action</NavLink>}
-      {user.IS_ADMIN && <NavLink to="/admin" end><Settings2 />Admin</NavLink>}
-      {user.IS_ADMIN && <NavLink to="/admin/expense-monitoring"><Wallet />Expenses</NavLink>}
-      {user.IS_ADMIN && <NavLink to="/admin/expense-reports"><BarChart3 />Reports</NavLink>}
+      {/* Admin pages share one button so every item fits on a phone */}
+      {user.IS_ADMIN && <button type="button" className={`mobile-admin-toggle${pathname.startsWith('/admin') ? ' active' : ''}`} aria-expanded={adminMenuOpen} aria-controls="mobile-admin-menu" onClick={() => setAdminMenuOpen((open) => !open)}><Settings2 />Admin</button>}
     </nav>
+    {user.IS_ADMIN && adminMenuOpen && <>
+      <button type="button" className="mobile-admin-backdrop" aria-label="Close menu" onClick={() => setAdminMenuOpen(false)} />
+      <div id="mobile-admin-menu" className="mobile-admin-menu" role="menu">
+        <NavLink to="/admin" end role="menuitem"><Settings2 />Administration</NavLink>
+        <NavLink to="/admin/expense-monitoring" role="menuitem"><Wallet />Expense Monitoring</NavLink>
+        <NavLink to="/admin/expense-reports" role="menuitem"><BarChart3 />Expense Reports</NavLink>
+      </div>
+    </>}
   </div>;
 }

@@ -985,3 +985,27 @@ thead th { background: #f6f8fc; color: #45526a; }
   .rfa-document.is-cancelled { position: relative; }
   .rfa-document.is-cancelled .print-cancelled { display: block !important; position: absolute; top: 38%; left: 0; right: 0; text-align: center; font-size: 72pt; font-weight: 800; letter-spacing: .12em; color: rgba(185, 28, 28, .16); transform: rotate(-24deg); pointer-events: none; z-index: 5; }
 }
+
+/* Phone bottom bar: items share the width; admin pages open from one menu */
+.mobile-admin-menu, .mobile-admin-backdrop { display: none; }
+@media (max-width: 900px) {
+  .mobile-nav { overflow-x: visible; }
+  .mobile-nav a, .mobile-admin-toggle { flex: 1 1 0; min-width: 0; }
+  .mobile-admin-toggle { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .2rem; padding: .45rem .25rem; border: 0; border-top: 2px solid transparent; background: none; color: var(--muted); font: inherit; font-size: .68rem; font-weight: 500; cursor: pointer; }
+  .mobile-admin-toggle svg { width: 19px; height: 19px; }
+  .mobile-admin-toggle.active { border-top-color: var(--accent); background: var(--tint); color: var(--brand); font-weight: 650; }
+  .mobile-admin-backdrop { display: block; position: fixed; inset: 0; z-index: 91; border: 0; background: rgba(7, 42, 89, .18); }
+  .mobile-admin-menu { display: flex; flex-direction: column; position: fixed; right: .5rem; bottom: calc(4rem + env(safe-area-inset-bottom)); z-index: 92; min-width: 14rem; padding: .35rem; border: 1px solid var(--line); border-radius: 12px; background: #fff; box-shadow: 0 12px 32px rgba(16, 24, 40, .18); }
+  .mobile-admin-menu a { display: flex; align-items: center; gap: .6rem; padding: .7rem .8rem; border-radius: 8px; color: var(--ink, #1f2937); font-size: var(--text-sm); font-weight: 550; text-decoration: none; }
+  .mobile-admin-menu a svg { width: 18px; height: 18px; color: var(--brand); }
+  .mobile-admin-menu a.active { background: var(--tint); color: var(--brand); }
+}
+
+/* Dashboard counts on tablets and phones: two compact columns, a lone last card spans the row */
+@media (max-width: 900px) {
+  .metrics { grid-template-columns: repeat(2, 1fr); gap: .6rem; }
+  .metrics .metric:last-child:nth-child(odd) { grid-column: 1 / -1; }
+}
+@media (max-width: 620px) {
+  .metrics .metric { padding: .75rem .85rem; gap: .65rem; }
+}
