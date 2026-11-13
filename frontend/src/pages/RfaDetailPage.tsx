@@ -11,6 +11,17 @@ const legacySteps: ApprovalStep[] = ['PREPARED_BY', 'RECOMMENDING_APPROVAL', 'RE
 const legacyAssignmentSteps: ApprovalStep[] = ['PREPARED_BY', 'RECOMMENDING_APPROVAL', 'REVIEWED_BY', 'NOTED_BY', 'APPROVED_BY'];
 const standardSteps: ApprovalStep[] = ['PREPARED_BY', 'REVIEWED_BY', 'NOTED_BY', 'APPROVED_BY'];
 const officialSteps: ApprovalStep[] = ['PREPARED_BY', 'RECOMMENDING_APPROVAL', 'REVIEWED_AND_NOTED', 'APPROVED_BY'];
+// A PDF is offered only once an RFA is final: approved (and after) or cancelled.
+const pdfStatuses = new Set(['APPROVED', 'IMPLEMENTATION', 'CLOSED', 'CANCELLED']);
+
+/** Print to PDF with the RFA number as the suggested file name. */
+function savePdf(rfa: Rfa) {
+  const previous = document.title;
+  document.title = [rfaNumberLabel(rfa.RFA_NUMBER), rfa.REQUEST_TITLE].filter(Boolean).join(' - ').replace(/[\\/:*?"<>|]+/g, ' ');
+  const restore = () => { document.title = previous; window.removeEventListener('afterprint', restore); };
+  window.addEventListener('afterprint', restore);
+  window.print();
+}
 
 export function RfaDetailPage() {
   const { id = '' } = useParams();
@@ -99,7 +110,7 @@ export function RfaDetailPage() {
           </div>
         </div>
         <div className="header-actions">
-          <button className="button secondary" onClick={() => window.print()}><Printer size={16} /> Print / PDF</button>
+          {pdfStatuses.has(rfa.STATUS) && <button className="button secondary" onClick={() => savePdf(rfa)}><Printer size={16} /> Download PDF</button>}
           {permissions.canEdit && <Link className="button secondary" to={`/rfa/${rfa.RFA_ID}/edit`}><Edit3 size={16} /> Edit</Link>}
         </div>
       </header>
@@ -118,7 +129,8 @@ export function RfaDetailPage() {
       </div>}
     </div>
 
-    <article className="rfa-document">
+    <article className={`rfa-document${pdfStatuses.has(rfa.STATUS) ? '' : ' not-final'}${rfa.STATUS === 'CANCELLED' ? ' is-cancelled' : ''}`}>
+      {rfa.STATUS === 'CANCELLED' && <div className="print-cancelled" aria-hidden="true">CANCELLED</div>}
       <header className="print-brand">
         <img src={`${import.meta.env.BASE_URL}gsc-logo.png`} alt="Good Samaritan Colleges" />
         <div>

@@ -976,3 +976,12 @@ thead th { background: #f6f8fc; color: #45526a; }
   .mobile-nav a.active { border-top-color: var(--accent); background: var(--tint); color: var(--brand); }
 }
 @media print { .panel, .table-panel, .form-card { border-top: 1px solid #ddd; } }
+
+/* PDF only for final RFAs (approved or cancelled); cancelled copies are clearly marked */
+.print-cancelled { display: none; }
+@media print {
+  .rfa-document.not-final > * { display: none !important; }
+  .rfa-document.not-final::before { content: "This RFA is not final yet. A PDF is available once it is approved or cancelled."; display: block; padding: 40mm 10mm; text-align: center; font-size: 14pt; }
+  .rfa-document.is-cancelled { position: relative; }
+  .rfa-document.is-cancelled .print-cancelled { display: block !important; position: absolute; top: 38%; left: 0; right: 0; text-align: center; font-size: 72pt; font-weight: 800; letter-spacing: .12em; color: rgba(185, 28, 28, .16); transform: rotate(-24deg); pointer-events: none; z-index: 5; }
+}
