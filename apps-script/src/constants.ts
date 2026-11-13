@@ -102,8 +102,8 @@ export const DEFAULT_SETTINGS = [
   ['PRESIDENT_USER_ID', '', 'Role: President - user ID'],
   ['PRINCIPAL_USER_ID', '', 'Role: JHS/SHS Principal - user ID'],
   ['PROCUREMENT_USER_ID', '', 'Role: Procurement - user ID'],
-  ['VP_ADMIN_FINANCE_EMAIL', 'vp.finance@example.edu', 'Email of the VP for Admin and Finance role (used only while that role is unassigned; follows Approval settings)'],
-  ['PRESIDENT_EMAIL', 'president@example.edu', 'Email of the President role (used only while that role is unassigned; follows Approval settings)']
+  ['VP_ADMIN_FINANCE_EMAIL', '', 'Email of the VP for Admin and Finance role (used only while that role is unassigned; follows Approval settings)'],
+  ['PRESIDENT_EMAIL', '', 'Email of the President role (used only while that role is unassigned; follows Approval settings)']
 ] as const;
 
 export const ALLOWED_ATTACHMENT_TYPES = [

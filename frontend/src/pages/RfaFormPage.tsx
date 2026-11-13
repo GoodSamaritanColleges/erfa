@@ -276,7 +276,7 @@ export function RfaFormPage() {
             <small>You head your department, so another department head recommends your RFA.</small>
           </label>
           : <p className="muted">Your department head{headCount >= 2 ? `s (${headCount})` : ''} will be your Recommending Approver{headCount === 0 ? ' — pending configuration' : ''}.</p>}
-          {isJhsOrShs && <label className="toggle-field"><input type="checkbox" checked={form.includePrincipal} onChange={(e) => set('includePrincipal', e.target.checked)} /> Include JHS/SHS Principal (Noliver Garcia) in Reviewed and Noted By</label>}
+          {isJhsOrShs && <label className="toggle-field"><input type="checkbox" checked={form.includePrincipal} onChange={(e) => set('includePrincipal', e.target.checked)} /> Include JHS/SHS Principal{fixedRoute?.principalName ? ` (${displayName(fixedRoute.principalName)})` : ''} in Reviewed and Noted By</label>}
           <div className="involved-picker">
             <div className="involved-header">
               <b>Involved Department(s)</b>

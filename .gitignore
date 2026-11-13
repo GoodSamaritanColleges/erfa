@@ -10,3 +10,7 @@ coverage/
 
 # Local demo server bundle (built by apps-script/dev/build-demo.mjs)
 apps-script/dev/demo-server.cjs
+
+# Staff lists and import files: personal data, never commit
+private/
+import/
