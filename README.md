@@ -33,7 +33,7 @@ pnpm dev
 1. Build `apps-script/dist/Code.js` with `pnpm --filter @erfa/apps-script build`.
 2. Create an Apps Script project, add the built `Code.js`, and use the built `appsscript.json` manifest.
 3. Run `setupDatabase()` once from the Apps Script editor and authorize Sheets, Drive, external token verification, and email.
-4. In the generated `SETTINGS` sheet, set `GOOGLE_CLIENT_ID`, `ALLOWED_DOMAIN` if required, and `FRONTEND_URL`. For the production Pages site, use `https://goodsamaritancolleges.github.io/erfa/`; notification emails use this configured base URL to link directly to each RFA.
+4. In the generated `SETTINGS` sheet, set `GOOGLE_CLIENT_ID`, `ALLOWED_DOMAIN` if required, and `FRONTEND_URL`. For the production Pages site, use `https://erfa.gsc.edu.ph/`; notification emails use this configured base URL to link directly to each RFA.
 5. Run `bootstrapAdmin('admin@institution.edu', 'Administrator Name')` once using the real initial administrator. This is intentionally not seeded.
 6. Deploy the Apps Script project as a Web App executing as the owner and accessible to the users in scope.
 7. Set the GitHub repository variables `VITE_API_URL`, `VITE_GOOGLE_CLIENT_ID`, and optionally `VITE_BASE_PATH`, then enable GitHub Pages through Actions.
