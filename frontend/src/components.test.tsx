@@ -24,7 +24,10 @@ describe('sidebar active navigation', () => {
     for (const navClass of ['sidebar-nav', 'mobile-nav']) {
       const nav = html.match(new RegExp(`<nav class="${navClass}"[^>]*>(.*?)</nav>`))?.[1] || '';
       const activeHrefs = [...nav.matchAll(/<a(?=[^>]*class="active")(?=[^>]*href="([^"]+)")[^>]*>/g)].map((match) => match[1]);
-      expect(activeHrefs).toEqual([expectedHref]);
+      // On phones the admin pages share one Admin button, which is active instead of a link.
+      const adminOnPhone = navClass === 'mobile-nav' && route.startsWith('/admin');
+      expect(activeHrefs).toEqual(adminOnPhone ? [] : [expectedHref]);
+      if (navClass === 'mobile-nav') expect(/class="mobile-admin-toggle active"/.test(nav)).toBe(adminOnPhone);
     }
   });
 
