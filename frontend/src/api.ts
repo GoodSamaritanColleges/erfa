@@ -18,6 +18,48 @@ export function onDataChanged(listener: () => void): () => void { changeListener
 // show it instantly while a fresh copy loads. Cleared by any write and by sign-out.
 const lastGood = new Map<string, unknown>();
 const viewKey = (action: string, payload: Record<string, unknown>) => JSON.stringify([action, payload]);
+
+// The last-seen data and the signed-in user are also kept in this tab's sessionStorage, so a
+// page reload shows them at once instead of waiting on the server. They belong to one account
+// (by email from the sign-in token) and are dropped on sign-out, on any change, or for another
+// account. sessionStorage ends with the tab, so nothing stays on a shared computer afterwards.
+const STORE_KEY = 'erfa_view_cache_v1';
+const STORE_LIMIT_CHARS = 1_500_000;
+let storedSession: unknown;
+function tokenEmail(token: string): string {
+  try {
+    const part = token.split('.')[1] ?? '';
+    const json = JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/'))) as { email?: string };
+    return String(json.email ?? '').toLowerCase();
+  } catch { return ''; }
+}
+function forgetStored(): void { storedSession = undefined; try { sessionStorage.removeItem(STORE_KEY); } catch { /* storage unavailable */ } }
+let persistQueued = false;
+function persistSoon(): void {
+  if (persistQueued) return;
+  persistQueued = true;
+  setTimeout(() => {
+    persistQueued = false;
+    const owner = tokenEmail(getToken());
+    if (!owner) return;
+    try {
+      const text = JSON.stringify({ owner, session: storedSession, views: [...lastGood] });
+      if (text.length > STORE_LIMIT_CHARS) { sessionStorage.removeItem(STORE_KEY); return; }
+      sessionStorage.setItem(STORE_KEY, text);
+    } catch { try { sessionStorage.removeItem(STORE_KEY); } catch { /* storage unavailable */ } }
+  }, 0);
+}
+(function restoreStored() {
+  try {
+    const owner = tokenEmail(sessionStorage.getItem('erfa_google_id_token') ?? '');
+    const saved = JSON.parse(sessionStorage.getItem(STORE_KEY) || 'null') as { owner?: string; session?: unknown; views?: Array<[string, unknown]> } | null;
+    if (!saved || !owner || saved.owner !== owner) { sessionStorage.removeItem(STORE_KEY); return; }
+    storedSession = saved.session;
+    for (const [key, value] of saved.views ?? []) lastGood.set(key, value);
+  } catch { /* storage unavailable or damaged: start empty */ }
+})();
+/** The signed-in user from earlier in this tab, so a reload can open the app at once. */
+export function peekSession<T>(): T | undefined { return storedSession as T | undefined; }
 /** Last data loaded for this read during this visit, or undefined. Pages show it while refreshing. */
 export function peek<T>(action: string, payload: Record<string, unknown> = {}): T | undefined {
   return lastGood.get(viewKey(action, payload)) as T | undefined;
@@ -51,8 +93,10 @@ export class ApiError extends Error {
 export function getToken(): string { return sessionStorage.getItem(TOKEN_KEY) ?? ''; }
 export function setToken(token: string): void {
   clearReadCache();
+  // A different account never sees the previous account's remembered pages.
+  if (token && tokenEmail(token) !== tokenEmail(getToken())) { lastGood.clear(); forgetStored(); }
   if (token) sessionStorage.setItem(TOKEN_KEY, token);
-  else { sessionStorage.removeItem(TOKEN_KEY); lastGood.clear(); }
+  else { sessionStorage.removeItem(TOKEN_KEY); lastGood.clear(); forgetStored(); }
 }
 export function isConfigured(): boolean { return Boolean(API_URL && import.meta.env.VITE_GOOGLE_CLIENT_ID); }
 
@@ -68,7 +112,7 @@ export async function api<T>(action: string, payload: Record<string, unknown> = 
   }
   const diagnostic = sessionStorage.getItem('erfa_perf') === '1';
   const key = coalescedReads.has(action) ? JSON.stringify([action, payload, idToken]) : '';
-  if (!key) { clearReadCache(); lastGood.clear(); }
+  if (!key) { clearReadCache(); lastGood.clear(); persistSoon(); }
   const cacheable = Boolean(key) && cachedReads.has(action);
   if (cacheable) {
     const hit = readCache.get(key);
@@ -104,6 +148,8 @@ export async function api<T>(action: string, payload: Record<string, unknown> = 
     if (cacheable) readCache.set(key, { at: Date.now(), data: result.data });
     else if (!key) { clearReadCache(); lastGood.clear(); queueMicrotask(() => changeListeners.forEach((listener) => listener())); }
     if (key && action !== 'session') lastGood.set(viewKey(action, payload), result.data);
+    if (action === 'session') storedSession = (result.data as { user?: unknown }).user;
+    if (key) persistSoon();
     return result.data;
     } finally {
       if (diagnostic) console.info('[eRFA PERF]', /^[a-z.]+$/.test(action) ? action : 'request', {
@@ -119,6 +165,20 @@ export async function api<T>(action: string, payload: Record<string, unknown> = 
   const shared = request.finally(() => { if (pendingReads.get(key) === shared) pendingReads.delete(key); });
   pendingReads.set(key, shared);
   return shared;
+}
+
+/**
+ * Load a read in the background so the page that needs it opens instantly. Errors are ignored
+ * (the page loads normally if a prefetch failed), and a recent copy is never fetched twice.
+ */
+const recentPrefetch = new Map<string, number>();
+export function prefetch(action: string, payload: Record<string, unknown> = {}): void {
+  if (!coalescedReads.has(action) || !getToken()) return;
+  const key = viewKey(action, payload);
+  const last = recentPrefetch.get(key) ?? 0;
+  if (Date.now() - last < READ_CACHE_TTL_MS) return;
+  recentPrefetch.set(key, Date.now());
+  api(action, payload).catch(() => recentPrefetch.delete(key));
 }
 
 export function fileToBase64(file: File): Promise<string> {

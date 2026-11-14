@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { api, getToken, onSessionProblem, setToken } from './api';
+import { api, ApiError, getToken, onSessionProblem, peekSession, setToken, tokenExpiresAt } from './api';
 import type { SessionUser } from './types';
 
 interface AuthContextValue {
@@ -16,19 +16,31 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<SessionUser | null>(null);
-  const [loading, setLoading] = useState(Boolean(getToken()));
+  // After a reload, open straight away as the user remembered in this tab (while the sign-in is
+  // still valid); the server confirms in the background and corrects anything that changed.
+  const [user, setUser] = useState<SessionUser | null>(() => {
+    const token = getToken();
+    const remembered = peekSession<SessionUser>();
+    return token && remembered && tokenExpiresAt(token) > Date.now() ? remembered : null;
+  });
+  const [loading, setLoading] = useState(() => Boolean(getToken()) && !user);
   const [error, setError] = useState('');
   const [sessionExpired, setSessionExpired] = useState(false);
 
-  const loadSession = useCallback(async () => {
-    setLoading(true); setError('');
+  const loadSession = useCallback(async (quiet = false) => {
+    if (!quiet) setLoading(true);
+    setError('');
     try { setUser((await api<{ user: SessionUser }>('session')).user); setSessionExpired(false); }
-    catch (caught) { setToken(''); setUser(null); setError(caught instanceof Error ? caught.message : 'Sign-in failed.'); }
+    catch (caught) {
+      // A brief connection problem while confirming a remembered user keeps them signed in.
+      if (quiet && caught instanceof ApiError && caught.code === 'NETWORK_ERROR') return;
+      setToken(''); setUser(null); setError(caught instanceof Error ? caught.message : 'Sign-in failed.');
+    }
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { if (getToken()) void loadSession(); }, [loadSession]);
+  // Runs once on start; quiet when a remembered user is already shown.
+  useEffect(() => { if (getToken()) void loadSession(Boolean(user)); }, [loadSession]);
 
   const signOut = useCallback(() => { setToken(''); setUser(null); setError(''); setSessionExpired(false); }, []);
 

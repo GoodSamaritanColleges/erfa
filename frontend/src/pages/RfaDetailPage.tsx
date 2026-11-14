@@ -1,7 +1,7 @@
-import { ArrowLeft, Check, Download, Edit3, FileText, Printer, RotateCcw, Send, XCircle } from 'lucide-react';
+import { ArrowLeft, Check, Download, Edit3, FileText, LoaderCircle, Printer, RotateCcw, Send, XCircle } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { api } from '../api';
+import { api, peek } from '../api';
 import { useAuth } from '../auth';
 import { Dialog, ErrorNotice, Spinner, StatusBadge, SuccessNotice } from '../components';
 import { date, dateTime, displayName, expenseClassificationLabel, money, rfaNumberLabel, schoolYearLabel, stepLabel } from '../format';
@@ -28,9 +28,11 @@ export function RfaDetailPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const schoolYear = Number(searchParams.get('sy') || 0);
-  const [detail, setDetail] = useState<RfaDetail | null>(null);
+  // A copy loaded in the background (hovering its link, or earlier this visit) shows at once.
+  const [detail, setDetail] = useState<RfaDetail | null>(() => peek<RfaDetail>('rfa.detail', schoolYear ? { rfaId: id, schoolYear } : { rfaId: id }) ?? null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [pending, setPending] = useState('');
   const [loading, setLoading] = useState(true);
   const [dialog, setDialog] = useState<'approve'|'return'|'disapprove'|null>(null);
   const [remarks, setRemarks] = useState('');
@@ -46,18 +48,25 @@ export function RfaDetailPage() {
 
   useEffect(load, [load]);
 
+  // The dialog closes as soon as the decision is confirmed and a progress note shows while it
+  // saves; if saving fails, the dialog reopens with the remarks kept.
   async function decide() {
     if (!dialog) return;
+    const action = dialog;
+    setDialog(null);
     setWorking(true);
     setError('');
+    setSuccess('');
+    setPending(action === 'approve' ? 'Recording your approval…' : action === 'return' ? 'Returning the RFA for revision…' : 'Recording the disapproval…');
     try {
-      await api(`rfa.${dialog}`, { rfaId: id, remarks });
-      setDialog(null);
+      await api(`rfa.${action}`, { rfaId: id, remarks });
       setRemarks('');
-      setSuccess(dialog === 'approve' ? 'Approval recorded and the workflow advanced.' : `RFA ${dialog === 'return' ? 'returned for revision' : 'disapproved'}.`);
+      setSuccess(action === 'approve' ? 'Approval recorded and the workflow advanced.' : `RFA ${action === 'return' ? 'returned for revision' : 'disapproved'}.`);
       load();
-    } catch (caught) { setError(caught instanceof Error ? caught.message : 'The action failed.'); }
-    finally { setWorking(false); }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'The action failed.');
+      setDialog(action);
+    } finally { setWorking(false); setPending(''); }
   }
 
   async function transition(action: 'implementation'|'close') {
@@ -116,7 +125,8 @@ export function RfaDetailPage() {
       </header>
       <ErrorNotice message={error} />
       <SuccessNotice message={success} />
-      {permissions.canDecide && <div className="action-banner">
+      {pending && <div className="notice saving" role="status"><LoaderCircle size={18} className="spin" />{pending}</div>}
+      {permissions.canDecide && !working && <div className="action-banner">
         <div className="action-banner-left">
           <b>ACTION REQUIRED — This request is awaiting your review</b>
           <span>Review the details and attachments, then approve, return, or disapprove.</span>
@@ -215,7 +225,7 @@ export function RfaDetailPage() {
     </article>
 
     <section className={`decision-bar screen-only ${permissions.canDecide ? 'sticky' : ''}`}>
-      {permissions.canDecide && <>
+      {permissions.canDecide && !working && <>
         <div>
           <span className="eyebrow orange">ACTION REQUIRED</span>
           <b>Review the complete RFA and attachments before acting.</b>

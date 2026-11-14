@@ -1,7 +1,7 @@
 import { AlertTriangle, BarChart3, Files, CheckCircle2, FilePlus2, FileText, Home, ListTodo, LoaderCircle, LogOut, Settings2, ShieldCheck, Wallet, X } from 'lucide-react';
 import { Component, Suspense, useEffect, useState, type ErrorInfo, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
-import { api, onDataChanged } from './api';
+import { api, onDataChanged, prefetch } from './api';
 import { useAuth } from './auth';
 import { GoogleSignInButton } from './googleSignIn';
 import { statusLabel } from './format';
@@ -112,11 +112,56 @@ export function Dialog({ title, children, onClose }: { title: string; children: 
   </div>;
 }
 
+/** Lists usually opened next; must match the payloads RfaListPage asks for. */
+const MY_RFAS_FILTERS = { query: '', status: '', expenseClassification: '', fiscalYear: '' };
+
+/**
+ * Makes the next page open instantly: shortly after the app opens it loads For My Action and
+ * My RFAs in the background, and it starts loading an RFA as soon as the pointer rests on (or a
+ * finger touches) a link to it.
+ */
+function useWarmUp(user: { CAN_APPROVE_RFA?: boolean; CAN_CREATE_RFA?: boolean } | null): void {
+  const canApprove = Boolean(user?.CAN_APPROVE_RFA);
+  const canCreate = Boolean(user?.CAN_CREATE_RFA);
+  const signedIn = Boolean(user);
+  useEffect(() => {
+    if (!signedIn) return;
+    const timer = window.setTimeout(() => {
+      if (canApprove) prefetch('rfa.forApproval', {});
+      if (canCreate) prefetch('rfa.list', MY_RFAS_FILTERS);
+    }, 1200);
+    let hoverTimer = 0;
+    const rfaLink = (target: EventTarget | null): { rfaId: string; schoolYear: number } | null => {
+      const link = target instanceof Element ? target.closest('a[href]') : null;
+      const match = link?.getAttribute('href')?.match(/^#\/rfa\/([^/?#]+)(?:\?sy=(\d+))?$/);
+      if (!match || match[1] === 'new') return null;
+      return { rfaId: match[1], schoolYear: Number(match[2] || 0) };
+    };
+    const warm = (found: { rfaId: string; schoolYear: number }) => prefetch('rfa.detail', found.schoolYear ? { rfaId: found.rfaId, schoolYear: found.schoolYear } : { rfaId: found.rfaId });
+    const onOver = (event: Event) => {
+      const found = rfaLink(event.target);
+      window.clearTimeout(hoverTimer);
+      if (found) hoverTimer = window.setTimeout(() => warm(found), 120);
+    };
+    const onTouch = (event: Event) => { const found = rfaLink(event.target); if (found) warm(found); };
+    document.addEventListener('pointerover', onOver);
+    document.addEventListener('focusin', onOver);
+    document.addEventListener('touchstart', onTouch, { passive: true });
+    return () => {
+      window.clearTimeout(timer); window.clearTimeout(hoverTimer);
+      document.removeEventListener('pointerover', onOver);
+      document.removeEventListener('focusin', onOver);
+      document.removeEventListener('touchstart', onTouch);
+    };
+  }, [signedIn, canApprove, canCreate]);
+}
+
 export function Layout() {
   const { user, signOut, sessionExpired } = useAuth();
   const { pathname } = useLocation();
   const pending = usePendingCount(Boolean(user?.CAN_APPROVE_RFA), pathname);
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
+  useWarmUp(user);
   // Each page opens at the top instead of keeping the previous page's scroll position.
   useEffect(() => { setAdminMenuOpen(false); window.scrollTo(0, 0); }, [pathname]);
   useEffect(() => {

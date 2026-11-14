@@ -69,3 +69,61 @@ describe('instant display of last-loaded data', () => {
     expect(api.peek('rfa.list', { query: '' })).toBeUndefined();
   });
 });
+
+describe('remembered pages across a reload', () => {
+  const signed = (email: string) => `${b64({ alg: 'none' })}.${b64({ exp: Math.floor(Date.now() / 1000) + 3600, email })}.sig`;
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 5));
+
+  it('restores the user and last-seen lists for the same account after a reload', async () => {
+    let api = await load();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(ok({ user: { EMAIL: 'a@x.edu' } })).mockResolvedValueOnce(ok([{ RFA_ID: 'r1' }])));
+    api.setToken(signed('a@x.edu'));
+    await api.api('session');
+    await api.api('rfa.list', { query: '' });
+    await settle();
+    api = await load(); // a page reload: module state is gone, the tab's sessionStorage remains
+    expect(api.peekSession()).toEqual({ EMAIL: 'a@x.edu' });
+    expect(api.peek('rfa.list', { query: '' })).toEqual([{ RFA_ID: 'r1' }]);
+  });
+
+  it('never shows one account the pages remembered for another', async () => {
+    let api = await load();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(ok([{ RFA_ID: 'r1' }])));
+    api.setToken(signed('a@x.edu'));
+    await api.api('rfa.list', {});
+    await settle();
+    store.set('erfa_google_id_token', signed('b@x.edu'));
+    api = await load();
+    expect(api.peek('rfa.list', {})).toBeUndefined();
+    api.setToken(signed('a@x.edu'));
+    api.setToken(signed('c@x.edu'));
+    expect(api.peek('rfa.list', {})).toBeUndefined();
+  });
+
+  it('forgets everything on sign-out and after any change', async () => {
+    const api = await load();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(ok([{ RFA_ID: 'r1' }])));
+    api.setToken(signed('a@x.edu'));
+    await api.api('rfa.list', {});
+    await api.api('rfa.approve', { rfaId: 'r1' });
+    expect(api.peek('rfa.list', {})).toBeUndefined();
+    await api.api('rfa.list', {});
+    api.setToken('');
+    await settle();
+    expect(store.has('erfa_view_cache_v1')).toBe(false);
+    expect(api.peek('rfa.list', {})).toBeUndefined();
+  });
+
+  it('prefetches a read once and ignores its failure', async () => {
+    const api = await load();
+    const fetchMock = vi.fn().mockResolvedValue(fail('SERVER_ERROR'));
+    vi.stubGlobal('fetch', fetchMock);
+    api.setToken(signed('a@x.edu'));
+    api.prefetch('rfa.detail', { rfaId: 'r1' });
+    api.prefetch('rfa.detail', { rfaId: 'r1' });
+    await settle();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    api.prefetch('rfa.approve', { rfaId: 'r1' }); // never prefetches a change
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});

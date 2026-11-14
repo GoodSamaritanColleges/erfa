@@ -1009,3 +1009,6 @@ thead th { background: #f6f8fc; color: #45526a; }
 @media (max-width: 620px) {
   .metrics .metric { padding: .75rem .85rem; gap: .65rem; }
 }
+
+/* Progress note while a decision is being saved */
+.notice.saving { display: flex; align-items: center; gap: .6rem; background: var(--tint); color: var(--brand); border: 1px solid var(--line); }
