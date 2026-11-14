@@ -3,6 +3,7 @@ import { cleanImportedData } from '../src/admin';
 
 const sheetsData = new Map<string, { headers: string[]; rows: string[][] }>();
 vi.mock('../src/store', () => ({
+  resetPerRequestCache: vi.fn(),
   all: vi.fn((name: string) => {
     const s = sheetsData.get(name);
     if (!s) return [];

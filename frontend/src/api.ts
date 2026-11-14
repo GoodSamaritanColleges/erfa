@@ -58,6 +58,27 @@ function persistSoon(): void {
     for (const [key, value] of saved.views ?? []) lastGood.set(key, value);
   } catch { /* storage unavailable or damaged: start empty */ }
 })();
+/**
+ * After a change, forget what it may have made wrong. A change to one RFA keeps the RFA lists
+ * on screen (they refresh in the background) but drops that RFA's own page and the dashboard;
+ * a decision also takes the RFA off For My Action at once. Any other change forgets everything.
+ */
+const LIST_READS = new Set(['rfa.list', 'rfa.all', 'rfa.forApproval', 'dashboard.rfas']);
+const DECISIONS = new Set(['rfa.approve', 'rfa.return', 'rfa.disapprove']);
+function forgetAfterChange(action: string, payload: Record<string, unknown>): void {
+  const rfaId = typeof payload.rfaId === 'string' ? payload.rfaId : '';
+  if (!rfaId) { lastGood.clear(); return; }
+  for (const [key, value] of [...lastGood]) {
+    let read = '';
+    try { read = String((JSON.parse(key) as unknown[])[0]); } catch { read = ''; }
+    if (LIST_READS.has(read) && Array.isArray(value)) {
+      if (read === 'rfa.forApproval' && DECISIONS.has(action)) lastGood.set(key, value.filter((row) => (row as { RFA_ID?: string })?.RFA_ID !== rfaId));
+      continue;
+    }
+    lastGood.delete(key);
+  }
+}
+
 /** The signed-in user from earlier in this tab, so a reload can open the app at once. */
 export function peekSession<T>(): T | undefined { return storedSession as T | undefined; }
 /** Last data loaded for this read during this visit, or undefined. Pages show it while refreshing. */
@@ -112,7 +133,7 @@ export async function api<T>(action: string, payload: Record<string, unknown> = 
   }
   const diagnostic = sessionStorage.getItem('erfa_perf') === '1';
   const key = coalescedReads.has(action) ? JSON.stringify([action, payload, idToken]) : '';
-  if (!key) { clearReadCache(); lastGood.clear(); persistSoon(); }
+  if (!key) { clearReadCache(); forgetAfterChange(action, payload); persistSoon(); }
   const cacheable = Boolean(key) && cachedReads.has(action);
   if (cacheable) {
     const hit = readCache.get(key);
@@ -146,7 +167,7 @@ export async function api<T>(action: string, payload: Record<string, unknown> = 
       throw new ApiError(code, result.error?.message ?? 'The request could not be completed.');
     }
     if (cacheable) readCache.set(key, { at: Date.now(), data: result.data });
-    else if (!key) { clearReadCache(); lastGood.clear(); queueMicrotask(() => changeListeners.forEach((listener) => listener())); }
+    else if (!key) { clearReadCache(); forgetAfterChange(action, payload); queueMicrotask(() => changeListeners.forEach((listener) => listener())); }
     if (key && action !== 'session') lastGood.set(viewKey(action, payload), result.data);
     if (action === 'session') storedSession = (result.data as { user?: unknown }).user;
     if (key) persistSoon();

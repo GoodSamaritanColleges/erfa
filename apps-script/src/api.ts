@@ -5,7 +5,8 @@ import { authenticate, requireCapability } from './auth';
 import { adminAudit, adminData, saveApprovalRoles, turnOffLeftoverMatrixRows, cleanImportedData, removeDepartmentHead, saveApprovalSettings, saveDepartment, saveDepartmentHead, saveMatrix, saveUser } from './admin';
 import { importUsersFromList } from './importUsers';
 import { adjustBudget, adminBudgetManagement, adminBudgetOverview, adminBudgetSummary, adminExpenseCategories, budgetReport, departmentExpenseReport, departmentFinancialDetail, expenseMonitoringReport, requesterBudgetContext, saveBudget, saveCategory, setOverBudget } from './budget';
-import { getDatabase, resetPerRequestCache } from './store';
+import { getDatabase, resetPerRequestCache, withBatchedLogs } from './store';
+import { withDeferredEmails } from './notifications';
 import { resetWorkflowCache } from './workflow';
 import { archiveYears, resetArchiveCache } from './archive';
 import { maintenanceStatus } from './maintenance';
@@ -86,5 +87,8 @@ function dispatchRequest(request: ApiRequest): unknown {
 function withLock<T>(operation: () => T): T {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) throw Object.assign(new Error('The system is busy. Please try again.'), { code: 'CONFLICT' });
-  try { return operation(); } finally { lock.releaseLock(); }
+  // Inside the lock: start from fresh sheet data, write log rows in one batch at the end, and
+  // hand the emails to the background sender instead of sending them while the user waits.
+  try { resetPerRequestCache(); return withDeferredEmails(() => withBatchedLogs(operation)); }
+  finally { lock.releaseLock(); }
 }

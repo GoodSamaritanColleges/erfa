@@ -8,6 +8,7 @@ import { archivePastSchoolYears, previewArchive } from './archive';
 import { backupDatabase } from './backup';
 import { installAutomaticMaintenance as installMaintenance, runMonthlyBackupJob, runYearlyArchiveJob } from './maintenance';
 import { runDailyFollowUpsJob } from './followups';
+import { sendQueuedEmails as sendQueuedEmailsJob } from './notifications';
 import { NEW_OWNER_EMAIL, transferOwnership } from './ownership';
 
 function json(value: unknown): GoogleAppsScript.Content.TextOutput {
@@ -128,8 +129,10 @@ function transferOwnershipNow(): unknown {
 function runMonthlyBackup(): unknown { return runMonthlyBackupJob(); }
 function runYearlyArchive(): unknown { setupSchema(); return runYearlyArchiveJob(); }
 function runDailyFollowUps(): unknown { return runDailyFollowUpsJob(); }
+// Scheduled automatically (one-time) whenever an action queues notification emails.
+function sendQueuedEmails(): unknown { return sendQueuedEmailsJob(); }
 
 // The production bundle keeps implementation code inside an IIFE. Store only
 // intended Apps Script entry points here; build.mjs emits top-level forwarding
 // declarations so Apps Script can discover them in the editor and Web App.
-Object.assign(globalThis, { __erfaEntrypoints: { doGet, doPost, setupDatabase, bootstrapAdmin, cleanAllNow, previewRfaResetNow, resetAllRfasKeepAccounts, previewArchiveNow, archivePastSchoolYearsNow, installAutomaticMaintenance, backupNow, runMonthlyBackup, runYearlyArchive, runDailyFollowUps, previewOwnershipTransferNow, transferOwnershipNow } });
+Object.assign(globalThis, { __erfaEntrypoints: { doGet, doPost, setupDatabase, bootstrapAdmin, cleanAllNow, previewRfaResetNow, resetAllRfasKeepAccounts, previewArchiveNow, archivePastSchoolYearsNow, installAutomaticMaintenance, backupNow, runMonthlyBackup, runYearlyArchive, runDailyFollowUps, sendQueuedEmails, previewOwnershipTransferNow, transferOwnershipNow } });

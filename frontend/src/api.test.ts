@@ -51,7 +51,7 @@ describe('api session handling', () => {
 });
 
 describe('instant display of last-loaded data', () => {
-  it('remembers the last good list and forgets it after any write or sign-out', async () => {
+  it('remembers the last good list and forgets it after a non-RFA change or sign-out', async () => {
     const api = await load();
     const fetchMock = vi.fn(async () => ok([{ RFA_ID: 'r1' }]));
     vi.stubGlobal('fetch', fetchMock);
@@ -61,7 +61,7 @@ describe('instant display of last-loaded data', () => {
     expect(api.peek('rfa.list', { query: '' })).toEqual([{ RFA_ID: 'r1' }]);
 
     fetchMock.mockImplementationOnce(async () => ok({ saved: true }));
-    await api.api('rfa.approve', { rfaId: 'r1' });
+    await api.api('admin.settings.save', {});
     expect(api.peek('rfa.list', { query: '' })).toBeUndefined();
 
     await api.api('rfa.list', { query: '' });
@@ -100,12 +100,33 @@ describe('remembered pages across a reload', () => {
     expect(api.peek('rfa.list', {})).toBeUndefined();
   });
 
-  it('forgets everything on sign-out and after any change', async () => {
+  it('after a decision keeps the lists, takes the RFA off For My Action and forgets its page', async () => {
+    const api = await load();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(ok([{ RFA_ID: 'r1' }, { RFA_ID: 'r2' }]))   // rfa.forApproval
+      .mockResolvedValueOnce(ok([{ RFA_ID: 'r1' }]))                     // rfa.list
+      .mockResolvedValueOnce(ok({ rfa: { RFA_ID: 'r1' } }))               // rfa.detail
+      .mockResolvedValueOnce(ok({ counts: 1 }))                           // dashboard.home
+      .mockResolvedValueOnce(ok({ RFA_ID: 'r1' }));                       // rfa.approve
+    vi.stubGlobal('fetch', fetchMock);
+    api.setToken(signed('a@x.edu'));
+    await api.api('rfa.forApproval', {});
+    await api.api('rfa.list', {});
+    await api.api('rfa.detail', { rfaId: 'r1' });
+    await api.api('dashboard.home', {});
+    await api.api('rfa.approve', { rfaId: 'r1' });
+    expect(api.peek('rfa.forApproval', {})).toEqual([{ RFA_ID: 'r2' }]);
+    expect(api.peek('rfa.list', {})).toEqual([{ RFA_ID: 'r1' }]);
+    expect(api.peek('rfa.detail', { rfaId: 'r1' })).toBeUndefined();
+    expect(api.peek('dashboard.home', {})).toBeUndefined();
+  });
+
+  it('forgets everything on sign-out and after other changes', async () => {
     const api = await load();
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(ok([{ RFA_ID: 'r1' }])));
     api.setToken(signed('a@x.edu'));
     await api.api('rfa.list', {});
-    await api.api('rfa.approve', { rfaId: 'r1' });
+    await api.api('admin.user.save', { userId: 'u1' });
     expect(api.peek('rfa.list', {})).toBeUndefined();
     await api.api('rfa.list', {});
     api.setToken('');

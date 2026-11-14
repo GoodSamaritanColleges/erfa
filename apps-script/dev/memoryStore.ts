@@ -86,3 +86,7 @@ export function setupSchema(): { spreadsheetId: string; spreadsheetUrl: string; 
 
 /** Outbox of emails "sent" by the demo (printed to the console too). */
 export const outbox: Array<{ to: string; subject: string }> = [];
+
+/** Real store batches log rows into one spreadsheet write; in memory every write is already instant. */
+export function withBatchedLogs<T>(operation: () => T): T { return operation(); }
+export function flushPendingRows(): void { /* nothing pending in memory */ }

@@ -1,7 +1,7 @@
 import { audit } from './audit';
 import { normalizeEmail, parsePresidentThresholdCents, toBoolean } from './core';
 import { requireCapability } from './auth';
-import { all, allTail, findBy, getDatabase, getSetting, insert, newId, nowIso, setSetting, updateBy } from './store';
+import { all, allTail, findBy, getDatabase, getSetting, insert, newId, nowIso, resetPerRequestCache, setSetting, updateBy } from './store';
 import type { ApprovalStep, DepartmentHeadRecord, DepartmentRecord, MatrixRecord, RfaRecord, SessionUser, SheetRecord, UserRecord } from './types';
 import { APPROVAL_STEPS, SHEETS } from './constants';
 import { loadRoles, saveRoles } from './roles';
@@ -133,6 +133,7 @@ function deleteSheetRows(sheetName: keyof typeof SHEETS, keep: (row: SheetRecord
     headers.forEach((h, idx) => { row[h] = values[i][idx] as string; });
     if (!keep(row)) { sheet.deleteRow(i + 2); deleted += 1; }
   }
+  if (deleted) resetPerRequestCache(); // rows moved: drop this request's copies
   return deleted;
 }
 

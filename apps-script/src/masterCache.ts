@@ -6,7 +6,7 @@ const ttl = { SETTINGS: 300, USERS: 60, DEPARTMENTS: 300 } as const;
 type MasterSheet = keyof typeof ttl;
 const schemaVersion = 'v1';
 
-function isMaster(name: keyof typeof SHEETS): name is MasterSheet {
+export function isMaster(name: keyof typeof SHEETS): name is MasterSheet {
   return Object.prototype.hasOwnProperty.call(ttl, name);
 }
 

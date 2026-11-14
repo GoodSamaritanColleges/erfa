@@ -1,5 +1,5 @@
 import { audit } from './audit';
-import { getSetting, insert, newId, nowIso, settingBoolean } from './store';
+import { getSetting, insert, newId, nowIso, settingBoolean, withBatchedLogs } from './store';
 import type { RfaRecord, SessionUser, UserRecord } from './types';
 
 export const STEP_LABELS: Record<string, string> = {
@@ -90,6 +90,17 @@ export function buildEmail(type: string, recipientName: string, rfa: RfaRecord, 
   return { subject: `[eRFA] ${copy.subject(rfa)}`, body: lines.filter((line): line is string => line !== null).join('\n') };
 }
 
+interface OutgoingEmail {
+  rfaId: string; type: string; toName: string; toEmail: string; subject: string; body: string;
+  actorName: string; actorEmail: string;
+}
+
+/**
+ * Notification emails. While a change is being saved (see withDeferredEmails) they are not sent
+ * on the spot: they are queued and a one-time background job sends them within about a minute,
+ * so Approve/Submit answer faster. If the queue cannot be used, they are sent immediately.
+ * Background jobs (reminders, the queue itself) send immediately.
+ */
 export function notify(
   type: string,
   recipient: Pick<UserRecord, 'FULL_NAME' | 'EMAIL'>,
@@ -100,22 +111,113 @@ export function notify(
   const frontendUrl = getSetting('FRONTEND_URL').replace(/\/$/, '');
   const link = frontendUrl ? `${frontendUrl}${frontendUrl.includes('#') ? '' : '/#'}/rfa/${encodeURIComponent(rfa.RFA_ID)}` : '';
   const { subject, body } = buildEmail(type, recipient.FULL_NAME, rfa, remarks, link);
-  const log = {
-    NOTIFICATION_ID: newId('ntf'), RFA_ID: rfa.RFA_ID, RECIPIENT: recipient.FULL_NAME,
-    RECIPIENT_EMAIL: recipient.EMAIL, NOTIFICATION_TYPE: type, SUBJECT: subject,
-    SENT_AT: '', STATUS: 'PENDING', ERROR_MESSAGE: '', RETRY_COUNT: 0
-  };
-  try {
-    if (!settingBoolean('EMAIL_ENABLED')) throw new Error('Email delivery is disabled by system configuration.');
-    MailApp.sendEmail({ to: recipient.EMAIL, subject, body, name: 'eRFA' });
-    log.SENT_AT = nowIso();
-    log.STATUS = 'SENT';
-    insert('NOTIFICATIONS', log);
-    audit('EMAIL_SENT', actor, rfa.RFA_ID, '', '', type, { recipient: recipient.EMAIL });
-  } catch (error) {
-    log.STATUS = settingBoolean('EMAIL_ENABLED') ? 'FAILED' : 'PENDING';
-    log.ERROR_MESSAGE = error instanceof Error ? error.message : String(error);
-    insert('NOTIFICATIONS', log);
-    audit('EMAIL_FAILED', actor, rfa.RFA_ID, '', '', log.ERROR_MESSAGE, { recipient: recipient.EMAIL, type });
+  const email: OutgoingEmail = { rfaId: rfa.RFA_ID, type, toName: recipient.FULL_NAME, toEmail: recipient.EMAIL, subject, body, actorName: actor?.FULL_NAME ?? '', actorEmail: actor?.EMAIL ?? '' };
+  if (deferring) outbox.push(email);
+  else sendNow([email]);
+}
+
+const outbox: OutgoingEmail[] = [];
+let deferring = 0;
+
+/** Run a change with its emails collected, then queued for the background sender. */
+export function withDeferredEmails<T>(operation: () => T): T {
+  deferring += 1;
+  try { return operation(); }
+  finally {
+    deferring -= 1;
+    if (!deferring && outbox.length) releaseOutbox(outbox.splice(0));
   }
+}
+
+export const EMAIL_QUEUE_PREFIX = 'ERFA_EMAILQ_';
+const EMAIL_QUEUE_TRIGGER_KEY = 'ERFA_EMAILQ_SCHEDULED_AT';
+export const EMAIL_QUEUE_HANDLER = 'sendQueuedEmails';
+const MAX_PROPERTY_CHARS = 8500;           // Apps Script keeps at most 9 KB per stored value
+const SCHEDULE_STALE_MS = 15 * 60 * 1000;   // reschedule if a planned run never happened
+
+function releaseOutbox(emails: OutgoingEmail[]): void {
+  if (!settingBoolean('EMAIL_ENABLED')) { sendNow(emails); return; } // logs them as not sent, as before
+  const fits = emails.filter((email) => JSON.stringify(email).length <= MAX_PROPERTY_CHARS);
+  const tooLarge = emails.filter((email) => !fits.includes(email));
+  try {
+    if (fits.length) queueForLater(fits);
+  } catch {
+    sendNow(fits); // the queue is unavailable: send now rather than lose them
+  }
+  if (tooLarge.length) sendNow(tooLarge);
+}
+
+function queueForLater(emails: OutgoingEmail[]): void {
+  const properties = PropertiesService.getScriptProperties();
+  const scheduledAt = Number(properties.getProperty(EMAIL_QUEUE_TRIGGER_KEY) || 0);
+  if (!scheduledAt || Date.now() - scheduledAt > SCHEDULE_STALE_MS) {
+    ScriptApp.newTrigger(EMAIL_QUEUE_HANDLER).timeBased().after(5 * 1000).create();
+    properties.setProperty(EMAIL_QUEUE_TRIGGER_KEY, String(Date.now()));
+  }
+  const stamp = Date.now();
+  const entries: Record<string, string> = {};
+  emails.forEach((email, index) => { entries[`${EMAIL_QUEUE_PREFIX}${stamp}_${String(index).padStart(3, '0')}_${newId('m')}`] = JSON.stringify(email); });
+  properties.setProperties(entries);
+}
+
+/**
+ * Background job (scheduled automatically): send every queued email. Takes the queue under the
+ * script lock, sends without holding it, then writes the delivery log under the lock again.
+ */
+export function sendQueuedEmails(): { sent: number; failed: number } {
+  const properties = PropertiesService.getScriptProperties();
+  const lock = LockService.getScriptLock();
+  let emails: OutgoingEmail[] = [];
+  if (!lock.tryLock(30000)) return { sent: 0, failed: 0 }; // try again on the next run
+  try {
+    const stored = properties.getProperties();
+    const keys = Object.keys(stored).filter((key) => key.startsWith(EMAIL_QUEUE_PREFIX) && key !== EMAIL_QUEUE_TRIGGER_KEY).sort();
+    emails = keys.map((key) => { try { return JSON.parse(stored[key]) as OutgoingEmail; } catch { return null; } }).filter((email): email is OutgoingEmail => Boolean(email));
+    keys.forEach((key) => properties.deleteProperty(key));
+    properties.deleteProperty(EMAIL_QUEUE_TRIGGER_KEY);
+    try { ScriptApp.getProjectTriggers().filter((trigger) => trigger.getHandlerFunction() === EMAIL_QUEUE_HANDLER).forEach((trigger) => ScriptApp.deleteTrigger(trigger)); } catch { /* finished one-time triggers may already be gone */ }
+  } finally { lock.releaseLock(); }
+  const results = emails.map((email) => deliver(email));
+  if (results.length) {
+    if (!lock.tryLock(30000)) { results.forEach(logDelivery); return countResults(results); }
+    try { withBatchedLogs(() => results.forEach(logDelivery)); } finally { lock.releaseLock(); }
+  }
+  return countResults(results);
+}
+
+/** How many emails are waiting in the queue (for the admin status page and tests). */
+export function queuedEmailCount(): number {
+  try { return Object.keys(PropertiesService.getScriptProperties().getProperties()).filter((key) => key.startsWith(EMAIL_QUEUE_PREFIX) && key !== EMAIL_QUEUE_TRIGGER_KEY).length; }
+  catch { return 0; }
+}
+
+interface Delivery { email: OutgoingEmail; sentAt: string; error: string; disabled: boolean }
+
+function deliver(email: OutgoingEmail): Delivery {
+  try {
+    if (!settingBoolean('EMAIL_ENABLED')) return { email, sentAt: '', error: 'Email delivery is disabled by system configuration.', disabled: true };
+    MailApp.sendEmail({ to: email.toEmail, subject: email.subject, body: email.body, name: 'eRFA' });
+    return { email, sentAt: nowIso(), error: '', disabled: false };
+  } catch (error) {
+    return { email, sentAt: '', error: error instanceof Error ? error.message : String(error), disabled: false };
+  }
+}
+
+function logDelivery({ email, sentAt, error, disabled }: Delivery): void {
+  const actor = email.actorEmail || email.actorName ? { FULL_NAME: email.actorName, EMAIL: email.actorEmail } as SessionUser : null;
+  insert('NOTIFICATIONS', {
+    NOTIFICATION_ID: newId('ntf'), RFA_ID: email.rfaId, RECIPIENT: email.toName,
+    RECIPIENT_EMAIL: email.toEmail, NOTIFICATION_TYPE: email.type, SUBJECT: email.subject,
+    SENT_AT: sentAt, STATUS: sentAt ? 'SENT' : (disabled ? 'PENDING' : 'FAILED'), ERROR_MESSAGE: error, RETRY_COUNT: 0
+  });
+  if (sentAt) audit('EMAIL_SENT', actor, email.rfaId, '', '', email.type, { recipient: email.toEmail });
+  else audit('EMAIL_FAILED', actor, email.rfaId, '', '', error, { recipient: email.toEmail, type: email.type });
+}
+
+function countResults(results: Delivery[]): { sent: number; failed: number } {
+  return { sent: results.filter((r) => r.sentAt).length, failed: results.filter((r) => !r.sentAt).length };
+}
+
+function sendNow(emails: OutgoingEmail[]): void {
+  emails.forEach((email) => logDelivery(deliver(email)));
 }

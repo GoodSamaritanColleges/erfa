@@ -1,6 +1,6 @@
 import { audit } from './audit';
 import { normalizeEmail, toBoolean } from './core';
-import { buildEmail, notify } from './notifications';
+import { buildEmail, notify, sendQueuedEmails } from './notifications';
 import { all, getSetting, nowIso, setSetting, settingBoolean, updateBy } from './store';
 import type { RfaRecord, SheetRecord, UserRecord } from './types';
 import { WAITING_STATUSES, waitingApprovers, waitingSince } from './workflow';
@@ -114,6 +114,8 @@ export function stuckRfaDigest(now = new Date()): { stuck: number; emailed: bool
 
 export function runDailyFollowUpsJob(now = new Date()): Record<string, unknown> {
   const result: Record<string, unknown> = {};
+  // Safety net: send anything still waiting in the email queue (normally sent within a minute).
+  try { result.queued = sendQueuedEmails(); } catch (e) { result.queuedError = String(e); }
   try { result.retries = retryFailedEmails(now); } catch (e) { result.retriesError = String(e); }
   try { result.reminders = sendReminders(now); } catch (e) { result.remindersError = String(e); }
   const manilaWeekday = new Date(now.getTime() + 8 * 60 * 60 * 1000).getUTCDay();

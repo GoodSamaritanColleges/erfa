@@ -1,6 +1,6 @@
 import { DEFAULT_SETTINGS, SHEETS } from './constants';
 import { timed } from './performance';
-import { mutateMasterData, readMasterData } from './masterCache';
+import { isMaster, mutateMasterData, readMasterData } from './masterCache';
 import { toBoolean } from './core';
 import type { SheetRecord, ApprovalSection } from './types';
 
@@ -20,6 +20,33 @@ export function resetPerRequestCache(): void {
   sheetDataCache.clear();
   settingsMapCache = null;
   // keep cachedDb (spreadsheet handle) — safe to reuse; clear only sheet data
+}
+
+// --- Batched log rows ---
+// While a change is being saved, audit and notification log rows are collected and written
+// in one go at the end (one spreadsheet call instead of one per row). Reading a batched sheet
+// writes its pending rows first, so nothing ever reads around them.
+const BATCHED_SHEETS = new Set<string>(['RFA_AUDIT', 'NOTIFICATIONS']);
+const pendingRows = new Map<string, SheetRecord[]>();
+let batching = 0;
+
+/** Run `operation` with log rows batched; they are written when it finishes (or fails). */
+export function withBatchedLogs<T>(operation: () => T): T {
+  batching += 1;
+  try { return operation(); }
+  finally { batching -= 1; if (!batching) flushPendingRows(); }
+}
+
+export function flushPendingRows(name?: string): void {
+  for (const sheetName of name ? [name] : [...pendingRows.keys()]) {
+    const rows = pendingRows.get(sheetName);
+    if (!rows?.length) continue;
+    pendingRows.delete(sheetName);
+    const headers = [...SHEETS[sheetName as keyof typeof SHEETS]] as string[];
+    const sheet = getSheet(sheetName as keyof typeof SHEETS);
+    timed(`sheet.${sheetName}.appendMs`, () => sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, headers.length).setValues(rows.map((record) => headers.map((header) => record[header] ?? ''))));
+    invalidateSheetCache(sheetName as keyof typeof SHEETS);
+  }
 }
 
 export function nowIso(): string {
@@ -104,6 +131,7 @@ export function all<T extends SheetRecord>(name: keyof typeof SHEETS): T[] {
 
 function readAll<T extends SheetRecord>(name: keyof typeof SHEETS): T[] {
   const key = name as string;
+  if (pendingRows.has(key)) flushPendingRows(key);
   if (sheetDataCache.has(key)) {
     // Return shallow copies to prevent caller mutation from polluting cache
     return (sheetDataCache.get(key)! as T[]).map((r) => ({ ...r }));
@@ -151,20 +179,57 @@ function readTail<T extends SheetRecord>(name: keyof typeof SHEETS, limit: numbe
 
 export function insert(name: keyof typeof SHEETS, record: SheetRecord): void {
   const headers = [...SHEETS[name]] as string[];
-  try { mutateMasterData(name, () => getSheet(name).appendRow(headers.map((header) => record[header] ?? ''))); }
-  finally { invalidateSheetCache(name); }
+  if (batching && BATCHED_SHEETS.has(name as string)) {
+    const rows = pendingRows.get(name as string) ?? [];
+    rows.push({ ...record });
+    pendingRows.set(name as string, rows);
+    return;
+  }
+  const cached = !isMaster(name) ? sheetDataCache.get(name as string) : undefined;
+  let written = false;
+  try {
+    mutateMasterData(name, () => getSheet(name).appendRow(headers.map((header) => record[header] ?? '')));
+    written = true;
+  } finally {
+    // Keep this request's copy of the sheet in step instead of reloading the whole sheet.
+    if (written && cached) {
+      const row: SheetRecord = {};
+      headers.forEach((header) => { row[header] = normalizeCell(record[header] ?? '', header); });
+      cached.push(row);
+    } else invalidateSheetCache(name);
+  }
 }
 
 export function updateBy(name: keyof typeof SHEETS, key: string, value: string, updates: SheetRecord): void {
-  try { mutateMasterData(name, () => updateSheetRecord(name, key, value, updates)); }
-  finally { invalidateSheetCache(name); }
+  let keptInStep = false;
+  try { mutateMasterData(name, () => { keptInStep = updateSheetRecord(name, key, value, updates); }); }
+  finally { if (!keptInStep) invalidateSheetCache(name); }
 }
 
-function updateSheetRecord(name: keyof typeof SHEETS, key: string, value: string, updates: SheetRecord): void {
+/** Returns true when this request's copy of the sheet was updated in step (no reload needed). */
+function updateSheetRecord(name: keyof typeof SHEETS, key: string, value: string, updates: SheetRecord): boolean {
   const sheet = getSheet(name);
   const headers = [...SHEETS[name]] as string[];
   const keyIndex = headers.indexOf(key);
   if (keyIndex < 0) throw new Error(`Unknown key ${key} for ${name}.`);
+  // Fast path: this request already holds the sheet, so read and write just the one row
+  // (checking it is the right one) instead of reading the whole sheet to find it.
+  const cached = !isMaster(name) ? sheetDataCache.get(name as string) : undefined;
+  const cachedIndex = cached ? cached.findIndex((record) => String(record[key]) === value) : -1;
+  if (cachedIndex >= 0) {
+    const range = sheet.getRange(cachedIndex + 2, 1, 1, headers.length);
+    const row = timed(`sheet.${name}.rowReadMs`, () => range.getValues()[0]);
+    if (row && String(row[keyIndex]) === value) {
+      Object.entries(updates).forEach(([field, fieldValue]) => {
+        const index = headers.indexOf(field);
+        if (index >= 0) row[index] = fieldValue;
+      });
+      range.setValues([row]);
+      const record = cached![cachedIndex];
+      Object.entries(updates).forEach(([field, fieldValue]) => { if (headers.includes(field)) record[field] = normalizeCell(fieldValue, field); });
+      return true;
+    }
+  }
   if (sheet.getLastRow() < 2) throw new Error(`${name} record not found.`);
   const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).getValues();
   const rowIndex = values.findIndex((row) => String(row[keyIndex]) === value);
@@ -176,6 +241,7 @@ function updateSheetRecord(name: keyof typeof SHEETS, key: string, value: string
   });
   sheet.getRange(rowIndex + 2, 1, 1, headers.length).setValues([row]);
   invalidateSheetCache(name);
+  return false;
 }
 
 export function findBy<T extends SheetRecord>(name: keyof typeof SHEETS, key: string, value: string): T | undefined {
